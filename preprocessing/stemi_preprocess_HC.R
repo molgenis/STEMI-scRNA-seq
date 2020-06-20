@@ -137,57 +137,24 @@ add_stim_tags <- function(seurat_object, stim_mapping_loc, assignment_key='exp.i
 add_demux_assignments <- function(seurat_object, demux_dir, demux_append, batch_key='batch'){
   # grab the demux assignments
   demux_output_all <- get_demux_assignments(seurat_object, demux_dir, demux_append, batch_key)
-  # add the base barcode to the metadata because we are going to need that for matching
-  seurat_object <- add_base_barcodes(seurat_object)
-  # add the lane+base barcode combo we'll need for matching
-  seurat_object <- add_lane_barcode_combo(seurat_object)
-  # also add this lane+base barcode combo to the demux output
-  demux_output_all$barcode_lane <- paste0(demux_output_all$lane,"_",demux_output_all$BARCODE)
-  # subset for the rownames/barcodes we kept
-  demux_to_keep <- subset(demux_output_all, demux_output_all$barcode_lane %in% seurat_object@meta.data$barcode_lane)
-  # grab the current metadata
-  metadata.current <- seurat_object@meta.data
-  # to make sure we don't lose it, also add the rownames as regular column
-  metadata.current$barcode_meta <- rownames(metadata.current)
-  # merge with demux output
-  merged <- merge(metadata.current, demux_to_keep, "barcode_lane", "barcode_lane")
-  # there might be missing info in Demuxlet, grab rows that for some reason are not in demuxlet
-  missinglanes <- subset(metadata.current,seurat_object@meta.data[['barcode_lane']] %in% demux_output_all[['barcode_lane']]==F)
-  # create an empty frame containing those missing ones with NAs
-  rows_na <- get_na_dataframe(colnames(merged), rownames(missinglanes))
-  # add missing info
-  rows_na$barcode_lane <- as.vector(missinglanes[['barcode_lane']])
-  rows_na$barcode_meta <- as.vector(missinglanes[['barcode_meta']])
-  # add these NA rows to our merged frame (required due to the length when adding must be the same for metadata)
-  merged <- rbind(merged, rows_na)
-  # add back the row names from the regular metadata
-  rownames(merged) <- merged$barcode_meta
-  # add the data to the metadata, checking if we need to overwrite or not
-  print(head(merged))
-  if('BEST' %in% colnames(seurat_object@meta.data)){
-    seurat_object <- AddMetaData(seurat_object, merged['BEST.y'], col.name = 'BEST')
-  }
-  else{
-    seurat_object <- AddMetaData(seurat_object, merged['BEST'], col.name = 'BEST')
-  }
-  if('SNG.1ST' %in% colnames(seurat_object@meta.data)){
-    seurat_object <- AddMetaData(seurat_object, merged['SNG.1ST.y'], col.name = "SNG.1ST")
-  }
-  else{
-    seurat_object <- AddMetaData(seurat_object, merged['SNG.1ST'], col.name = "SNG.1ST")
-  }
-  if('SNG.LLK1' %in% colnames(seurat_object@meta.data)){
-    seurat_object <- AddMetaData(seurat_object, merged['SNG.LLK1.y'], col.name = 'SNG.LLK1')
-  }
-  else{
-    seurat_object <- AddMetaData(seurat_object, merged['SNG.LLK1'], col.name = 'SNG.LLK1')
-  }
-  if('LLK12' %in% colnames(seurat_object@meta.data)){
-    seurat_object <- AddMetaData(seurat_object, merged['LLK12.y'], col.name = 'LLK12')
-  }
-  else{
-    seurat_object <- AddMetaData(seurat_object, merged['LLK12'], col.name = 'LLK12')
-  }
+  # create a regex to get the first index of -
+  last_dash_pos <- "\\-"
+  # get the full barcodes
+  barcodes_full_demux <- demux_output_all$BARCODE
+  # create the cut barcodes
+  barcodes_cut_demux <- substr(barcodes_full_demux, 1, regexpr(last_dash_pos, barcodes_full_demux)-1)
+  demux_output_all$bare_barcode_lane <- paste0(barcodes_cut_demux, "_", demux_output_all$lane)
+  # set as rownames to allow for matching
+  rownames(demux_output_all) <- demux_output_all$bare_barcode_lane
+  print(head(demux_output_all))
+  # add demux info
+  seurat_object <- AddMetaData(seurat_object, demux_output_all['BEST'], col.name = 'BEST')
+
+  seurat_object <- AddMetaData(seurat_object, demux_output_all['SNG.1ST'], col.name = "SNG.1ST")
+
+  seurat_object <- AddMetaData(seurat_object, demux_output_all['SNG.LLK1'], col.name = 'SNG.LLK1')
+
+  seurat_object <- AddMetaData(seurat_object, demux_output_all['LLK12'], col.name = 'LLK12')
   return(seurat_object)
 }
 
@@ -223,40 +190,18 @@ get_demux_assignments <- function(seurat_object, demux_dir, demux_append, batch_
 add_soup_assignments <- function(seurat_object, soup_dir, soup_append, batch_key='batch'){
   # grab from the souporcell output
   soup_assignments <- get_soup_assignments(seurat_object, soup_dir, soup_append, batch_key)
-  # add the lane barcode combo if it wasn't already there
-  if("barcode_lane" %in% colnames(seurat_object@meta.data) == F){
-    # add the lane+base barcode combo we'll need for matching
-    seurat_object <- add_lane_barcode_combo(seurat_object)
-  }
-  # also add this lane+base barcode combo to the demux output
-  soup_assignments$barcode_lane <- paste0(soup_assignments$lane,"_",soup_assignments$barcode)
-  # subset for the rownames/barcodes we kept
-  soup_to_keep <- subset(soup_assignments, soup_assignments$barcode_lane %in% seurat_object@meta.data$barcode_lane)
-  # grab the current metadata
-  metadata.current <- seurat_object@meta.data
-  # to make sure we don't lose it, also add the rownames as regular column
-  metadata.current$barcode_meta <- rownames(metadata.current)
-  # merge with souporcell output
-  merged <- merge(metadata.current, soup_to_keep, "barcode_lane", "barcode_lane")
-  # there might be missing info in Demuxlet, grab rows that for some reason are not in demuxlet
-  missinglanes <- subset(metadata.current,seurat_object@meta.data[['barcode_lane']] %in% soup_assignments[['barcode_lane']]==F)
-  # create an empty frame containing those missing ones with NAs
-  rows_na <- get_na_dataframe(colnames(merged), rownames(missinglanes))
-  # add missing info
-  rows_na$barcode_lane <- as.vector(missinglanes[['barcode_lane']])
-  rows_na$barcode_meta <- as.vector(missinglanes[['barcode_meta']])
-  # add these NA rows to our merged frame (required due to the length when adding must be the same for metadata)
-  merged <- rbind(merged, rows_na)
-  # add back the row names from the regular metadata
-  rownames(merged) <- merged$barcode_meta
+  # create a regex to get the first index of -
+  last_dash_pos <- "\\-"
+  # get the full barcodes
+  barcodes_full_soup <- soup_assignments$barcode
+  # create the cut barcodes
+  barcodes_cut_soup <- substr(barcodes_full_soup, 1, regexpr(last_dash_pos, barcodes_full_soup)-1)
+  soup_assignments$bare_barcode_lane <- paste0(barcodes_cut_soup, "_", soup_assignments$lane)
+  # set as rownames to allow for matching
+  rownames(soup_assignments) <- soup_assignments$bare_barcode_lane
   # add the data to the metadata, checking if we need to overwrite or not
-  seurat_object <- AddMetaData(seurat_object, merged['assignment_ll'], col.name = 'assignment.ll')
-  if('status' %in% colnames(seurat_object@meta.data)){
-    seurat_object <- AddMetaData(seurat_object, merged['status.y'], col.name = 'status')
-  }
-  else{
-    seurat_object <- AddMetaData(seurat_object, merged['status'], col.name = 'status')
-  }
+  seurat_object <- AddMetaData(seurat_object, soup_assignments['assignment_ll'], col.name = 'assignment.ll')
+  seurat_object <- AddMetaData(seurat_object, soup_assignments['status'], col.name = 'status')
   return(seurat_object)
 }
 
@@ -375,13 +320,13 @@ cells_1M <- add_exp_tags(cells_1M, exp_to_ll_loc, assignment_key='assignment.ll'
 # add the condition again, but now the exp nr is the ll one
 cells_1M <- add_stim_tags(cells_1M, stim_mapping_loc)
 # remove the doublets
-cells_1M <- remove_doublets(raw_1m_loc)
+cells_1M <- remove_doublets(cells_1M)
 # set the final assignments
 cells_1M@meta.data$assignment.final <- cells_1M@meta.data$SNG.1ST
 cells_1M@meta.data$timepoint.final <- cells_1M@meta.data$timepoint.demux
 cells_1M@meta.data$exp.id.final <- cells_1M@meta.data$exp.id.demux
 # grab just UT
-cells_1M <- subset(cells_1M, subset = timepoint.demux == 'UT')
+cells_1M <- subset(cells_1M, subset = timepoint.final == 'UT')
 # grab just the participants that are HC
 include_hc_list <- read.table(include_hc_loc)
 cells_1M <- subset(cells_1M, subset = assignment.final %in% include_hc_list$V1)
@@ -398,5 +343,5 @@ HC_v3 <- subset(HC_v3, subset = nFeature_RNA > 200 & percent.mt < 15 & HBB < 10)
 HC_v2 <- SCTransform(HC_v2, vars.to.regress = c('percent.mt'))
 HC_v3 <- SCTransform(HC_v3, vars.to.regress = c('percent.mt'))
 # save the HC objects
-saveRDS(HC_v2, paste(, 'HC_v2_20200616.rds', sep = ''))
-saveRDS(HC_v3, paste(, 'HC_v3_20200616.rds', sep = ''))
+saveRDS(HC_v2, paste(object_loc, 'HC_v2_20200616.rds', sep = ''))
+saveRDS(HC_v3, paste(object_loc, 'HC_v3_20200616.rds', sep = ''))
