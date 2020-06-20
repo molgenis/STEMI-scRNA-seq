@@ -317,8 +317,10 @@ cells_1M@meta.data$timepoint.demux <- cells_1M@meta.data$timepoint
 cells_1M <- add_soup_assignments(cells_1M, base_soup_dir, soup_extension)
 # add the exp nr for souporcell this time
 cells_1M <- add_exp_tags(cells_1M, exp_to_ll_loc, assignment_key='assignment.ll')
+cells_1M@meta.data$exp.id.ll <- cells_1M@meta.data$exp.id
 # add the condition again, but now the exp nr is the ll one
 cells_1M <- add_stim_tags(cells_1M, stim_mapping_loc)
+cells_1M@meta.data$timepoint.ll <- cells_1M@meta.data$timepoint
 # remove the doublets
 cells_1M <- remove_doublets(cells_1M)
 # set the final assignments
