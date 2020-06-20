@@ -421,6 +421,15 @@ cardio.integrated@meta.data[rownames(cardio.integrated@meta.data) %in% rownames(
 Idents(cardio.integrated) <- 'cell_type'
 # create dimplot
 DimPlot(cardio.integrated)
+ggsave('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/plots/dimplots/cardio.integrated.20pcs.ctTmonoTc17Th17.20200620.png', dpi = 600, width = 20, height = 20)
+DimPlot(cardio.integrated, cols = c('gray', 'gray', 'gray', 'gray', 'gray', 'gray', 'gray', 'gray', 'gray', 'gray', 'gray', 'gray', 'gray', 'gray', 'gray', 'gray', 'gray', 'blue', 'red'))
+ggsave('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/plots/dimplots/cardio.integrated.20pcs.ctTmonoTc17Th17.20200620_17color.png', dpi = 600, width = 20, height = 20)
+
+# Counting Tc17 cells
+nrow(cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == "Tc17",])
+# [1] 404
+nrow(cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == "Th17",])
+# [1] 322
 
 # save the end result
 saveRDS(cardio.integrated, '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/cardio_integrated_20pcs_ctTmonoTc17Th17_20200620.rds')
