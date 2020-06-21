@@ -126,6 +126,23 @@ rm(monocyte_split.integrated_15pcs)
 levels(cardio.integrated@meta.data$cell_type) <- c(levels(cardio.integrated@meta.data$cell_type), levels(cardio.integrated@meta.data$cell_type_mono), levels(cardio.integrated@meta.data$cell_type_t))
 cardio.integrated@meta.data[!is.na(cardio.integrated@meta.data$cell_type_t),]$cell_type <- cardio.integrated@meta.data[!is.na(cardio.integrated@meta.data$cell_type_t),]$cell_type_t
 cardio.integrated@meta.data[!is.na(cardio.integrated@meta.data$cell_type_mono),]$cell_type <- cardio.integrated@meta.data[!is.na(cardio.integrated@meta.data$cell_type_mono),]$cell_type_mono
+
+# add lower resolution cell types
+levels(cardio.integrated@meta.data$cell_type_lowerres) <- c(levels(cardio.integrated@meta.data$cell_type_lowerres), 'monocyte', 'DC', 'CD4T', 'CD8T', 'NK')
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'naive CD8T',]$cell_type_lowerres <- 'CD8T'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'memory CD8T',]$cell_type_lowerres <- 'CD8T'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'memory CD4T',]$cell_type_lowerres <- 'CD4T'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'naive CD4T',]$cell_type_lowerres <- 'CD4T'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'mono 1',]$cell_type_lowerres <- 'monocyte'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'mono 2',]$cell_type_lowerres <- 'monocyte'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'mono 3',]$cell_type_lowerres <- 'monocyte'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'mono 4',]$cell_type_lowerres <- 'monocyte'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'pDC',]$cell_type_lowerres <- 'DC'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'mDC',]$cell_type_lowerres <- 'DC'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'NKdim',]$cell_type_lowerres <- 'NK'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'NKbright',]$cell_type_lowerres <- 'NK'
+cardio.integrated@meta.data$cell_type_lowerres <- droplevels(cardio.integrated@meta.data$cell_type_lowerres)
+
 # save the object
-saveRDS(cardio.integrated, '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/cardio_integrated_20pcs_ctTmono_20200620.rds')
+saveRDS(cardio.integrated, '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/cardio_integrated_20pcs_ctTmono_20200622.rds')
 
