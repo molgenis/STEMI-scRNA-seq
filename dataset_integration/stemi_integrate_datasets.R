@@ -38,6 +38,18 @@ DefaultAssay(stemi_v3) <- 'SCT'
 DefaultAssay(hc_v2) <- 'SCT'
 DefaultAssay(hc_v3) <- 'SCT'
 
+# fix some things in the objects
+stemi_v2@meta.data$assignment.final <- stemi_v2@meta.data$SNG.1ST
+stemi_v2@meta.data$assignment_final <- NULL
+stemi_v2@meta.data$timepoint.final <- stemi_v2@meta.data$timepoint.demux
+stemi_v2@meta.data$assignment.ll <- stemi_v2@meta.data$assignment_ll
+stemi_v2@meta.data$assignment_ll <- NULL
+stemi_v2@meta.data$bare_barcode_lane <- rownames(stemi_v2@meta.data)
+stemi_v2@meta.data$orig.ident <- 'stemi_v2'
+stemi_v3@meta.data$orig.ident <- 'stemi_v3'
+stemi_v3@meta.data$bare_barcode_lane <- rownames(stemi_v3@meta.data)
+
+
 # add objects to list
 cardio.list <- list(stemi_v2, stemi_v3, hc_v2, hc_v3)
 # remove individual objects to clear memory
@@ -69,3 +81,8 @@ cardio.integrated <- RunUMAP(cardio.integrated, dims = 1:20)
 
 # save our efforts
 saveRDS(cardio.integrated, paste(object_loc, 'cardio.integrated_20200625.rds', sep = ''))
+
+# grab our previously defined cell types
+cell_types <- read.table('/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/metadata/cardio.integrated_cell_types_20200630.tsv', sep = '\t', header = T)
+cardio.integrated <- AddMetaData(cardio.integrated, cell_types['cell_type'])
+cardio.integrated <- AddMetaData(cardio.integrated, cell_types['cell_type_lowerres'])
