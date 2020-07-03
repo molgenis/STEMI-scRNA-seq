@@ -9,7 +9,7 @@ library(parallel)
 ####################################################################################
 
 ####################################################################################
-# v <this is obtained externally from https://elifesciences.org/articles/43882 > v #
+# v <obtained externally from https://elifesciences.org/articles/43882 > v #
 ####################################################################################
 
 # Differential proportion analysis of single-cell populations
@@ -135,9 +135,10 @@ two.class.test<-function(obs.table, all.exp, cond.control="C", cond.treatment="P
 }
 
 ########################################################################################
-# ^  </this was obtained externally from https://elifesciences.org/articles/43882 >  ^ #
+# ^  </ end of obtained externally from https://elifesciences.org/articles/43882 >  ^  #
 ########################################################################################
 
+# get the cell counts from the metadata object
 get_cell_counts <- function(metadata){
   # init count matrix
   cell_counts <- matrix(nrow=length(unique(metadata$timepoint.final)), ncol = length(unique(metadata$cell_type_lowerres)), dimnames = list(unique(metadata$timepoint.final), unique(metadata$cell_type_lowerres)))
@@ -160,6 +161,7 @@ get_cell_counts <- function(metadata){
   return(cell_counts)
 }
 
+# build the null distributions of the cell counts, with different number of iterations and error prob
 get_null_distributions <- function(cell_counts, n=100000, ps=c(0.5, 0.4, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05)){
   # put the null distributions in a list
   null_distributions = list()
@@ -172,6 +174,7 @@ get_null_distributions <- function(cell_counts, n=100000, ps=c(0.5, 0.4, 0.3, 0.
   return(null_distributions)
 }
 
+# build the null distributions of the cell counts, with different number of iterations and error prob using multiple cores
 get_null_distributions_mt <- function(cell_counts, n=100000, ps=c(0.5, 0.4, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05), mc.cores=NULL){
   # we need characters as names for the list
   ps_character <- as.character(ps)
@@ -192,7 +195,7 @@ get_null_distributions_mt <- function(cell_counts, n=100000, ps=c(0.5, 0.4, 0.3,
   return(null_distributions)
 }
 
-
+# test the cell type composition for pairs and different error prob null distributions
 test_two_class <- function(cell_counts, null_distributions, pairs, ps=c(0.5, 0.4, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05)){
   # store the result of the pairs in a list
   results <- list()
@@ -220,6 +223,7 @@ test_two_class <- function(cell_counts, null_distributions, pairs, ps=c(0.5, 0.4
   return(results)
 }
 
+# test the cell type composition for pairs and different error prob null distributions using multiple cores
 test_two_class_mt <- function(cell_counts, null_distributions, pairs, ps=c(0.5, 0.4, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05), mc.cores=NULL){
   # we need characters as names for the list
   ps_character <- as.character(ps)
@@ -258,7 +262,7 @@ test_two_class_mt <- function(cell_counts, null_distributions, pairs, ps=c(0.5, 
 # main code                                                                        #
 ####################################################################################
 
-
+# read Seurat file
 cardio.integrated <- readRDS('/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/cardio_integrated_20pcs_ctTmonoTc17Th17_20200622.rds')
 # grab metadata
 metadata <- cardio.integrated@meta.data
@@ -269,23 +273,29 @@ null_dist_all <- get_null_distributions(cell_count_all)
 # create the pairs we which to test
 ut_baseline <- c('UT', 'Baseline')
 baseline_t8w <- c('Baseline', 't8w')
+ut_t8w <- c('UT', 't8w')
 pairs <- list()
 pairs[['ut_baseline']] <- ut_baseline
 pairs[['baseline_t8w']] <- baseline_t8w
 pairs[['ut_t8w']] <- ut_t8w
 # get the results
-diff_all <- test_two_class(cell_counts_all, null_dist_all, pairs)
+diff_all <- test_two_class(cell_count_all, null_dist_all, pairs)
 
 metadata_v2 <- metadata_v2[metadata_v2$chem == 'V2', ]
 cell_count_v2 <- get_cell_counts(metadata_v2)
 # get the null distributions
 null_dist_v2 <- get_null_distributions(cell_count_v2)
 # get the results
-diff_v2 <- test_two_class(cell_counts_v2, null_dist_v2, pairs)
+diff_v2 <- test_two_class(cell_count_v2, null_dist_v2, pairs)
 
 metadata_v3 <- metadata_v2[metadata_v3$chem == 'V3', ]
 cell_count_v3 <- get_cell_counts(metadata_v3)
 # get the null distributions
 null_dist_v3 <- get_null_distributions(cell_count_v3)
 # get the results
-diff_v3 <- test_two_class(cell_counts_v3, null_dist_v3, pairs)
+diff_v3 <- test_two_class(cell_count_v3, null_dist_v3, pairs)
+
+# let's try the chi2 methods as wel
+chisq_all <- chisq.test(cell_count_all)
+chisq_v2 <- chisq.test(cell_count_v2)
+chisq_v3 <- chisq.test(cell_count_v3)
