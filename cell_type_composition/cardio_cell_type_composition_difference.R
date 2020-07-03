@@ -235,14 +235,15 @@ test_two_class_mt <- function(cell_counts, null_distributions, pairs, ps=c(0.5, 
   }
   results <- mclapply(pairs, function(pair,cell_counts, null_distributions){
     # grab the two conditions
-    cond1 <- pairs[[pair]][1]
-    cond2 <- pairs[[pair]][2]
+    cond1 <- pair[1]
+    cond2 <- pair[2]
     # init result
     res.table = c()
     # go through the err probs
     for(err_prob in ps){
+      print(paste(cond1, cond2, err_prob))
       # obtain the null dist for the error prop that was supplied
-      null_dist <- null_distributions[[err_prob]]
+      null_dist <- null_distributions[[as.character(err_prob)]]
       # get the result for this pair and err prob
       res = two.class.test(obs.counts, null_dist, cond.control=cond1, cond.treatment=cond2,to.plot=F)
       # add the result
@@ -269,7 +270,7 @@ metadata <- cardio.integrated@meta.data
 # grab all the cell counts
 cell_count_all <- get_cell_counts(metadata)
 # get the null distributions
-null_dist_all <- get_null_distributions(cell_count_all)
+null_dist_all <- get_null_distributions_mt(cell_count_all)
 # create the pairs we which to test
 ut_baseline <- c('UT', 'Baseline')
 baseline_t8w <- c('Baseline', 't8w')
@@ -279,21 +280,34 @@ pairs[['ut_baseline']] <- ut_baseline
 pairs[['baseline_t8w']] <- baseline_t8w
 pairs[['ut_t8w']] <- ut_t8w
 # get the results
-diff_all <- test_two_class(cell_count_all, null_dist_all, pairs)
+diff_all <- test_two_class_mt(cell_count_all, null_dist_all, pairs)
+# write results
+write.table(diff_all[['ut_baseline']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_baseline_20200703.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['ut_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_t8w_20200703.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['baseline_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_baseline_t8w_20200703.tsv', sep = '\t', row.names=T)
 
-metadata_v2 <- metadata_v2[metadata_v2$chem == 'V2', ]
+metadata_v2 <- metadata[metadata$chem == 'V2', ]
 cell_count_v2 <- get_cell_counts(metadata_v2)
 # get the null distributions
-null_dist_v2 <- get_null_distributions(cell_count_v2)
+null_dist_v2 <- get_null_distributions_mt(cell_count_v2)
 # get the results
-diff_v2 <- test_two_class(cell_count_v2, null_dist_v2, pairs)
+diff_v2 <- test_two_class_mt(cell_count_v2, null_dist_v2, pairs)
+# write results
+write.table(diff_v2[['ut_baseline']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v2_ut_baseline_20200703.tsv', sep = '\t', row.names=T)
+write.table(diff_v2[['ut_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v2_ut_t8w_20200703.tsv', sep = '\t', row.names=T)
+write.table(diff_v2[['baseline_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v2_baseline_t8w_20200703.tsv', sep = '\t', row.names=T)
 
-metadata_v3 <- metadata_v2[metadata_v3$chem == 'V3', ]
+metadata_v3 <- metadata[metadata$chem == 'V3', ]
 cell_count_v3 <- get_cell_counts(metadata_v3)
 # get the null distributions
-null_dist_v3 <- get_null_distributions(cell_count_v3)
+null_dist_v3 <- get_null_distributions_mt(cell_count_v3)
 # get the results
-diff_v3 <- test_two_class(cell_count_v3, null_dist_v3, pairs)
+diff_v3 <- test_two_class_mt(cell_count_v3, null_dist_v3, pairs)
+# write results
+write.table(diff_v3[['ut_baseline']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v3_ut_baseline_20200703.tsv', sep = '\t', row.names=T)
+write.table(diff_v3[['ut_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v3_ut_t8w_20200703.tsv', sep = '\t', row.names=T)
+write.table(diff_v3[['baseline_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v3_baseline_t8w_20200703.tsv', sep = '\t', row.names=T)
+
 
 # let's try the chi2 methods as wel
 chisq_all <- chisq.test(cell_count_all)
