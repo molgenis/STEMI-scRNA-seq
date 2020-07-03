@@ -250,7 +250,8 @@ test_two_class_mt <- function(cell_counts, null_distributions, pairs, ps=c(0.5, 
     return(res.table)
   }
   ,cell_counts, null_distributions, mc.cores = ncores)
- return (results)
+  names(results) <- names(pairs)
+  return (results)
 }
 
 ####################################################################################
