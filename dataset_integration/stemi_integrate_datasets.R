@@ -9,6 +9,39 @@ library(ggplot2)
 # Functions        #
 ####################
 
+# add metadata that is based on existing incomplete metadata in the seurat object
+add_imputed_meta_data <- function(seurat_object, column_to_transform, column_to_reference, column_to_create){
+  # add the column
+  seurat_object@meta.data[column_to_create] <- NA
+  # go through the grouping we have for the entire object
+  for(group in unique(seurat_object@meta.data[[column_to_transform]])){
+    # subset to get only this group
+    seurat_group <- seurat_object[,seurat_object@meta.data[[column_to_transform]] == group]
+    best_group <- 'unknown'
+    best_number <- 0
+    # check against the reference column
+    for(reference in unique(seurat_group@meta.data[[column_to_reference]])){
+      # we don't care for the NA reference, if we had all data, we wouldn't need to do this anyway
+      if(is.na(reference) == F){
+        # grab the number of cells in this group, with this reference
+        number_of_reference_in_group <- nrow(seurat_group@meta.data[seurat_group@meta.data[[column_to_reference]] == reference & is.na(seurat_group@meta.data[[column_to_reference]]) == F,])
+        correctpercent <- number_of_reference_in_group/ncol(seurat_group)
+        print(paste(group,"matches",reference,correctpercent,sep=" "))
+        # update numbers if better match
+        if(number_of_reference_in_group > best_number){
+          best_number <- number_of_reference_in_group
+          best_group <- reference
+        }
+      }
+    }
+    print(paste("setting ident:",best_group,"for group", group, sep=" "))
+    # set this best identity
+    seurat_object@meta.data[seurat_object@meta.data[[column_to_transform]] == group,][column_to_create] <- best_group
+    # force cleanup
+    rm(seurat_group)
+  }
+  return(seurat_object)
+}
 
 
 ####################
@@ -79,10 +112,22 @@ cardio.integrated <- FindClusters(cardio.integrated)
 # perform UMAP dimension reduction for visualisation
 cardio.integrated <- RunUMAP(cardio.integrated, dims = 1:20)
 
-# save our efforts
-saveRDS(cardio.integrated, paste(object_loc, 'cardio.integrated_20200625.rds', sep = ''))
-
 # grab our previously defined cell types
 cell_types <- read.table('/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/metadata/cardio.integrated_cell_types_20200630.tsv', sep = '\t', header = T)
 cardio.integrated <- AddMetaData(cardio.integrated, cell_types['cell_type'])
 cardio.integrated <- AddMetaData(cardio.integrated, cell_types['cell_type_lowerres'])
+
+# some may be undefined, we'll impute these, but we do need to keep track
+cardio.integrated@meta.data$ct_was_imputed <- T
+cardio.integrated@meta.data[!is.na(cardio.integrated@meta.data$cell_type), ]$ct_was_imputed <- F
+# add imputed cell types
+cardio.integrated <- add_imputed_meta_data(cardio.integrated, 'seurat_clusters', 'cell_type_lowerres', 'imputed_ct')
+# for the missing cells, set this imputed cell type
+cardio.integrated@meta.data[is.na(cardio.integrated@meta.data$cell_type_lowerres), ]$cell_type_lowerres <- cardio.integrated@meta.data[is.na(cardio.integrated@meta.data$cell_type_lowerres), ]$imputed_ct
+# fix this little thing
+cardio.integrated@meta.data[cardio.integrated@meta.data$orig.ident == 'stemi_v2', ]$chem <- 'V2'
+cardio.integrated@meta.data[is.na(cardio.integrated@meta.data$batch), ]$batch <- cardio.integrated@meta.data[is.na(cardio.integrated@meta.data$batch), ]$lane
+saveRDS(cardio.integrated, paste(object_loc, 'cardio.integrated_20200625.rds', sep = ''))
+
+# save our efforts
+saveRDS(cardio.integrated, paste(object_loc, 'cardio.integrated_20200625.rds', sep = ''))
