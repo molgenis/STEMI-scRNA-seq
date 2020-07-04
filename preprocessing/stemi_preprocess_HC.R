@@ -339,7 +339,7 @@ HC_v3 <- subset(cells_1M, subset = chem == 'V3')
 HC_v2[["percent.mt"]] <- PercentageFeatureSet(HC_v2, pattern = "^MT-")
 HC_v3[["percent.mt"]] <- PercentageFeatureSet(HC_v3, pattern = "^MT-")
 # remove objects cells with too high MT percentage, HBB expression and too few genes expressed
-HC_v2 <- subset(HC_v3, subset = nFeature_RNA > 200 & percent.mt < 10 & HBB < 10)
+HC_v2 <- subset(HC_v2, subset = nFeature_RNA > 200 & percent.mt < 10 & HBB < 10)
 HC_v3 <- subset(HC_v3, subset = nFeature_RNA > 200 & percent.mt < 15 & HBB < 10)
 # do normalization
 HC_v2 <- SCTransform(HC_v2, vars.to.regress = c('percent.mt'))
