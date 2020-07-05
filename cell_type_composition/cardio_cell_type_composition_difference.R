@@ -375,17 +375,15 @@ cellTypes <- cardio.integrated@meta.data$cell_type_lowerres
 cond <- cardio.integrated@meta.data$timepoint.final
 # try to run scDC
 res_scDC_noClust <- scDC_noClustering(cellTypes, subject, calCI = TRUE, 
-                                      calCI_method = c("percentile", "BCa", "multinom"))
+                                      calCI_method = c("percentile", "BCa", "multinom"), ncores = 4)
 # we need to make a condition vector
 conds <- c()
-for(timepoint in unique(metadata$timepoint.final)){
-  # get the number of participants with this timepoint
-  nr_of_participants <- length(unique(metadata[metadata$timepoint.final == timepoint, ]$assignment.final))
-  # repeat for the number of participants
-  conds <- c(conds, rep(timepoint, nr_of_participants))
+for(participant in sort(unique(metadata$assignment.final))){
+  # get the conditions for this participant
+  for(condition in sort(unique(metadata[metadata$assignment.final == participant, ]$timepoint.final))){
+    conds <- c(conds, rep(condition, length(unique(metadata$cell_type_lowerres))))
+  }
 }
-# order for good measure
-conds <- sort(conds)
 
 # view proportions
 barplotCI(res_scDC_noClust, conds)
@@ -415,24 +413,22 @@ cond.v2 <- cardio.integrated.v2@meta.data$timepoint.final
 res_scDC_noClust.v2 <- scDC_noClustering(cellTypes.v2, subject.v2, calCI = TRUE, 
                                          calCI_method = c("percentile", "BCa", "multinom"))
 # we need to make a condition vector
-cond.v2s <- c()
-for(timepoint in unique(metadata.v2$timepoint.final)){
-  # get the number of participants with this timepoint
-  nr_of_participants <- length(unique(metadata.v2[metadata.v2$timepoint.final == timepoint, ]$assignment.final))
-  # repeat for the number of participants
-  cond.v2s <- c(cond.v2s, rep(timepoint, nr_of_participants))
+conds.v2s <- c()
+for(participant in sort(unique(metadata.v2$assignment.final))){
+  # get the conditions for this participant
+  for(condition in sort(unique(metadata.v2[metadata.v2$assignment.final == participant, ]$timepoint.final))){
+    conds.v2s <- c(conds.v2s, rep(condition, length(unique(metadata.v2$cell_type_lowerres))))
+  }
 }
-# order for good measure
-cond.v2s <- sort(cond.v2s)
 
 # view proportions
-barplotCI(res_scDC_noClust.v2, cond.v2s)
+barplotCI(res_scDC_noClust.v2, conds.v2s)
 ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v2_fixed_20200705_barplot.png', dpi = 600, height = 10, width = 10)
 # view density
-densityCI(res_scDC_noClust.v2, cond.v2s)
+densityCI(res_scDC_noClust.v2, conds.v2s)
 ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v2_fixed_20200705_density.png', dpi = 600, height = 10, width = 10)
 # try fitting a GLM
-res_GLM.v2 <- fitGLM(res_scDC_noClust.v2, cond.v2s, pairwise = F)
+res_GLM.v2 <- fitGLM(res_scDC_noClust.v2, conds.v2s, pairwise = F)
 # save the results
 write.table(summary(res_GLM.v2$pool_res_fixed), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v2_fixed_20200705.tsv', header = T, row.names = F)
 write.table(summary(res_GLM.v2$pool_res_random), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v2_random_20200705.tsv', header = T, row.names = F)
@@ -453,24 +449,22 @@ cond.v3 <- cardio.integrated.v3@meta.data$timepoint.final
 res_scDC_noClust.v3 <- scDC_noClustering(cellTypes.v3, subject.v3, calCI = TRUE, 
                                          calCI_method = c("percentile", "BCa", "multinom"))
 # we need to make a condition vector
-cond.v3s <- c()
-for(timepoint in unique(metadata.v3$timepoint.final)){
-  # get the number of participants with this timepoint
-  nr_of_participants <- length(unique(metadata.v3[metadata.v3$timepoint.final == timepoint, ]$assignment.final))
-  # repeat for the number of participants
-  cond.v3s <- c(cond.v3s, rep(timepoint, nr_of_participants))
+conds.v3s <- c()
+for(participant in sort(unique(metadata.v3$assignment.final))){
+  # get the conditions for this participant
+  for(condition in sort(unique(metadata.v3[metadata.v3$assignment.final == participant, ]$timepoint.final))){
+    conds.v3s <- c(conds.v3s, rep(condition, length(unique(metadata.v3$cell_type_lowerres))))
+  }
 }
-# order for good measure
-cond.v3s <- sort(cond.v3s)
 
 # view proportions
-barplotCI(res_scDC_noClust.v3, cond.v3s)
+barplotCI(res_scDC_noClust.v3, conds.v3s)
 ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v3_fixed_20200705_barplot.png', dpi = 600, height = 10, width = 10)
 # view density
-densityCI(res_scDC_noClust.v3, cond.v3s)
+densityCI(res_scDC_noClust.v3, conds.v3s)
 ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v3_fixed_20200705_density.png', dpi = 600, height = 10, width = 10)
 # try fitting a GLM
-res_GLM.v3 <- fitGLM(res_scDC_noClust.v3, cond.v3s, pairwise = F)
+res_GLM.v3 <- fitGLM(res_scDC_noClust.v3, conds.v3s, pairwise = F)
 # save the results
 write.table(summary(res_GLM.v3$pool_res_fixed), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v3_fixed_20200705.tsv', header = T, row.names = F)
 write.table(summary(res_GLM.v3$pool_res_random), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v3_random_20200705.tsv', header = T, row.names = F)
