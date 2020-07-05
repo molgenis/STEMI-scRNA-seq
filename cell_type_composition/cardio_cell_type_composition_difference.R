@@ -2,6 +2,7 @@
 # libraries                                                                        #
 ####################################################################################
 library(Seurat)
+library(ggplot2)
 library(parallel)
 
 ####################################################################################
@@ -259,6 +260,37 @@ test_two_class_mt <- function(cell_counts, null_distributions, pairs, ps=c(0.5, 
   return (results)
 }
 
+perform_wilcoxon_rank_sum <- function(metadata){
+  # let's try wilcoxon rank sums
+  w.rank.sum.cts <- list()
+  for(cell_type in unique(metadata$cell_type_lowerres)){
+    timepointsvector <- c()
+    proportions <- c()
+    # check for timepoints
+    for(timepoint in unique(metadata$timepoint.final)){
+      # check the participants
+      for(participant in unique(metadata[metadata$timepoint.final == timepoint & metadata$cell_type_lowerres == cell_type, ]$assignment.final)){
+        # get the number of cells for the complete combination
+        ct_cond_part_number <- nrow(metadata[metadata$timepoint.final == timepoint & metadata$cell_type_lowerres == cell_type & metadata$assignment.final == participant, ])
+        # get the total number of cells regardsless of cell type
+        cond_part_number <- nrow(metadata[metadata$timepoint.final == timepoint & metadata$assignment.final == participant, ])
+        # get proportion
+        proportion <- ct_cond_part_number/cond_part_number
+        # add to proportions
+        proportions <- c(proportions, proportion) # I know this is horribly inefficient, will fix this
+      }
+      # add the number of timepoints
+      timepointsvector <- c(timepointsvector, rep(timepoint, length(unique(metadata[metadata$timepoint.final == timepoint & metadata$cell_type_lowerres == cell_type, ]$assignment.final))))
+    }
+    # do the test
+    w.rank.sum <- pairwise.wilcox.test(proportions, timepointsvector)
+    # add the results
+    w.rank.sum.cts[[cell_type]] <- w.rank.sum
+  }
+  return(w.rank.sum.cts)
+}
+
+
 ####################################################################################
 # main code                                                                        #
 ####################################################################################
@@ -282,9 +314,9 @@ pairs[['ut_t8w']] <- ut_t8w
 # get the results
 diff_all <- test_two_class_mt(cell_count_all, null_dist_all, pairs)
 # write results
-write.table(diff_all[['ut_baseline']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_baseline_20200703.tsv', sep = '\t', row.names=T)
-write.table(diff_all[['ut_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_t8w_20200703.tsv', sep = '\t', row.names=T)
-write.table(diff_all[['baseline_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_baseline_t8w_20200703.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['ut_baseline']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_baseline_20200705.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['ut_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_t8w_20200705.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['baseline_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_baseline_t8w_20200705.tsv', sep = '\t', row.names=T)
 
 metadata_v2 <- metadata[metadata$chem == 'V2', ]
 cell_count_v2 <- get_cell_counts(metadata_v2)
@@ -293,9 +325,9 @@ null_dist_v2 <- get_null_distributions_mt(cell_count_v2)
 # get the results
 diff_v2 <- test_two_class_mt(cell_count_v2, null_dist_v2, pairs)
 # write results
-write.table(diff_v2[['ut_baseline']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v2_ut_baseline_20200703.tsv', sep = '\t', row.names=T)
-write.table(diff_v2[['ut_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v2_ut_t8w_20200703.tsv', sep = '\t', row.names=T)
-write.table(diff_v2[['baseline_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v2_baseline_t8w_20200703.tsv', sep = '\t', row.names=T)
+write.table(diff_v2[['ut_baseline']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v2_ut_baseline_20200705.tsv', sep = '\t', row.names=T)
+write.table(diff_v2[['ut_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v2_ut_t8w_20200705.tsv', sep = '\t', row.names=T)
+write.table(diff_v2[['baseline_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v2_baseline_t8w_20200705.tsv', sep = '\t', row.names=T)
 
 metadata_v3 <- metadata[metadata$chem == 'V3', ]
 cell_count_v3 <- get_cell_counts(metadata_v3)
@@ -304,12 +336,135 @@ null_dist_v3 <- get_null_distributions_mt(cell_count_v3)
 # get the results
 diff_v3 <- test_two_class_mt(cell_count_v3, null_dist_v3, pairs)
 # write results
-write.table(diff_v3[['ut_baseline']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v3_ut_baseline_20200703.tsv', sep = '\t', row.names=T)
-write.table(diff_v3[['ut_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v3_ut_t8w_20200703.tsv', sep = '\t', row.names=T)
-write.table(diff_v3[['baseline_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v3_baseline_t8w_20200703.tsv', sep = '\t', row.names=T)
+write.table(diff_v3[['ut_baseline']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v3_ut_baseline_20200705.tsv', sep = '\t', row.names=T)
+write.table(diff_v3[['ut_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v3_ut_t8w_20200705.tsv', sep = '\t', row.names=T)
+write.table(diff_v3[['baseline_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v3_baseline_t8w_20200705.tsv', sep = '\t', row.names=T)
+
+
 
 
 # let's try the chi2 methods as wel
 chisq_all <- chisq.test(cell_count_all)
 chisq_v2 <- chisq.test(cell_count_v2)
 chisq_v3 <- chisq.test(cell_count_v3)
+
+
+
+# let's try the wilcoxon rank sums test
+w.rank.sum.cts.all <- perform_wilcoxon_rank_sum(metadata)
+w.rank.sum.cts.v2 <- perform_wilcoxon_rank_sum(metadata_v2)
+w.rank.sum.cts.v3 <- perform_wilcoxon_rank_sum(metadata_v3)
+# check the cell types
+for(ct in names(w.rank.sum.cts.all)){
+  write.table(w.rank.sum.cts.all[[ct]]$p.value, paste('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/wilcoxon_ranked_sum/all_', ct, '.tsv', sep = ''), sep = '\t', row.names = T)
+  write.table(w.rank.sum.cts.v2[[ct]]$p.value, paste('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/wilcoxon_ranked_sum/v2_', ct, '.tsv', sep = ''), sep = '\t', row.names = T)
+  write.table(w.rank.sum.cts.v3[[ct]]$p.value, paste('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/wilcoxon_ranked_sum/v3_', ct, '.tsv', sep = ''), sep = '\t', row.names = T)
+}
+
+
+# now trying the scDC method
+# grab metadata
+metadata <- cardio.integrated@meta.data
+#exprsMat <- sim$sim_exprsMat
+exprsMat <- cardio.integrated@assays$SCT@data
+#subject <- sim$sim_subject
+subject <- paste(cardio.integrated@meta.data$assignment.final, cardio.integrated@meta.data$timepoint.final, sep = '.')
+#cellTypes <- sim$sim_cellTypes
+cellTypes <- cardio.integrated@meta.data$cell_type_lowerres
+#cond <- sim$sim_cond
+cond <- cardio.integrated@meta.data$timepoint.final
+# try to run scDC
+res_scDC_noClust <- scDC_noClustering(cellTypes, subject, calCI = TRUE, 
+                                      calCI_method = c("percentile", "BCa", "multinom"), ncores = 4)
+# we need to make a condition vector
+conds <- c()
+for(participant in sort(unique(metadata$assignment.final))){
+  # get the conditions for this participant
+  for(condition in sort(unique(metadata[metadata$assignment.final == participant, ]$timepoint.final))){
+    conds <- c(conds, rep(condition, length(unique(metadata$cell_type_lowerres))))
+  }
+}
+
+# view proportions
+barplotCI(res_scDC_noClust, conds)
+ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/all_fixed_20200705_barplot.png', dpi = 600, height = 10, width = 10)
+# view density
+densityCI(res_scDC_noClust, conds)
+ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/all_fixed_20200705_density.png', dpi = 600, height = 10, width = 10)
+# try fitting a GLM
+res_GLM <- fitGLM(res_scDC_noClust, conds, pairwise = F)
+# save the results
+write.table(summary(res_GLM$pool_res_fixed), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/all_fixed_20200705.tsv', header = T, row.names = F)
+write.table(summary(res_GLM$pool_res_random), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/all_random_20200705.tsv', header = T, row.names = F)
+
+# now for v2
+cardio.integrated.v2 <- subset(cardio.integrated, subset = chem == 'V2')
+# grab metadata.v2
+metadata.v2 <- cardio.integrated.v2@meta.data
+#metadata.v2 <- sim$sim_metadata.v2
+exprsMat.v2 <- cardio.integrated.v2@assays$SCT@data
+#metadata.v2 <- sim$sim_metadata.v2
+subject.v2 <- paste(cardio.integrated.v2@meta.data$assignment.final, cardio.integrated.v2@meta.data$timepoint.final, sep = '.')
+#cellTypes.v2 <- sim$sim_cellTypes.v2
+cellTypes.v2 <- cardio.integrated.v2@meta.data$cell_type_lowerres
+#cond.v2 <- sim$sim_cond.v2
+cond.v2 <- cardio.integrated.v2@meta.data$timepoint.final
+# try to run scDC
+res_scDC_noClust.v2 <- scDC_noClustering(cellTypes.v2, subject.v2, calCI = TRUE, 
+                                         calCI_method = c("percentile", "BCa", "multinom"))
+# we need to make a condition vector
+conds.v2s <- c()
+for(participant in sort(unique(metadata.v2$assignment.final))){
+  # get the conditions for this participant
+  for(condition in sort(unique(metadata.v2[metadata.v2$assignment.final == participant, ]$timepoint.final))){
+    conds.v2s <- c(conds.v2s, rep(condition, length(unique(metadata.v2$cell_type_lowerres))))
+  }
+}
+
+# view proportions
+barplotCI(res_scDC_noClust.v2, conds.v2s)
+ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v2_fixed_20200705_barplot.png', dpi = 600, height = 10, width = 10)
+# view density
+densityCI(res_scDC_noClust.v2, conds.v2s)
+ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v2_fixed_20200705_density.png', dpi = 600, height = 10, width = 10)
+# try fitting a GLM
+res_GLM.v2 <- fitGLM(res_scDC_noClust.v2, conds.v2s, pairwise = F)
+# save the results
+write.table(summary(res_GLM.v2$pool_res_fixed), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v2_fixed_20200705.tsv', header = T, row.names = F)
+write.table(summary(res_GLM.v2$pool_res_random), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v2_random_20200705.tsv', header = T, row.names = F)
+
+# now for v3
+cardio.integrated.v3 <- subset(cardio.integrated, subset = chem == 'V3')
+# grab metadata.v3
+metadata.v3 <- cardio.integrated.v3@meta.data
+#metadata.v3 <- sim$sim_metadata.v3
+exprsMat.v3 <- cardio.integrated.v3@assays$SCT@data
+#metadata.v3 <- sim$sim_metadata.v3
+subject.v3 <- paste(cardio.integrated.v3@meta.data$assignment.final, cardio.integrated.v3@meta.data$timepoint.final, sep = '.')
+#cellTypes.v3 <- sim$sim_cellTypes.v3
+cellTypes.v3 <- cardio.integrated.v3@meta.data$cell_type_lowerres
+#cond.v3 <- sim$sim_cond.v3
+cond.v3 <- cardio.integrated.v3@meta.data$timepoint.final
+# try to run scDC
+res_scDC_noClust.v3 <- scDC_noClustering(cellTypes.v3, subject.v3, calCI = TRUE, 
+                                         calCI_method = c("percentile", "BCa", "multinom"))
+# we need to make a condition vector
+conds.v3s <- c()
+for(participant in sort(unique(metadata.v3$assignment.final))){
+  # get the conditions for this participant
+  for(condition in sort(unique(metadata.v3[metadata.v3$assignment.final == participant, ]$timepoint.final))){
+    conds.v3s <- c(conds.v3s, rep(condition, length(unique(metadata.v3$cell_type_lowerres))))
+  }
+}
+
+# view proportions
+barplotCI(res_scDC_noClust.v3, conds.v3s)
+ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v3_fixed_20200705_barplot.png', dpi = 600, height = 10, width = 10)
+# view density
+densityCI(res_scDC_noClust.v3, conds.v3s)
+ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v3_fixed_20200705_density.png', dpi = 600, height = 10, width = 10)
+# try fitting a GLM
+res_GLM.v3 <- fitGLM(res_scDC_noClust.v3, conds.v3s, pairwise = F)
+# save the results
+write.table(summary(res_GLM.v3$pool_res_fixed), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v3_fixed_20200705.tsv', header = T, row.names = F)
+write.table(summary(res_GLM.v3$pool_res_random), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v3_random_20200705.tsv', header = T, row.names = F)
