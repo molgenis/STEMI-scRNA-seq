@@ -404,15 +404,15 @@ cardio.integrated.v2 <- subset(cardio.integrated, subset = chem == 'V2')
 # grab metadata.v2
 metadata.v2 <- cardio.integrated.v2@meta.data
 #metadata.v2 <- sim$sim_metadata.v2
-metadata.v2 <- cardio.integrated.v2@assays$SCT@data
+exprsMat.v2 <- cardio.integrated.v2@assays$SCT@data
 #metadata.v2 <- sim$sim_metadata.v2
-metadata.v2 <- paste(cardio.integrated.v2@meta.data$assignment.final, cardio.integrated.v2@meta.data$timepoint.final, sep = '.')
+subject.v2 <- paste(cardio.integrated.v2@meta.data$assignment.final, cardio.integrated.v2@meta.data$timepoint.final, sep = '.')
 #cellTypes.v2 <- sim$sim_cellTypes.v2
 cellTypes.v2 <- cardio.integrated.v2@meta.data$cell_type_lowerres
 #cond.v2 <- sim$sim_cond.v2
 cond.v2 <- cardio.integrated.v2@meta.data$timepoint.final
 # try to run scDC
-res_scDC_noClust.v2 <- scDC_noClustering(cellTypes.v2, metadata.v2, calCI = TRUE, 
+res_scDC_noClust.v2 <- scDC_noClustering(cellTypes.v2, subject.v2, calCI = TRUE, 
                                          calCI_method = c("percentile", "BCa", "multinom"))
 # we need to make a condition vector
 cond.v2s <- c()
@@ -438,19 +438,19 @@ write.table(summary(res_GLM.v2$pool_res_fixed), '/groups/umcg-wijmenga/tmp01/pro
 write.table(summary(res_GLM.v2$pool_res_random), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v2_random_20200705.tsv', header = T, row.names = F)
 
 # now for v3
-cardio.integrated.v3 <- subset(cardio.integrated, subset = chem == 'v3')
+cardio.integrated.v3 <- subset(cardio.integrated, subset = chem == 'V3')
 # grab metadata.v3
 metadata.v3 <- cardio.integrated.v3@meta.data
 #metadata.v3 <- sim$sim_metadata.v3
-metadata.v3 <- cardio.integrated.v3@assays$SCT@data
+exprsMat.v3 <- cardio.integrated.v3@assays$SCT@data
 #metadata.v3 <- sim$sim_metadata.v3
-metadata.v3 <- paste(cardio.integrated.v3@meta.data$assignment.final, cardio.integrated.v3@meta.data$timepoint.final, sep = '.')
+subject.v3 <- paste(cardio.integrated.v3@meta.data$assignment.final, cardio.integrated.v3@meta.data$timepoint.final, sep = '.')
 #cellTypes.v3 <- sim$sim_cellTypes.v3
 cellTypes.v3 <- cardio.integrated.v3@meta.data$cell_type_lowerres
 #cond.v3 <- sim$sim_cond.v3
 cond.v3 <- cardio.integrated.v3@meta.data$timepoint.final
 # try to run scDC
-res_scDC_noClust.v3 <- scDC_noClustering(cellTypes.v3, metadata.v3, calCI = TRUE, 
+res_scDC_noClust.v3 <- scDC_noClustering(cellTypes.v3, subject.v3, calCI = TRUE, 
                                          calCI_method = c("percentile", "BCa", "multinom"))
 # we need to make a condition vector
 cond.v3s <- c()
