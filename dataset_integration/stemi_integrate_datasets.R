@@ -127,7 +127,9 @@ cardio.integrated@meta.data[is.na(cardio.integrated@meta.data$cell_type_lowerres
 # fix this little thing
 cardio.integrated@meta.data[cardio.integrated@meta.data$orig.ident == 'stemi_v2', ]$chem <- 'V2'
 cardio.integrated@meta.data[is.na(cardio.integrated@meta.data$batch), ]$batch <- cardio.integrated@meta.data[is.na(cardio.integrated@meta.data$batch), ]$lane
-saveRDS(cardio.integrated, paste(object_loc, 'cardio.integrated_20200625.rds', sep = ''))
+
+# remove doublets mono 4
+cardio.integrated <- subset(cardio.integrated, subset = cell_type != 'mono 4')
 
 # save our efforts
 saveRDS(cardio.integrated, paste(object_loc, 'cardio.integrated_20200625.rds', sep = ''))

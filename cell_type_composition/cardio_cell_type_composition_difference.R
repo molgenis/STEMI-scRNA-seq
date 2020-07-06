@@ -4,6 +4,9 @@
 library(Seurat)
 library(ggplot2)
 library(parallel)
+library(future.apply)
+library(lme4)
+library(scdney)
 
 ####################################################################################
 # functions                                                                        #
@@ -290,6 +293,212 @@ perform_wilcoxon_rank_sum <- function(metadata){
   return(w.rank.sum.cts)
 }
 
+fitGLM <- function(res, condition, subject_effect = TRUE, pairwise = TRUE, fixed_only = FALSE, verbose = TRUE){
+  
+  fit_random <- list()
+  fit_fixed <- list()
+  for(i in 1:ncol(res$nstar)){
+    # idx <- indexes_list[[i]]
+    if(verbose){
+      if(i%%10==0){
+        print(paste("fitting GLM...", i))
+      }
+    }
+    
+    
+    glm_df <-  cbind(res$info[,1:2], res$nstar[,i])
+    
+    # glm_df <- melt(glm_df)
+    colnames(glm_df) <- c("cellTypes", "subject", "cell_count")
+    glm_df$cond <- condition
+    
+    if(subject_effect){
+      if(pairwise){
+        
+        fit_fixed[[i]] <- stats::glm(cell_count ~ cellTypes + cond +  cellTypes:cond + subject,
+                                     data = glm_df, family = poisson(link=log))
+        if(!fixed_only){
+          fit_random[[i]] <- lme4::glmer(cell_count ~ cellTypes + cond +  cellTypes:cond + (1 | subject ),
+                                         data = glm_df, family = poisson(link=log),
+                                         control = glmerControl(nAGQ = 0L))
+        }
+      }else{
+        fit_fixed[[i]] <- stats::glm(cell_count ~ cellTypes + cond +  cellTypes:cond + subject,
+                                     data = glm_df, family = poisson(link=log))
+        if(!fixed_only){
+          
+          fit_random[[i]] <- lme4::glmer(cell_count ~ cellTypes + cond + cellTypes:cond + (1 | subject ),
+                                         data = glm_df, family = poisson(link=log),
+                                         control = glmerControl(nAGQ = 0L))
+        }
+      }
+    }else{
+      fit_fixed[[i]] <- stats::glm(cell_count ~ cellTypes + cond +  cellTypes:cond, data = glm_df,
+                                   family = poisson(link=log))
+    }
+    
+  }
+  
+  if(!subject_effect){
+    fixed_only = TRUE
+  }
+  
+  if(!fixed_only){
+    pool_res_random = mice::pool(fit_random)
+    pool_res_fixed = mice::pool(fit_fixed)
+    return(list(pool_res_random = pool_res_random,
+                pool_res_fixed = pool_res_fixed,
+                fit_random = fit_random,
+                fit_fixed = fit_fixed))
+  }else{
+    pool_res_fixed = mice::pool(fit_fixed)
+    return(list(pool_res_fixed = pool_res_fixed,
+                fit_fixed = fit_fixed))
+  }
+  
+}
+
+fitGLM_mt <- function(res, condition, subject_effect = TRUE, pairwise = TRUE, fixed_only = FALSE, verbose = TRUE){
+  fit_fixed <- future_apply(res$nstar, 2, function(x){  
+    print('a thread has started work')
+    glm_df <-  cbind(res$info[,1:2], x)
+    colnames(glm_df) <- c("cellTypes", "subject", "cell_count")
+    glm_df$cond <- condition
+    if(subject_effect){
+      if(pairwise){
+        print('a thread has started a fixed glm')
+        fit_fixed_i <- stats::glm(cell_count ~ cellTypes + cond +  cellTypes:cond + subject,
+                                     data = glm_df,
+                                     family = poisson(link=log))
+      }else{
+        print('a thread has started a fixed glm')
+        fit_fixed_i <- stats::glm(cell_count ~ cellTypes + cond +  cellTypes:cond + subject,
+                                     data = glm_df, family = poisson(link=log))
+      }
+    }else{
+      print('a thread has started a fixed glm')
+      fit_fixed_i <- stats::glm(cell_count ~ cellTypes + cond +  cellTypes:cond, data = glm_df, family = poisson(link=log))
+    }
+    print('a thread has finished work')
+    return(fit_fixed_i)
+  })
+  fit_random <- list()
+  if(!subject_effect){
+    fixed_only = TRUE
+  }
+  else{
+    if(pairwise){
+      fit_random <- future_apply(res$nstar, 2, function(x){
+        print('a thread has started a paired glm')
+        glm_df <-  cbind(res$info[,1:2], x)
+        colnames(glm_df) <- c("cellTypes", "subject", "cell_count")
+        glm_df$cond <- condition
+        fit_random_i <- lme4::glmer(cell_count ~ cellTypes + cond + cellTypes:cond + (1 | subject ), data = glm_df, family = poisson(link=log), control = glmerControl(nAGQ = 0L))
+        print('a thread has finished work')
+        return(fit_random_i)
+      })
+    }
+    else{
+      fit_random <- future_apply(res$nstar, 2, function(x){
+        print('a thread has started a paired glm')
+        glm_df <-  cbind(res$info[,1:2], x)
+        colnames(glm_df) <- c("cellTypes", "subject", "cell_count")
+        glm_df$cond <- condition
+        fit_random_i <- lme4::glmer(cell_count ~ cellTypes + cond + cellTypes:cond + (1 | subject ), data = glm_df, family = poisson(link=log), control = glmerControl(nAGQ = 0L))
+        print('a thread has finished work')
+        return(fit_random_i)
+      })
+    }
+  }
+  
+  if(!fixed_only){
+    pool_res_random = mice::pool(fit_random)
+    pool_res_fixed = mice::pool(fit_fixed)
+    return(list(pool_res_random = pool_res_random,
+                pool_res_fixed = pool_res_fixed,
+                fit_random = fit_random,
+                fit_fixed = fit_fixed))
+  }else{
+    pool_res_fixed = mice::pool(fit_fixed)
+    return(list(pool_res_fixed = pool_res_fixed,
+                fit_fixed = fit_fixed))
+  }
+  
+}
+
+
+fitGLM_mc <- function(res, condition, subject_effect = TRUE, pairwise = TRUE, fixed_only = FALSE, verbose = TRUE, mc.cores = 1){
+  res_list <- list()
+  for(i in 1:ncol(res$nstar)){
+    res_list[[i]] <- res$nstar[,i]
+  }
+  fit_fixed <- mclapply(res_list, function(x){
+    print('a thread has started work')
+    glm_df <-  cbind(res$info[,1:2], x)
+    colnames(glm_df) <- c("cellTypes", "subject", "cell_count")
+    glm_df$cond <- condition
+    if(subject_effect){
+      if(pairwise){
+        print('a thread has started a fixed glm')
+        fit_fixed_i <- stats::glm(cell_count ~ cellTypes + cond +  cellTypes:cond + subject,
+                                  data = glm_df,
+                                  family = poisson(link=log))
+      }else{
+        print('a thread has started a fixed glm')
+        fit_fixed_i <- stats::glm(cell_count ~ cellTypes + cond +  cellTypes:cond + subject,
+                                  data = glm_df, family = poisson(link=log))
+      }
+    }else{
+      print('a thread has started a fixed glm')
+      fit_fixed_i <- stats::glm(cell_count ~ cellTypes + cond +  cellTypes:cond, data = glm_df, family = poisson(link=log))
+    }
+    print('a thread has finished work')
+    return(fit_fixed_i)
+  }, mc.cores = mc.cores)
+  fit_random <- list()
+  if(!subject_effect){
+    fixed_only = TRUE
+  }
+  else{
+    if(pairwise){
+      fit_random <- mclapply(res_list, function(x){
+        print('a thread has started a paired glm')
+        glm_df <-  cbind(res$info[,1:2], x)
+        colnames(glm_df) <- c("cellTypes", "subject", "cell_count")
+        glm_df$cond <- condition
+        fit_random_i <- lme4::glmer(cell_count ~ cellTypes + cond + cellTypes:cond + (1 | subject ), data = glm_df, family = poisson(link=log), control = glmerControl(nAGQ = 0L))
+        print('a thread has finished work')
+        return(fit_random_i)
+      }, mc.cores = mc.cores)
+    }
+    else{
+      fit_random <- mclapply(res_list, function(x){
+        print('a thread has started a paired glm')
+        glm_df <-  cbind(res$info[,1:2], x)
+        colnames(glm_df) <- c("cellTypes", "subject", "cell_count")
+        glm_df$cond <- condition
+        fit_random_i <- lme4::glmer(cell_count ~ cellTypes + cond + cellTypes:cond + (1 | subject ), data = glm_df, family = poisson(link=log), control = glmerControl(nAGQ = 0L))
+        print('a thread has finished work')
+        return(fit_random_i)
+      }, mc.cores = mc.cores)
+    }
+  }
+  
+  if(!fixed_only){
+    pool_res_random = mice::pool(fit_random)
+    pool_res_fixed = mice::pool(fit_fixed)
+    return(list(pool_res_random = pool_res_random,
+                pool_res_fixed = pool_res_fixed,
+                fit_random = fit_random,
+                fit_fixed = fit_fixed))
+  }else{
+    pool_res_fixed = mice::pool(fit_fixed)
+    return(list(pool_res_fixed = pool_res_fixed,
+                fit_fixed = fit_fixed))
+  }
+  
+}
+
 
 ####################################################################################
 # main code                                                                        #
@@ -375,7 +584,7 @@ cellTypes <- cardio.integrated@meta.data$cell_type_lowerres
 cond <- cardio.integrated@meta.data$timepoint.final
 # try to run scDC
 res_scDC_noClust <- scDC_noClustering(cellTypes, subject, calCI = TRUE, 
-                                      calCI_method = c("percentile", "BCa", "multinom"), ncores = 4)
+                                      calCI_method = c("percentile", "BCa", "multinom"), ncores = 12, nboot = 10000)
 # we need to make a condition vector
 conds <- c()
 for(participant in sort(unique(metadata$assignment.final))){
@@ -392,10 +601,11 @@ ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiolog
 densityCI(res_scDC_noClust, conds)
 ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/all_fixed_20200705_density.png', dpi = 600, height = 10, width = 10)
 # try fitting a GLM
-res_GLM <- fitGLM(res_scDC_noClust, conds, pairwise = F)
+#plan(multiprocess)
+res_GLM <- fitGLM_mc(res_scDC_noClust, conds, pairwise = F, mc.cores = 12)
 # save the results
-write.table(summary(res_GLM$pool_res_fixed), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/all_fixed_20200705.tsv', header = T, row.names = F)
-write.table(summary(res_GLM$pool_res_random), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/all_random_20200705.tsv', header = T, row.names = F)
+write.table(summary(res_GLM$pool_res_fixed), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/all_fixed_20200705.tsv', row.names = F)
+write.table(summary(res_GLM$pool_res_random), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/all_random_20200705.tsv', row.names = F)
 
 # now for v2
 cardio.integrated.v2 <- subset(cardio.integrated, subset = chem == 'V2')
@@ -411,7 +621,7 @@ cellTypes.v2 <- cardio.integrated.v2@meta.data$cell_type_lowerres
 cond.v2 <- cardio.integrated.v2@meta.data$timepoint.final
 # try to run scDC
 res_scDC_noClust.v2 <- scDC_noClustering(cellTypes.v2, subject.v2, calCI = TRUE, 
-                                         calCI_method = c("percentile", "BCa", "multinom"))
+                                         calCI_method = c("percentile", "BCa", "multinom"), ncores = 12, nboot = 10000)
 # we need to make a condition vector
 conds.v2s <- c()
 for(participant in sort(unique(metadata.v2$assignment.final))){
@@ -428,10 +638,10 @@ ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiolog
 densityCI(res_scDC_noClust.v2, conds.v2s)
 ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v2_fixed_20200705_density.png', dpi = 600, height = 10, width = 10)
 # try fitting a GLM
-res_GLM.v2 <- fitGLM(res_scDC_noClust.v2, conds.v2s, pairwise = F)
+res_GLM.v2 <- fitGLM_mc(res_scDC_noClust.v2, conds.v2s, pairwise = F, mc.cores = 12)
 # save the results
-write.table(summary(res_GLM.v2$pool_res_fixed), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v2_fixed_20200705.tsv', header = T, row.names = F)
-write.table(summary(res_GLM.v2$pool_res_random), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v2_random_20200705.tsv', header = T, row.names = F)
+write.table(summary(res_GLM.v2$pool_res_fixed), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v2_fixed_20200705.tsv', row.names = F)
+write.table(summary(res_GLM.v2$pool_res_random), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v2_random_20200705.tsv', row.names = F)
 
 # now for v3
 cardio.integrated.v3 <- subset(cardio.integrated, subset = chem == 'V3')
@@ -447,7 +657,7 @@ cellTypes.v3 <- cardio.integrated.v3@meta.data$cell_type_lowerres
 cond.v3 <- cardio.integrated.v3@meta.data$timepoint.final
 # try to run scDC
 res_scDC_noClust.v3 <- scDC_noClustering(cellTypes.v3, subject.v3, calCI = TRUE, 
-                                         calCI_method = c("percentile", "BCa", "multinom"))
+                                         calCI_method = c("percentile", "BCa", "multinom"), ncores = 12, nboot = 10000)
 # we need to make a condition vector
 conds.v3s <- c()
 for(participant in sort(unique(metadata.v3$assignment.final))){
@@ -464,7 +674,7 @@ ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiolog
 densityCI(res_scDC_noClust.v3, conds.v3s)
 ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v3_fixed_20200705_density.png', dpi = 600, height = 10, width = 10)
 # try fitting a GLM
-res_GLM.v3 <- fitGLM(res_scDC_noClust.v3, conds.v3s, pairwise = F)
+res_GLM.v3 <- fitGLM_mc(res_scDC_noClust.v3, conds.v3s, pairwise = F, mc.cores = 12)
 # save the results
-write.table(summary(res_GLM.v3$pool_res_fixed), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v3_fixed_20200705.tsv', header = T, row.names = F)
-write.table(summary(res_GLM.v3$pool_res_random), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v3_random_20200705.tsv', header = T, row.names = F)
+write.table(summary(res_GLM.v3$pool_res_fixed), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v3_fixed_20200705.tsv', row.names = F)
+write.table(summary(res_GLM.v3$pool_res_random), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v3_random_20200705.tsv', row.names = F)
