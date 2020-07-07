@@ -654,24 +654,20 @@ chisq_all <- chisq.test(cell_count_all)
 chisq_v2 <- chisq.test(cell_count_v2)
 chisq_v3 <- chisq.test(cell_count_v3)
 
+# fisher exact as well
+fisher_all <- perform_fisher_exact(metadata)
+fisher_v2 <- perform_fisher_exact(metadata_v2)
+fisher_v3 <- perform_fisher_exact(metadata_v3)
 
-fisher.result.cts <- list()
-# let's try the fisher exact test as well
-for(cell_type in colnames(cell_count_all)){
-  # get the number of cells for the cell type per condition
-  nr_of_cell_type <- cell_count_all[[cell_type]]
-  # get the number of cells per condition
-  total_number_of_cells <- rowSums(cell_count_all)
-  # get the non-cell type cells per condition
-  nr_of_cells_not_cell_type <- total_number_of_cells - nr_of_cell_type
-  # create frame
-  contingency_table <- data.frame(nr_of_cell_type, nr_of_cells_not_cell_type, row.names = rownames(cell_count_all))
-  colnames(contingency_table) <- c(cell_type, 'other')
-  # do the fisher exact test
-  fisher.result <- fisher.test(contingency_table)
-  # add result
-  fisher.result.cts[[cell_type]] <- fisher.result
-}
+# kruskal-wallace too
+k.wallace_all <- perform_kruskal_wallace(metadata)
+k.wallace_v2 <- perform_kruskal_wallace(metadata_v2)
+k.wallace_v3 <- perform_kruskal_wallace(metadata_v3)
+
+# do a dunn post-hoc test
+dunn_all <- perform_dunn_test(metadata)
+dunn_v2 <- perform_dunn_test(metadata_v2)
+dunn_v3 <- perform_dunn_test(metadata_v3)
 
 
 # let's try the wilcoxon rank sums test
