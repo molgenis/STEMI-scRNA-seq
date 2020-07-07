@@ -7,6 +7,7 @@ library(parallel)
 library(future.apply)
 library(lme4)
 library(scdney)
+library(dunn.test)
 
 ####################################################################################
 # functions                                                                        #
@@ -263,34 +264,130 @@ test_two_class_mt <- function(cell_counts, null_distributions, pairs, ps=c(0.5, 
   return (results)
 }
 
-perform_wilcoxon_rank_sum <- function(metadata){
+perform_wilcoxon_rank_sum <- function(metadata, p.adjust.method='bonferroni'){
+#  # let's try wilcoxon rank sums
+#  w.rank.sum.cts <- list()
+#  for(cell_type in unique(metadata$cell_type_lowerres)){
+#    timepointsvector <- c()
+#    proportions <- c()
+#    # check for timepoints
+#    for(timepoint in unique(metadata$timepoint.final)){
+#      # check the participants
+#      for(participant in unique(metadata[metadata$timepoint.final == timepoint & metadata$cell_type_lowerres == cell_type, ]$assignment.final)){
+#        # get the number of cells for the complete combination
+#        ct_cond_part_number <- nrow(metadata[metadata$timepoint.final == timepoint & metadata$cell_type_lowerres == cell_type & metadata$assignment.final == participant, ])
+#        # get the total number of cells regardsless of cell type
+#        cond_part_number <- nrow(metadata[metadata$timepoint.final == timepoint & metadata$assignment.final == participant, ])
+#        # get proportion
+#        proportion <- ct_cond_part_number/cond_part_number
+#        # add to proportions
+#        proportions <- c(proportions, proportion) # I know this is horribly inefficient, will fix this
+#      }
+#      # add the number of timepoints
+#      timepointsvector <- c(timepointsvector, rep(timepoint, length(unique(metadata[metadata$timepoint.final == timepoint & metadata$cell_type_lowerres == cell_type, ]$assignment.final))))
+#    }
+#    # do the test
+#    w.rank.sum <- pairwise.wilcox.test(proportions, timepointsvector)
+#    # add the results
+#    w.rank.sum.cts[[cell_type]] <- w.rank.sum
+#  }
+  w.rank.sum.cts <- perform_categorical_test(metadata, use_proportion = T, test.use = 'wilcoxon.rank.sum', p.adjust.method = p.adjust.method)
+  return(w.rank.sum.cts)
+}
+
+perform_kruskal_wallace <- function(metadata, use_proportion=T, p.adjust.method='bonferroni'){
+  k.wallace.cts <- perform_categorical_test(metadata, use_proportion = use_proportion, test.use = 'kruskal.wallace', p.adjust.method = p.adjust.method)
+  return(k.wallace.cts)
+}
+
+perform_dunn_test <- function(metadata, use_proportion=T, p.adjust.method='bonferroni'){
+  dunn.cts <- perform_categorical_test(metadata, use_proportion = use_proportion, test.use = 'dunn', p.adjust.method = p.adjust.method)
+  return(dunn.cts)
+}
+
+perform_categorical_test <- function(metadata, use_proportion=T, test.use='kruskal.wallace', p.adjust.method='bonferroni'){
   # let's try wilcoxon rank sums
-  w.rank.sum.cts <- list()
+  tests.cts <- list()
   for(cell_type in unique(metadata$cell_type_lowerres)){
     timepointsvector <- c()
-    proportions <- c()
+    values <- c()
     # check for timepoints
     for(timepoint in unique(metadata$timepoint.final)){
       # check the participants
       for(participant in unique(metadata[metadata$timepoint.final == timepoint & metadata$cell_type_lowerres == cell_type, ]$assignment.final)){
         # get the number of cells for the complete combination
         ct_cond_part_number <- nrow(metadata[metadata$timepoint.final == timepoint & metadata$cell_type_lowerres == cell_type & metadata$assignment.final == participant, ])
-        # get the total number of cells regardsless of cell type
-        cond_part_number <- nrow(metadata[metadata$timepoint.final == timepoint & metadata$assignment.final == participant, ])
-        # get proportion
-        proportion <- ct_cond_part_number/cond_part_number
-        # add to proportions
-        proportions <- c(proportions, proportion) # I know this is horribly inefficient, will fix this
+        if(use_proportion){
+          # get the total number of cells regardsless of cell type
+          cond_part_number <- nrow(metadata[metadata$timepoint.final == timepoint & metadata$assignment.final == participant, ])
+          # get proportion
+          value <- ct_cond_part_number/cond_part_number
+          # add to proportions
+          values <- c(values, value) # I know this is horribly inefficient, will fix this
+        }
+        else{
+          values <- c(values, ct_cond_part_number) # I know this is horribly inefficient, will fix this
+        }
+        
       }
       # add the number of timepoints
       timepointsvector <- c(timepointsvector, rep(timepoint, length(unique(metadata[metadata$timepoint.final == timepoint & metadata$cell_type_lowerres == cell_type, ]$assignment.final))))
     }
     # do the test
-    w.rank.sum <- pairwise.wilcox.test(proportions, timepointsvector)
+    test <- NULL
+    if(test.use == 'dunn'){
+      test <- dunn.test(values, timepointsvector, kw = F, method = c(p.adjust.method))
+    }
+    else if(test.use == 'kruskal.wallace'){
+      test <- k.wallace <- kruskal.test(values, timepointsvector, p.adjust.method = p.adjust.method)
+    }
+    else if(test.use == 'wilcoxon.rank.sum'){
+      test <- pairwise.wilcox.test(proportions, timepointsvector, p.adjust.method = p.adjust.method)
+    }
     # add the results
-    w.rank.sum.cts[[cell_type]] <- w.rank.sum
+    tests.cts[[cell_type]] <- test
   }
-  return(w.rank.sum.cts)
+  return(tests.cts)
+}
+
+perform_fisher_exact <- function(cell_counts){
+  fisher.result.cts <- list()
+  # let's try the fisher exact test as well
+  for(cell_type in colnames(cell_counts)){
+    # get the number of cells for the cell type per condition
+    nr_of_cell_type <- cell_counts[,cell_type]
+    # get the number of cells per condition
+    total_number_of_cells <- rowSums(cell_counts)
+    # get the non-cell type cells per condition
+    nr_of_cells_not_cell_type <- total_number_of_cells - nr_of_cell_type
+    # create frame
+    contingency_table <- data.frame(nr_of_cell_type, nr_of_cells_not_cell_type, row.names = rownames(cell_counts))
+    colnames(contingency_table) <- c(cell_type, 'other')
+    # doing fisher.exact on all conditions at once is apparently to heavy, so we need to do it pairwise
+    result_table <- data.frame(matrix(NA, nrow = length(rownames(contingency_table)), ncol = length(rownames(contingency_table))))
+    colnames(result_table) <- rownames(cell_counts)
+    rownames(result_table) <- rownames(cell_counts)
+    # do the comparisons
+    for(i in 1:length(rownames(contingency_table))){
+      i_start <- i+1
+      if(i_start <= length(rownames(contingency_table))){
+        for(i2 in i_start:length(rownames(contingency_table))){
+          cond1 <- rownames(contingency_table)[i]
+          cond2 <- rownames(contingency_table)[i2]
+          # subset the contingency table
+          contingency_subtable <- contingency_table[c(cond1, cond2),]
+          # perform the test
+          fisher.result <- fisher.test(t(contingency_subtable))
+          # set in the result table
+          result_table[cond1, cond2] <- fisher.result$p.value
+          result_table[cond2, cond1] <- fisher.result$p.value
+          }
+      }
+    }
+    # add result
+    fisher.result.cts[[cell_type]] <- result_table
+  }
+  return(fisher.result.cts)
 }
 
 fitGLM <- function(res, condition, subject_effect = TRUE, pairwise = TRUE, fixed_only = FALSE, verbose = TRUE){
@@ -432,9 +529,9 @@ fitGLM_mc <- function(res, condition, subject_effect = TRUE, pairwise = TRUE, fi
   for(i in 1:ncol(res$nstar)){
     res_list[[i]] <- res$nstar[,i]
   }
-  fit_fixed <- mclapply(res_list, function(x){
+  fit_fixed <- mclapply(res_list, function(x, info){
     print('a thread has started work')
-    glm_df <-  cbind(res$info[,1:2], x)
+    glm_df <-  cbind(info, x)
     colnames(glm_df) <- c("cellTypes", "subject", "cell_count")
     glm_df$cond <- condition
     if(subject_effect){
@@ -454,33 +551,33 @@ fitGLM_mc <- function(res, condition, subject_effect = TRUE, pairwise = TRUE, fi
     }
     print('a thread has finished work')
     return(fit_fixed_i)
-  }, mc.cores = mc.cores)
+  }, res$info[,1:2], mc.cores = mc.cores, mc.preschedule = F)
   fit_random <- list()
   if(!subject_effect){
     fixed_only = TRUE
   }
   else{
     if(pairwise){
-      fit_random <- mclapply(res_list, function(x){
+      fit_random <- mclapply(res_list, function(x, info){
         print('a thread has started a paired glm')
-        glm_df <-  cbind(res$info[,1:2], x)
+        glm_df <-  cbind(info, x)
         colnames(glm_df) <- c("cellTypes", "subject", "cell_count")
         glm_df$cond <- condition
         fit_random_i <- lme4::glmer(cell_count ~ cellTypes + cond + cellTypes:cond + (1 | subject ), data = glm_df, family = poisson(link=log), control = glmerControl(nAGQ = 0L))
         print('a thread has finished work')
         return(fit_random_i)
-      }, mc.cores = mc.cores)
+      }, res$info[,1:2], mc.cores = mc.cores, mc.preschedule = F)
     }
     else{
-      fit_random <- mclapply(res_list, function(x){
+      fit_random <- mclapply(res_list, function(x, info){
         print('a thread has started a paired glm')
-        glm_df <-  cbind(res$info[,1:2], x)
+        glm_df <-  cbind(info, x)
         colnames(glm_df) <- c("cellTypes", "subject", "cell_count")
         glm_df$cond <- condition
         fit_random_i <- lme4::glmer(cell_count ~ cellTypes + cond + cellTypes:cond + (1 | subject ), data = glm_df, family = poisson(link=log), control = glmerControl(nAGQ = 0L))
         print('a thread has finished work')
         return(fit_random_i)
-      }, mc.cores = mc.cores)
+      }, res$info[,1:2], mc.cores = mc.cores, mc.preschedule = F)
     }
   }
   
@@ -557,6 +654,24 @@ chisq_all <- chisq.test(cell_count_all)
 chisq_v2 <- chisq.test(cell_count_v2)
 chisq_v3 <- chisq.test(cell_count_v3)
 
+
+fisher.result.cts <- list()
+# let's try the fisher exact test as well
+for(cell_type in colnames(cell_count_all)){
+  # get the number of cells for the cell type per condition
+  nr_of_cell_type <- cell_count_all[[cell_type]]
+  # get the number of cells per condition
+  total_number_of_cells <- rowSums(cell_count_all)
+  # get the non-cell type cells per condition
+  nr_of_cells_not_cell_type <- total_number_of_cells - nr_of_cell_type
+  # create frame
+  contingency_table <- data.frame(nr_of_cell_type, nr_of_cells_not_cell_type, row.names = rownames(cell_count_all))
+  colnames(contingency_table) <- c(cell_type, 'other')
+  # do the fisher exact test
+  fisher.result <- fisher.test(contingency_table)
+  # add result
+  fisher.result.cts[[cell_type]] <- fisher.result
+}
 
 
 # let's try the wilcoxon rank sums test
