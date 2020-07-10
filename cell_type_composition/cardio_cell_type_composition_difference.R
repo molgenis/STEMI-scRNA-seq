@@ -8,6 +8,7 @@ library(future.apply)
 library(lme4)
 library(scdney)
 library(dunn.test)
+library(metap)
 
 ####################################################################################
 # functions                                                                        #
@@ -58,15 +59,38 @@ subCells<-function(cells, n=round(length(cells)/10)){
 # Create the condition and cluster variables from the observed contingency table
 ###
 makeVariables<-function(obs.table){
+  # grab the condition names, 
   cond_names<-dimnames(obs.table)[[1]];
-  clus_names<-dimnames(obs.table)[[2]];
+  # [1] "t24h"     "Baseline" "t8w"      "UT"
   
+  # grab the cluster/celltype names
+  clus_names<-dimnames(obs.table)[[2]];
+  # [1] "CD4T"             "Treg"             "CD8T"             "monocyte"        
+  # [5] "DC"               "NK"               "B"                "megakaryocyte"   
+  # [9] "plasma B"         "Th17"             "hemapoietic stem" "Tc17"
+  
+  # for the sum of the counts of one condition, repeat the timepoints/conditions
   cond<-rep(cond_names, apply(obs.table,1,sum) );
+  # chr [1:141270] "t24h" "t24h" "t24h" "t24h" "t24h" "t24h" "t24h" "t24h"
+  
+  # for the rows, repeat the cluster/ct names for the times the cell/clus appeared in the condition
   clus_list<-apply(obs.table,1,function(x){
     rep(clus_names, x );
   })
+  # List of 4
+  # $ t24h    : chr [1:36218] "CD4T" "CD4T" "CD4T" "CD4T" ...
+  # $ Baseline: chr [1:33070] "CD4T" "CD4T" "CD4T" "CD4T" ...
+  # $ t8w     : chr [1:32231] "CD4T" "CD4T" "CD4T" "CD4T" ...
+  # $ UT      : chr [1:39751] "CD4T" "CD4T" "CD4T" "CD4T" ...
+  
+  # assign each cell type/cell to it's timepoint as well
   clus<-base::do.call(c,clus_list);
+  # Named chr [1:141270] "CD4T" "CD4T" "CD4T" "CD4T" "CD4T" "CD4T" "CD4T" ...
+  # - attr(*, "names")= chr [1:141270] "t24h1" "t24h2" "t24h3" "t24h4" ...
+  
   #table(cond,clus);
+  
+  # return a list where we have this list of conditions and timepoints per cell
   return(list(cond=cond, clus=clus));
 }
 
@@ -81,6 +105,11 @@ generateNull<-function(obs.table, n=10000, p=0.2){
   dimnames(all.exp)[[3]]<-1:n;
   clus_names<-dimnames(obs.table)[[2]];
   cond_names<-dimnames(obs.table)[[1]];
+  # logi [1:4, 1:12, 1:2] NA NA NA NA NA NA ...
+  # - attr(*, "dimnames")=List of 3
+  # ..$ : chr [1:4] "t24h" "Baseline" "t8w" "UT"
+  # ..$ : chr [1:12] "CD4T" "Treg" "CD8T" "monocyte" ...
+  # ..$ : chr [1:2] "1" "2"
   
   v<-makeVariables(obs.table);
   
@@ -103,6 +132,25 @@ generateNull<-function(obs.table, n=10000, p=0.2){
     all.exp[,,i]<-exp.table;
   }
   return(all.exp);
+}
+
+get_permutated_counts <- function(obs.table, p=0.2){
+  obs<-makeVariables(obs.table);
+  clus_names<-dimnames(obs.table)[[2]];
+  cond_names<-dimnames(obs.table)[[1]];
+  
+  v<-makeVariables(obs.table);
+  pv<-v;
+  
+  randInd<-sample(1:length(pv$clus),round(length(pv$clus)*p));
+  pv$clus[randInd]<-sample(v$clus,length(randInd),replace=F);  
+  
+  this.exp<-table(pv$cond,pv$clus);
+  exp.table<-obs.table;
+  exp.table[1:dim(exp.table)[1],1:dim(exp.table)[2]]<-NA
+  exp.table[dimnames(this.exp)[[1]],dimnames(this.exp)[[2]]]<-this.exp;
+  
+  return(exp.table)
 }
 
 ###
@@ -166,6 +214,109 @@ get_cell_counts <- function(metadata){
   return(cell_counts)
 }
 
+perform_meta_chisq <- function(metadata, conditions_to_test=c('Baseline', 't24h', 't8w'), bonferroni=T){
+  pvals <- list()
+  nrofcells <- list()
+  for(participant in unique(metadata$assignment.final)){
+    # grab just the cells for that participant
+    cells_participant <- metadata[metadata$assignment.final == participant, ]
+    # get cell counts for participant
+    cell_count_participant <- get_cell_counts(cells_participant)
+    # check if the participant has cells for all conditions we wish to test
+    if(length(intersect(conditions_to_test, rownames(cell_count_participant))) >= length(conditions_to_test)){
+      # perform the test
+      chisq <- perform_chisq(cell_count_participant, conditions_to_test)
+      # add the result
+      pvals[[participant]] <- chisq
+      # store the number of cells to use as weights
+      nrofcells[[participant]] <- nrow(cells_participant)
+    }
+    else{
+      print(paste('excluding', participant, 'due to', rownames(cell_count_participant), 'not containing', conditions_to_test))
+    }
+  }
+  stouffers_per_ct <- list()
+  # now combine the results of a cell type
+  for(cell_type in unique(metadata$cell_type_lowerres)){
+    pvals_ct <- c()
+    weights_ct <-c()
+    # grab each result for the participants we took in to consideration
+    for(participant in names(pvals)){
+      # grab that pval
+      pval <- pvals[[participant]][[cell_type]]$p.value
+      # a test might fail if there were too few cells or no cells of this type for the participant
+      if(!is.null(pval)){
+        weight <- sqrt(nrofcells[[participant]])
+        print(paste(participant, pval, weight))
+        # add to vector
+        pvals_ct <- c(pvals_ct, pval)
+        weights_ct <- c(weights_ct, weight)
+      }
+    }
+    # do stouffers meta analysis
+    stouffers <- sumz(pvals_ct, weights_ct)
+    # do mtc if requested
+    if(bonferroni){
+      stouffers$p.corrected <- stouffers$p*length(pvals_ct)*length(unique(metadata$cell_type_lowerres))
+      # set to 1 if larger than 1
+      if(stouffers$p.corrected>1){
+        stouffers$p.corrected <- 1
+      }
+    }
+    # save the result
+    stouffers_per_ct[[cell_type]] <- stouffers
+  }
+  return(stouffers_per_ct)
+}
+
+perform_chisq <- function(cell_counts, conditions_to_test=NULL){
+  # let's try wilcoxon rank sums
+  tests.cts <- list()
+  for(cell_type in colnames(cell_counts)){
+    # the number of cells of the cell type per condition
+    cell_type_count <- cell_counts[,cell_type]
+    # the total number of cells per condition
+    cell_count_total <- apply(cell_counts, 1, sum)
+    # the number of non-this-celtype cells
+    cell_count_other <- cell_count_total - cell_type_count
+    # create the contingency table
+    contingency_table <- data.frame(cell_type_count, cell_count_other)
+    rownames(contingency_table) <- rownames(cell_counts)
+    colnames(contingency_table) <- c(cell_type, 'other')
+    # subset for ones we actually want to test
+    if(!is.null(conditions_to_test)){
+      contingency_table <- contingency_table[conditions_to_test, ]
+    }
+    # perform the test
+    test <- chisq.test(t(contingency_table))
+    # add the result
+    tests.cts[[cell_type]] <- test
+  }
+  return(tests.cts)
+}
+
+perform_chisq_paired_tp <- function(cell_counts){
+  tests.tps <- list()
+  for(i in 1:nrow(cell_counts)){
+    # against all other
+    i_start <- i+1
+    if(i_start <= nrow(cell_counts)){
+      for(i2 in i_start:nrow(cell_counts)){
+        # do only for these conditions
+        conditions <- rownames(cell_count_all)[c(i, i2)]
+        # do the test for these conditions
+        test <- perform_chisq(cell_counts, conditions)
+        # give the test a name
+        test_name <- paste(conditions[1], conditions[2], sep = '_vs_')
+        # add to result list
+        tests.tps[[test_name]] <- test
+      }
+    }
+  }
+  return(tests.tps)
+}
+
+
 # build the null distributions of the cell counts, with different number of iterations and error prob
 get_null_distributions <- function(cell_counts, n=100000, ps=c(0.5, 0.4, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05)){
   # put the null distributions in a list
@@ -216,7 +367,7 @@ test_two_class <- function(cell_counts, null_distributions, pairs, ps=c(0.5, 0.4
       # obtain the null dist for the error prop that was supplied
       null_dist <- null_distributions[[as.character(err_prob)]]
       # get the result for this pair and err prob
-      res = two.class.test(obs.counts, null_dist, cond.control=cond1, cond.treatment=cond2,to.plot=F)
+      res = two.class.test(cell_counts, null_dist, cond.control=cond1, cond.treatment=cond2,to.plot=F)
       # add the result
       res.table <- rbind(res.table, res)
     }
@@ -238,19 +389,19 @@ test_two_class_mt <- function(cell_counts, null_distributions, pairs, ps=c(0.5, 
     # by default use the number of distributions we are making
     ncores <- length(ps)
   }
-  results <- mclapply(pairs, function(pair,cell_counts, null_distributions){
+  results <- mclapply(pairs, function(pair,cell_counts, null_distributions, ws){
     # grab the two conditions
     cond1 <- pair[1]
     cond2 <- pair[2]
     # init result
     res.table = c()
     # go through the err probs
-    for(err_prob in ps){
+    for(err_prob in ws){
       print(paste(cond1, cond2, err_prob))
       # obtain the null dist for the error prop that was supplied
       null_dist <- null_distributions[[as.character(err_prob)]]
       # get the result for this pair and err prob
-      res = two.class.test(obs.counts, null_dist, cond.control=cond1, cond.treatment=cond2,to.plot=F)
+      res = two.class.test(cell_counts, null_dist, cond.control=cond1, cond.treatment=cond2,to.plot=F)
       # add the result
       res.table <- rbind(res.table, res)
     }
@@ -259,7 +410,7 @@ test_two_class_mt <- function(cell_counts, null_distributions, pairs, ps=c(0.5, 
     # add this table to the list by the name of the pair
     return(res.table)
   }
-  ,cell_counts, null_distributions, mc.cores = ncores)
+  ,cell_counts, null_distributions, ps, mc.cores = ncores)
   names(results) <- names(pairs)
   return (results)
 }
@@ -602,7 +753,7 @@ fitGLM_mc <- function(res, condition, subject_effect = TRUE, pairwise = TRUE, fi
 ####################################################################################
 
 # read Seurat file
-cardio.integrated <- readRDS('/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/cardio_integrated_20pcs_ctTmonoTc17Th17_20200622.rds')
+cardio.integrated <- readRDS('/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/cardio.integrated_20200625.rds')
 # grab metadata
 metadata <- cardio.integrated@meta.data
 # grab all the cell counts
@@ -611,18 +762,29 @@ cell_count_all <- get_cell_counts(metadata)
 null_dist_all <- get_null_distributions_mt(cell_count_all)
 # create the pairs we which to test
 ut_baseline <- c('UT', 'Baseline')
-baseline_t8w <- c('Baseline', 't8w')
+ut_t24h <- c('UT', 't24h')
 ut_t8w <- c('UT', 't8w')
+baseline_t24h <- c('Baseline', 't24h')
+baseline_t8w <- c('Baseline', 't8w')
+t24h_t8w <- c('t24h', 't8w')
 pairs <- list()
 pairs[['ut_baseline']] <- ut_baseline
-pairs[['baseline_t8w']] <- baseline_t8w
+pairs[['ut_t24h']] <- ut_t24h
 pairs[['ut_t8w']] <- ut_t8w
+pairs[['baseline_t24h']] <- baseline_t24h
+pairs[['baseline_t8w']] <- baseline_t8w
+pairs[['t24h_t8w']] <- t24h_t8w
+
 # get the results
 diff_all <- test_two_class_mt(cell_count_all, null_dist_all, pairs)
 # write results
-write.table(diff_all[['ut_baseline']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_baseline_20200705.tsv', sep = '\t', row.names=T)
-write.table(diff_all[['ut_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_t8w_20200705.tsv', sep = '\t', row.names=T)
-write.table(diff_all[['baseline_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_baseline_t8w_20200705.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['ut_baseline']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_baseline_20200710.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['ut_t24h']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_t24h_20200710.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['ut_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_t8w_20200710.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['baseline_t24h']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_baseline_t24h_20200710.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['baseline_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_baseline_t8w_20200710.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['t24h_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_t24h_t8w_20200710.tsv', sep = '\t', row.names=T)
+
 
 metadata_v2 <- metadata[metadata$chem == 'V2', ]
 cell_count_v2 <- get_cell_counts(metadata_v2)
@@ -653,6 +815,62 @@ write.table(diff_v3[['baseline_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_
 chisq_all <- chisq.test(cell_count_all)
 chisq_v2 <- chisq.test(cell_count_v2)
 chisq_v3 <- chisq.test(cell_count_v3)
+
+# all vs rest is a better method
+chisq_all_ct_vs_all <- perform_chisq(cell_count_all)
+# create matrix
+chisq_all_ct_vs_all_m <- matrix(nrow = length(names(chisq_all_ct_vs_all)), ncol = 2, dimnames = list(names(chisq_all_ct_vs_all), c('p','p.bonferroni')))
+# turn into table for easy reading
+for(ct in names(chisq_all_ct_vs_all)){
+  # also add a bonferonni corrected p by multiplying with the number of cell types
+  p <- chisq_all_ct_vs_all[[ct]]$p.value
+  p.bonferroni <- chisq_all_ct_vs_all[[ct]]$p.value*length(names(chisq_all_ct_vs_all))
+  if(p.bonferroni > 1){
+    p.bonferroni <- 1
+  }
+  row <- c(p, p.bonferroni)
+  chisq_all_ct_vs_all_m[ct,] <- row
+}
+write.table(chisq_all_ct_vs_all_m, '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/chi-squared/all_20200710.tsv', sep = '\t', row.names=T)
+
+# meta chi-squared method might yield more clear effects
+chisq_all_ct_vs_all_pertpcomb <- perform_chisq_paired_tp(cell_count_all)
+# also turn into tables
+for(tpcomb in names(chisq_all_ct_vs_all_pertpcomb)){
+  thistpcomb <- chisq_all_ct_vs_all_pertpcomb[[tpcomb]]
+  # create matrix
+  chisq_all_ct_vs_all_ctcomb_m <- matrix(nrow = length(names(thistpcomb)), ncol = 3, dimnames = list(names(thistpcomb), c('p','p.bonferroni.ctcorr', 'p.bonferroni.ctandtpcorr')))
+  for(ct in names(chisq_all_ct_vs_all)){
+    # also add a bonferonni corrected p by multiplying with the number of cell types as well as the number of conditions
+    p <- thistpcomb[[ct]]$p.value
+    # change to 1 if p exceeds 1 (due to bonferroni multiplication)
+    p.bonferroni.ct <- thistpcomb[[ct]]$p.value*length(names(thistpcomb))
+    p.bonferroni.ct.tp <- thistpcomb[[ct]]$p.value*length(names(thistpcomb))*length(names(chisq_all_ct_vs_all_pertpcomb))
+    if(p.bonferroni.ct > 1){
+      p.bonferroni.ct <- 1
+    }
+    if(p.bonferroni.ct.tp > 1){
+      p.bonferroni.ct.tp <- 1
+    }
+    row <- c(p, p.bonferroni.ct, p.bonferroni.ct.tp)
+    chisq_all_ct_vs_all_ctcomb_m[ct,] <- row
+  }
+  write.table(chisq_all_ct_vs_all_ctcomb_m, paste('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/chi-squared/', tpcomb, '_20200710.tsv', sep = ''), sep = '\t', row.names=T)
+}
+
+# perform per-individual meta analysis
+chisq_all_ct_vs_all_meta <- perform_meta_chisq(metadata) # this gives some warnings, probably for the smaller samples, need to see fix detecting these!
+chisq_all_ct_vs_all_meta_m <- matrix(nrow = length(names(chisq_all_ct_vs_all_meta)), ncol = 2, dimnames = list(names(chisq_all_ct_vs_all_meta), c('p','p.bonferroni')))
+# turn into table for easy reading
+for(ct in names(chisq_all_ct_vs_all_meta)){
+  # this method already has the bonferroni p 
+  p <- chisq_all_ct_vs_all_meta[[ct]]$p
+  p.bonferroni <- chisq_all_ct_vs_all_meta[[ct]]$p.corrected
+  row <- c(p, p.bonferroni)
+  chisq_all_ct_vs_all_meta_m[ct,] <- row
+}
+write.table(chisq_all_ct_vs_all_meta_m, '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/chi-squared/all_meta_20200710.tsv', sep = '\t', row.names=T)
+
 
 # fisher exact as well
 fisher_all <- perform_fisher_exact(metadata)
