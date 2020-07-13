@@ -245,12 +245,14 @@ perform_meta_chisq <- function(metadata, conditions_to_test=c('Baseline', 't24h'
       # grab that pval
       pval <- pvals[[participant]][[cell_type]]$p.value
       # a test might fail if there were too few cells or no cells of this type for the participant
-      if(!is.null(pval)){
+      if(!(is.null(pval))){
+        if(!(is.na(pval))){
         weight <- sqrt(nrofcells[[participant]])
         print(paste(participant, pval, weight))
         # add to vector
         pvals_ct <- c(pvals_ct, pval)
         weights_ct <- c(weights_ct, weight)
+        }
       }
     }
     # do stouffers meta analysis
@@ -314,6 +316,20 @@ perform_chisq_paired_tp <- function(cell_counts){
     }
   }
   return(tests.tps)
+}
+
+
+chisq_meta_result_to_table <- function(chisq_meta_results){
+  chisq_ct_vs_all_meta_m <- matrix(nrow = length(names(chisq_meta_results)), ncol = 2, dimnames = list(names(chisq_meta_results), c('p','p.bonferroni')))
+  # turn into table for easy reading
+  for(ct in names(chisq_meta_results)){
+    # this method already has the bonferroni p 
+    p <- chisq_meta_results[[ct]]$p
+    p.bonferroni <- chisq_meta_results[[ct]]$p.corrected
+    row <- c(p, p.bonferroni)
+    chisq_ct_vs_all_meta_m[ct,] <- row
+  }
+  return(chisq_ct_vs_all_meta_m)
 }
 
 
@@ -860,17 +876,26 @@ for(tpcomb in names(chisq_all_ct_vs_all_pertpcomb)){
 
 # perform per-individual meta analysis
 chisq_all_ct_vs_all_meta <- perform_meta_chisq(metadata) # this gives some warnings, probably for the smaller samples, need to see fix detecting these!
-chisq_all_ct_vs_all_meta_m <- matrix(nrow = length(names(chisq_all_ct_vs_all_meta)), ncol = 2, dimnames = list(names(chisq_all_ct_vs_all_meta), c('p','p.bonferroni')))
+#chisq_all_ct_vs_all_meta_m <- matrix(nrow = length(names(chisq_all_ct_vs_all_meta)), ncol = 2, dimnames = list(names(chisq_all_ct_vs_all_meta), c('p','p.bonferroni')))
 # turn into table for easy reading
-for(ct in names(chisq_all_ct_vs_all_meta)){
-  # this method already has the bonferroni p 
-  p <- chisq_all_ct_vs_all_meta[[ct]]$p
-  p.bonferroni <- chisq_all_ct_vs_all_meta[[ct]]$p.corrected
-  row <- c(p, p.bonferroni)
-  chisq_all_ct_vs_all_meta_m[ct,] <- row
-}
+#for(ct in names(chisq_all_ct_vs_all_meta)){
+#  # this method already has the bonferroni p 
+#  p <- chisq_all_ct_vs_all_meta[[ct]]$p
+#  p.bonferroni <- chisq_all_ct_vs_all_meta[[ct]]$p.corrected
+#  row <- c(p, p.bonferroni)
+#  chisq_all_ct_vs_all_meta_m[ct,] <- row
+#}
+chisq_all_ct_vs_all_meta_m <- chisq_meta_result_to_table(chisq_all_ct_vs_all_meta)
 write.table(chisq_all_ct_vs_all_meta_m, '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/chi-squared/all_meta_20200710.tsv', sep = '\t', row.names=T)
-
+chisq_baseline_t24h_ct_vs_all_meta <- perform_meta_chisq(metadata, conditions_to_test = c('Baseline', 't24h'))
+chisq_baseline_t24h_ct_vs_all_meta_m <- chisq_meta_result_to_table(chisq_baseline_t24h_ct_vs_all_meta)
+write.table(chisq_baseline_t24h_ct_vs_all_meta_m, '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/chi-squared/baseline_vs_t24h_meta_20200710.tsv', sep = '\t', row.names=T)
+chisq_baseline_t8w_ct_vs_all_meta <- perform_meta_chisq(metadata, conditions_to_test = c('Baseline', 't8w'))
+chisq_baseline_t8w_ct_vs_all_meta_m <- chisq_meta_result_to_table(chisq_baseline_t8w_ct_vs_all_meta)
+write.table(chisq_baseline_t8w_ct_vs_all_meta_m, '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/chi-squared/baseline_vs_t8w_meta_20200710.tsv', sep = '\t', row.names=T)
+chisq_t24h_t8w_ct_vs_all_meta <- perform_meta_chisq(metadata, conditions_to_test = c('t24h', 't8w'))
+chisq_t24h_t8w_ct_vs_all_meta_m <- chisq_meta_result_to_table(chisq_t24h_t8w_ct_vs_all_meta)
+write.table(chisq_t24h_t8w_ct_vs_all_meta_m, '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/chi-squared/t24h_vs_t8w_meta_20200710.tsv', sep = '\t', row.names=T)
 
 # fisher exact as well
 fisher_all <- perform_fisher_exact(metadata)
