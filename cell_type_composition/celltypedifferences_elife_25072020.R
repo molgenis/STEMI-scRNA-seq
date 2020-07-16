@@ -7,7 +7,6 @@
 # libraries                                                                        #
 ####################################################################################
 library(Seurat)
-library(ggplot2)
 
 ####################################################################################
 # Perform post-hoc Benjamin-Hochberg correction on elife p-values with W=0.1      #
