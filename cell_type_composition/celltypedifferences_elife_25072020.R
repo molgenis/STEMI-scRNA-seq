@@ -24,7 +24,9 @@ for(table in tables){
     elife <- read.table(paste("/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/", table, sep=""), header=T, sep='\t')
     elife <- elife[c("0.1","0.05"), ]
     for(colname in colnames(elife)){
-      elife[[paste(colname,"corrected", sep=".")]] <- p.adjust(elife[[colname]], n=6, method = c("hochberg"))
+      elife[[paste(colname,"hochberg", sep=".")]] <- p.adjust(elife[[colname]], n=6, method = c("hochberg"))
+      elife[[paste(colname,"bonferroni", sep=".")]] <- p.adjust(elife[[colname]], n=6, method = c("bonferroni"))
+      elife[[paste(colname,"holm", sep=".")]] <- p.adjust(elife[[colname]], n=6, method = c("holm"))
     }
     write.table(elife, paste("/home/umcg-ivanblokland/stemi/cell_type_composition/", table, "cor.tsv", sep=''), sep='\t')
   })
