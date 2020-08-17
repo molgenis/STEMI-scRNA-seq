@@ -26,7 +26,7 @@ for lane in lanes:
   # get the full paths
   matrix_loc = "".join([cellranger_dir, lane, lane_append, 'matrix.mtx.gz'])
   features_loc = "".join([cellranger_dir, lane, lane_append, 'features.tsv'])
-  barcodes_loc = "".join([cellranger_dir, lane, lane_append, 'barcodes.tsv'])
+  barcodes_loc = "".join([cellranger_dir, lane, lane_append, 'barcodes.tsv.gz'])
   # load the files
   print("".join(['reading lane ', lane]))
   counts_matrix = scipy.io.mmread(matrix_loc).T.tocsc()
@@ -53,4 +53,4 @@ for lane in lanes:
     scrub_all = pd.concat([scrub_all, assignment])
 
 # save to file
-scrub_all.to_csv(scrub_all_save_loc)
+scrub_all.to_csv(scrub_all_save_loc, index=False, sep='\t')
