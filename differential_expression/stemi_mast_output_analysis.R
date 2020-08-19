@@ -5,6 +5,7 @@
 library(RColorBrewer)
 library(MetaVolcanoR)
 library(ggplot2)
+library(data.table)
 
 
 ####################
@@ -53,8 +54,8 @@ write_meta_mast <- function(mast_output_loc_prepend, mast_output_loc_append, mas
       # get the mast output
       mast_loc_v2 <- paste(mast_output_loc_prepend, '2', mast_output_loc_append, file, sep = '')
       # v3 should be the same, but then v3
-      mast_loc_v3 <- paste(mast_output_loc_prepend, '2', mast_output_loc_append, gsub('v2', 'v3', file), sep = '')
-      try({
+      mast_loc_v3 <- paste(mast_output_loc_prepend, '3', mast_output_loc_append, gsub('v2', 'v3', file), sep = '')
+      tryCatch({
         # read the mast output
         mast_v2 <- read.table(mast_loc_v2, header=T)
         mast_v3 <- read.table(mast_loc_v3, header=T)
@@ -117,6 +118,8 @@ write_meta_mast <- function(mast_output_loc_prepend, mast_output_loc_append, mas
         # write the result
         output_loc <- paste(mast_meta_output_loc_prepend, file, sep = '')
         write.table(mast, output_loc, sep = '\t')
+      }, error = function(e) {
+        print(paste('error in', file, 'due to', e))
       })
     }
 }
@@ -163,7 +166,7 @@ get_significant_genes <- function(mast_output_loc, sig_output_loc, pval_column='
       }
       # otherwise change the Seurat replacement back
       else{
-        genes <- gsub("-", "_", genes)
+        #genes <- gsub("-", "_", genes)
       }
       # create a regex to get the last index of .
       last_dot_pos <- "\\.[^\\.]*$"
@@ -177,7 +180,7 @@ get_significant_genes <- function(mast_output_loc, sig_output_loc, pval_column='
   }
 }
 
-get_pathway_table <- function(pathway_output_loc, sig_val_to_use = 'q.value.Bonferroni', cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), stims=c('X3hCA', 'X24hCA', 'X3hPA', 'X24hPA', 'X3hMTB', 'X24hMTB')){
+get_pathway_table <- function(pathway_output_loc, sig_val_to_use = 'q.value.FDR.B.H', cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), stims=c('UT', 'Baseline', 't24h', 't8w'), append='_sig_pathways.txt', use_ranking=T){
   # put all results in a list
   pathways_analysis <- list()
   # put all results in a shared DF
@@ -186,34 +189,43 @@ get_pathway_table <- function(pathway_output_loc, sig_val_to_use = 'q.value.Bonf
   for(cell_type in cell_types){
     # check each stim
     for(stim in stims){
-      try({
-        print(paste(cell_type, stim, sep = ' '))
-        # paste the filepath together
-        filepath <- paste(pathway_output_loc, cell_type, 'UT',stim,'_sig_pathways.txt', sep = '')
-        # read the file
-        pathways <- read.table(filepath, sep = '\t', header = T, quote="", fill = F, comment.char = "", colClasses = c('character', 'character', 'character', 'character', 'double', 'double', 'double', 'double', 'integer', 'integer', 'character'))
-        # create column name
-        newcolname <- paste(cell_type, 'UT', stim, sep = '')
-        # get the log2 of the significance value
-        #pathways[[newcolname]] <- log2(pathways[[sig_val_to_use]])
-        pathways[[newcolname]] <- log(pathways[[sig_val_to_use]], base = 15)*-1
-        pathways$id_name <- paste(pathways$ID, pathways$Name, sep = '_')
-        # reduce to the only two columns we care about
-        pathways <- pathways[, c('id_name', newcolname)]
-        # join with other pathway files
-        if(is.null(pathway_df)){
-          # just set as df if the first round through
-          pathway_df <- pathways
-          pathway_df <- data.table(pathway_df, key = c('id_name'))
-        }
-        else{
-          # otherwise, merge with existing pathways
-          pathway_df <- merge(pathway_df, data.table(pathways, key = c('id_name')), by.x='id_name', by.y='id_name', all=T)
-          #pathway_df[[newcolname]] <- pathways[[newcolname]][match(pathway_df$Name, pathways$Name)]
-          #pathway_df <- left_join(pathway_df, pathways)
-          
-        }
-      })
+      for(stim2 in stims){
+        try({
+          if(stim != stim2){
+            print(paste(cell_type, stim, stim2, sep = ' '))
+            # paste the filepath together
+            filepath <- paste(pathway_output_loc, cell_type, stim,stim2, append, sep = '')
+            # read the file
+            pathways <- read.table(filepath, sep = '\t', header = T, quote="", fill = F, comment.char = "", colClasses = c('character', 'character', 'character', 'character', 'double', 'double', 'double', 'double', 'integer', 'integer', 'character'))
+            # create column name
+            newcolname <- paste(cell_type, stim, stim2, sep = '')
+            # use ranking or log value
+            if(use_ranking){
+              pathways[[newcolname]] <- as.numeric(rownames(pathways))
+            }
+            else{
+              pathways[[newcolname]] <- (pathways[[sig_val_to_use]])
+            }
+            #pathways[[newcolname]] <- log(pathways[[sig_val_to_use]], base = 15)*-1
+            pathways$id_name <- paste(pathways$ID, pathways$Name, sep = '_')
+            # reduce to the only two columns we care about
+            pathways <- pathways[, c('id_name', newcolname)]
+            # join with other pathway files
+            if(is.null(pathway_df)){
+              # just set as df if the first round through
+              pathway_df <- pathways
+              pathway_df <- data.table(pathway_df, key = c('id_name'))
+            }
+            else{
+              # otherwise, merge with existing pathways
+              pathway_df <- merge(pathway_df, data.table(pathways, key = c('id_name')), by.x='id_name', by.y='id_name', all=T)
+              #pathway_df[[newcolname]] <- pathways[[newcolname]][match(pathway_df$Name, pathways$Name)]
+              #pathway_df <- left_join(pathway_df, pathways)
+              
+            }
+          }
+        })
+      }
     }
   }
   # turn into regular df
@@ -228,13 +240,16 @@ get_pathway_table <- function(pathway_output_loc, sig_val_to_use = 'q.value.Bonf
   return(pathway_df)
 }
 
-get_top_pathways <- function(pathway_table, nr_of_top_genes){
+get_top_pathways <- function(pathway_table, nr_of_top_genes, is_ranked=F){
   # init pathways list
   pathways <- c()
   # go through the columns
   for(col in colnames(pathway_table)){
     # order by that column
     ordered <- pathway_table[order(pathway_table[[col]], decreasing = T), ]
+    if(is_ranked){
+      ordered <- pathway_table[order(pathway_table[[col]], decreasing = F), ]
+    }
     # get those top ones
     top_col <- rownames(ordered)[1:nr_of_top_genes]
     pathways <- c(pathways, top_col)
@@ -243,6 +258,107 @@ get_top_pathways <- function(pathway_table, nr_of_top_genes){
   pathway_table_smaller <- pathway_table[rownames(pathway_table) %in% pathways, ]
   return(pathway_table_smaller)
 }
+
+get_color_coding_dict <- function(){
+  # set the condition colors
+  color_coding <- list()
+  color_coding[["UTBaseline"]] <- "khaki2"
+  color_coding[["UTt24h"]] <- "khaki4"
+  color_coding[["UTt8w"]] <- "paleturquoise1"
+  color_coding[["Baselinet24h"]] <- "paleturquoise3"
+  color_coding[["Baselinet8w"]] <- "rosybrown1"
+  color_coding[["t24ht8w"]] <- "rosybrown3"
+  # set the cell type colors
+  color_coding[["Bulk"]] <- "black"
+  color_coding[["CD4T"]] <- "#153057"
+  color_coding[["CD8T"]] <- "#009DDB"
+  color_coding[["monocyte"]] <- "#E64B50"
+  color_coding[["NK"]] <- "#EDBA1B"
+  color_coding[["B"]] <- "#71BC4B"
+  color_coding[["DC"]] <- "#965EC8"
+  return(color_coding)
+}
+
+get_top_vary_genes <- function(de_table, use_tp=T, use_pathogen=T, use_ct=T, sd_cutoff=0.5, use_dynamic_sd=F, top_so_many=10, must_be_positive_once=F, pathogens=c("CA", "MTB", "PA"), timepoints=c("3h", "24h"), cell_types=c("CD4T", "CD8T", "monocyte", "NK", "B", "DC")){
+  top_vary_de <- c()
+  cols_to_loop <- NULL
+  # grab the appriate grep
+  if(use_tp & use_pathogen){
+    # we want a combo of pathogen and timepoints, so 3hCA for example
+    cols_to_loop <- paste(rep(timepoints, each = length(pathogens)), pathogens, sep = "")
+  }
+  else if(use_pathogen & use_ct){
+    # cell type and pathogen, so monocyte3hCA and monocyte24hCA for example
+    cols_to_loop <- paste(rep(cell_types, each = length(pathogens)), pathogens, sep = ".*")
+  }
+  else if(use_tp & use_ct){
+    # cell type at a timepoint, so monocyte3hCA and monocyte3hPA and monocyte3hMTB for example
+    cols_to_loop <- paste(rep(cell_types, each = length(timepoints)), timepoints, sep = ".*")
+  }
+  else if(use_pathogen){
+    cols_to_loop <- pathogens
+  }
+  else if(use_tp){
+    cols_to_loop <- timepoints
+  }
+  else if(use_ct){
+    cols_to_loop <- cell_types
+  }
+  # go through our group of columns
+  for(col_grep in cols_to_loop){
+    # grab the column names that have this in their name
+    appropriate_columns <- colnames(de_table)[(grep(col_grep, colnames(de_table)))]
+    print('getting most varying out of: ')
+    print(appropriate_columns)
+    # now subset the frame to only have these columns
+    sub_de_table <- de_table[, appropriate_columns]
+    # subset to only the genes that were upregulated at least once, if requested
+    if(must_be_positive_once){
+      sub_de_table <- sub_de_table[apply(sub_de_table,1,min) < 0,]
+    }
+    # we will return the rownames
+    varying_genes <- NULL
+    # either use a set SD or grab so many genes
+    if(use_dynamic_sd){
+      varying_genes <- get_most_varying_from_df(sub_de_table, top_so_many)
+    }
+    else{
+      # now calculate the sd over this set of columns
+      sds <- apply(sub_de_table, 1, sd, na.rm=T)
+      # then grab the genes that are 'this' varied
+      varying_genes <- rownames(sub_de_table[sds > sd_cutoff,])
+    }
+    
+    # and add them to the list
+    top_vary_de <- c(top_vary_de, varying_genes)
+  }
+  # constrain to the unique genes
+  top_vary_de <- unique(top_vary_de)
+  top_vary_de <- sort(top_vary_de)
+  return(top_vary_de)
+}
+
+get_most_varying_from_df <- function(dataframe, top_so_many=10){
+  # now calculate the sd over this set of columns
+  sds <- apply(dataframe, 1, sd, na.rm=T)
+  # add the sds as a column
+  dataframe$sds <- sds
+  # order by the sd
+  dataframe <- dataframe[order(dataframe$sds, decreasing = T), ]
+  # we will return the rownames
+  most_varied <- NULL
+  # we need to make sure we can return as many rownames as requested
+  if(nrow(dataframe) < top_so_many){
+    print(paste('requested ', top_so_many, ', but dataframe only has ', nrow(most_varied), ' rows', sep = ''))
+    most_varied <- rownames(dataframe)
+  }
+  else{
+    most_varied <- rownames(dataframe)[1:top_so_many]
+  }
+  return(most_varied)
+}
+
+
 
 ####################
 # Main Code        #
@@ -302,4 +418,57 @@ sig_down_output_loc_gs_lfc01 <- '/data/cardiology/differential_expression/sigs_n
 # write the significantly upregulated genes
 get_significant_genes(mast_meta_output_loc_lfc01, sig_down_output_loc_lfc01, only_negative = T, to_ens = T, symbols.to.ensg.mapping = gene_to_ens_mapping)
 get_significant_genes(mast_meta_output_loc_lfc01, sig_down_output_loc_gs_lfc01, only_negative = T, to_ens = F, symbols.to.ensg.mapping = gene_to_ens_mapping)
+
+
+# get the location of the pathways
+pathway_up_output_loc <- '/data/cardiology/pathways/sigs_pos/meta_paired_lores_lfc01minpct01_20200707_ensid/rna/'
+# write the combined pathway file
+pathway_up_df <- get_pathway_table(pathway_up_output_loc, append = '_sig_up_pathways.txt')
+pathway_up_df[pathway_up_df==0] <- 350
+# get the df limited by top pathways of upregulated genes
+pathway_up_df_top_3 <- get_top_pathways(pathway_up_df, 3, T)
+pathway_up_df_top_5 <- get_top_pathways(pathway_up_df, 5, T)
+
+# show pathways
+cc <- get_color_coding_dict()
+colors_cond <- rep(c(cc[['UTBaseline']],cc[['UTt24h']],cc[['UTt8w']],cc[['Baselinet24h']],cc[['Baselinet8w']],cc[['t24ht8w']]), times = 6)
+colors_ct <- c(rep(cc[['B']], times=6),rep(cc[['CD4T']], times=6),rep(cc[['CD8T']], times=6),rep(cc[['DC']], times=6),rep(cc[['monocyte']], times=6),rep(cc[['NK']], times=6))
+colors_m <- cbind(colors_ct, colors_cond)
+colnames(colors_m) <- c('celltype',
+                        'condition')
+heatmap.3(t(as.matrix(pathway_up_df_top_3)),
+          col=rev(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(15,10))
+
+# get the location of the pathways
+v2_pathway_up_output_loc <- '/data/cardiology/pathways/sigs_pos/v2_paired_lores_lfc01minpct01_20200707_ensid/rna/'
+# write the combined pathway file
+v2_pathway_up_df <- get_pathway_table(v2_pathway_up_output_loc, append = '_sigpos.txt')
+v2_pathway_up_df[v2_pathway_up_df==0] <- 350
+# get the df limited by top pathways of upregulated genes
+v2_pathway_up_df_top_3 <- get_top_pathways(v2_pathway_up_df, 3, T)
+
+heatmap.3(t(as.matrix(v2_pathway_up_df_top_3)),
+          col=rev(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(15,10))
+
+# get the location of the pathways
+pathway_down_output_loc <- '/data/cardiology/pathways/sigs_neg/meta_paired_lores_lfc01minpct01_20200707_ensid/rna/'
+# write the combined pathway file
+pathway_down_df <- get_pathway_table(pathway_down_output_loc, append = '_pathwayneg.txt')
+pathway_down_df[pathway_down_df==0] <- 400
+# get the df limited by top pathways of upregulated genes
+pathway_down_df_top_3 <- get_top_pathways(pathway_down_df, 3, T)
+
+heatmap.3(t(as.matrix(pathway_down_df_top_3)),
+          col=rev(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(15,10))
+
+# get the location of the pathways
+v2_pathway_down_output_loc <- '/data/cardiology/pathways/sigs_neg/v2_paired_lores_lfc01minpct01_20200707_ensid/rna/'
+# write the combined pathway file
+v2_pathway_down_df <- get_pathway_table(v2_pathway_down_output_loc, append = '_signeg.txt')
+v2_pathway_down_df[v2_pathway_down_df==0] <- 400
+# get the df limited by top pathways of upregulated genes
+v2_pathway_down_df_top_3 <- get_top_pathways(v2_pathway_down_df, 3, T)
+
+heatmap.3(t(as.matrix(v2_pathway_down_df_top_3)),
+          col=rev(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(15,10))
 
