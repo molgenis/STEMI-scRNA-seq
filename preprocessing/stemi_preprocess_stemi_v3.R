@@ -84,6 +84,32 @@ add_soup_assignments <- function(seurat_object, soup_dir, soup_append, batch_key
   return(seurat_object)
 }
 
+# add scrublet doublet assignments
+add_scrublet_assignments <- function(seurat_object, scrublet_loc){
+  # read the output
+  scrublet_output <- read.table(scrublet_loc, sep = '\t', header = T)
+  rownames(scrublet_output) <- scrublet_output$lane_barcode
+  # add the assignment
+  seurat_object <- AddMetaData(seurat_object, scrublet_output['doublet'], 'scrublet_doublet')
+  seurat_object <- AddMetaData(seurat_object, scrublet_output['doublet_score'], 'scrublet_dscore')
+  return(seurat_object)
+}
+
+# add the assignments based on demuxlet demultiplexing
+add_demux_assignments <- function(seurat_object, demux_dir, demux_append, batch_key='batch'){
+  # grab the demux assignments
+  demux_output_all <- get_demux_assignments(seurat_object, demux_dir, demux_append, batch_key)
+  # create a regex to get the last index of -
+  last_dash_pos <- "\\-[^\\-]*$"
+  # add the lane/barcode combo
+  rownames(demux_output_all) <- paste0(substr(demux_output_all$BARCODE, 1, regexpr(last_dash_pos, demux_output_all$BARCODE)-1), "_", demux_output_all$lane)
+  # add the values
+  seurat_object <- AddMetaData(seurat_object, demux_output_all['SNG.1ST'])
+  seurat_object <- AddMetaData(seurat_object, demux_output_all['BEST'])
+  seurat_object <- AddMetaData(seurat_object, demux_output_all['SNG.LLK1'])
+  seurat_object <- AddMetaData(seurat_object, demux_output_all['LLK12'])
+  return(seurat_object)
+}
 
 
 # grab a dataframe with the souporcell results for the lanes in the given object
@@ -137,6 +163,37 @@ remove_doublets <- function(seurat_object, detection_method="souporcell"){
   return(seurat_object)
 }
 
+# add the stimulation tags, so UT, x hours after stim y, etc.
+add_stim_tags <- function(seurat_object, stim_mapping_loc, assignment_key='assignment', batch_key='batch', tp_key='timepoint'){
+  # add the column for the timepoints to the Seurat object
+  seurat_object@meta.data[tp_key] <- NA
+  # grab the timepoints
+  tps <- read.table(stim_mapping_loc, header = T, stringsAsFactors = F, row.names = 1)
+  # check the timepoints
+  for(tp in colnames(tps)){
+    print(tp)
+    # check the lanes
+    for(lane in rownames(tps)){
+      # only apply if there are actually rows with lane in the object
+      if(lane %in% seurat_object@meta.data[[batch_key]]){
+        participants.as.string <- tps[lane,tp]
+        # split the participant line by comma to get the participants for the timepoint
+        participants.this.tp <- strsplit(participants.as.string, ",")
+        # check if there are any cases with the combination of these participants with the timepoint (some participants had both v2 and v3 experiments)
+        if(nrow(seurat_object@meta.data[seurat_object@meta.data[[assignment_key]] %in% unlist(participants.this.tp) 
+                                        & seurat_object@meta.data[[batch_key]] == lane
+                                        ,]) > 0){
+          # set this timepoint for this lane combined with these participants
+          seurat_object@meta.data[seurat_object@meta.data[[assignment_key]] %in% unlist(participants.this.tp) 
+                                  & seurat_object@meta.data[[batch_key]] == lane
+                                  ,][tp_key] <- tp
+        }
+      }
+    }
+  }
+  return(seurat_object)
+}
+
 
 
 ####################
@@ -158,11 +215,25 @@ stemi_v3 <- read_all_lanes(cellranger_lanes_dir_v3, exclude_lanes = exclude_lane
 saveRDS(stemi_v3, stemi_v3_raw_loc)
 
 # these are the soup pre- and appends
-soup_prepend <- "/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/souporcell/soupor_doublet/doublet_output/"
-soup_append <- "_unremapped_doublets.tsv"
+soup_prepend <- "/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/souporcell/correlate_clusters/correlated_output/"
+soup_append <- "_correlated.tsv"
+# these are the demux pre- and appends
+demux_prepend <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/demuxlet/demuxlet_output/'
+demux_append <- '_mmaf002.best'
+# scrublet loc
+scrublet_v3_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/scrublet/scrublet_assignment_v3.tsv'
+# location of the simulation mapping
+stim_mapping_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/stemi-sampleIDs.txt'
 
-# add (preliminary) souporcell assignments
+# add souporcell assignments
 stemi_v3 <- add_soup_assignments(stemi_v3, soup_prepend, soup_append)
+# add demuxlet
+stemi_v3 <- add_demux_assignments(stemi_v3, demux_prepend, demux_append)
+# add scrublet
+stemi_v3 <- add_scrublet_assignments(stemi_v3, scrublet_v3_loc)
+# add stim tags
+stemi_v3 <- add_stim_tags(stemi_v3, stim_mapping_loc = stim_mapping_loc, assignment_key = 'assignment_key', tp_key = 'timepoint.ll')
+stemi_v3 <- add_stim_tags(stemi_v3, stim_mapping_loc = stim_mapping_loc, assignment_key = 'SNG.1ST', tp_key = 'timepoint.demux')
 
 # remove samples called as doublets by souporcell
 stemi_v3 <- remove_doublets(stemi_v3, detection_method="souporcell")
@@ -173,3 +244,4 @@ stemi_v3[["percent.mt"]] <- PercentageFeatureSet(stemi_v3, pattern = "^MT-")
 stemi_v3 <- subset(stemi_v3, subset = nFeature_RNA > 200 & percent.mt < 15 & HBB < 10)
 # save the preprocessed file
 saveRDS(stemi_v3, stemi_v3_filtered_loc)
+
