@@ -1,7 +1,8 @@
 library(data.table)
 
-
+# convert the genotypes to numbers for correlation
 convert_genotypes <- function(genotype_file){
+  # convert for each genotype column
   for(gt in colnames(genotype_file)[10:ncol(genotype_file)]){
     genotype_file[startsWith(genotype_file[[gt]], '0|0'),gt] <- 0
     genotype_file[startsWith(genotype_file[[gt]], '1|0'),gt] <- 1
@@ -18,7 +19,7 @@ convert_genotypes <- function(genotype_file){
   return(genotype_file)
 }
 
-
+# harmonize the REF/ALT between the two genotype files
 harmonized_ref_alt <- function(genotype_file1, genotype_file2){
   for(gt in colnames(genotype_file2)[10:ncol(genotype_file2)]){
     # swap homo ref and alt if necessary
@@ -40,7 +41,7 @@ harmonized_ref_alt <- function(genotype_file1, genotype_file2){
   return(genotype_file2)
 }
 
-
+# correlate from two genotype files and put the result in a matrix
 get_gt_correlation <- function(genotype_file1, genotype_file2){
   # get the participants/clusters/etc.
   geno1_cols <- colnames(genotype_file1)[10:ncol(genotype_file1)]
@@ -68,6 +69,7 @@ get_gt_correlation <- function(genotype_file1, genotype_file2){
   return(cor_matrix)
 }
 
+# add assignments clusters, adding the best correlation matrix match to the souporcell clusters
 add_assignment_to_clusters <- function(clusters, correlations, verbose=T){
   # add new columns
   clusters$assignment_ll <- NA
