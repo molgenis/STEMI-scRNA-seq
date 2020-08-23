@@ -44,12 +44,61 @@ add_imputed_meta_data <- function(seurat_object, column_to_transform, column_to_
 }
 
 
+add_gender_and_age <- function(seurat_object, gender_age_file_loc, assignment_column='assignment.final', column_to_add_age='age', column_to_add_gender='gender'){
+  # grab the table from the file
+  gender_age_mapping <- read.table(gender_age_file_loc, header = T, stringsAsFactors = F)
+  # grab the barcodes and assignments
+  assignments <- seurat_object@meta.data
+  assignments$age <- NA
+  assignments$gender <- NA
+  # go through each row of the gender age file
+  #apply(gender_age_mapping, 1, function(row){
+  for(stemi_id in unique(gender_age_mapping$ID)){
+    stemi_gender <- gender_age_mapping[gender_age_mapping$ID == stemi_id, 'gender']
+    stemi_age <- gender_age_mapping[gender_age_mapping$ID == stemi_id, 'age']
+    ll_id <- gender_age_mapping[gender_age_mapping$ID == stemi_id, 'll_match_id']
+    ll_gender <- gender_age_mapping[gender_age_mapping$ID == stemi_id, 'll_match_gender']
+    ll_age <- gender_age_mapping[gender_age_mapping$ID == stemi_id, 'll_match_age']
+    # grab the values in the row
+    #stemi_id <- row[['ID']]
+    #stemi_gender <- row[['gender']]
+    #stemi_age <- row[['age']]
+    #ll_id <- row[['ll_match_id']]
+    #ll_gender <- row[['ll_match_gender']]
+    #ll_age <- row[['ll_match_age']]
+    # add the age and gender
+    if(nrow(assignments[assignments[[assignment_column]] == stemi_id, ]) > 0){
+      assignments[assignments[[assignment_column]] == stemi_id, ]$age <- stemi_age
+      assignments[assignments[[assignment_column]] == stemi_id, ]$gender <- stemi_gender
+      
+    }
+    else{
+      print(paste(stemi_id, 'not in object'))
+    }
+    if(nrow(assignments[assignments[[assignment_column]] == ll_id, ]) > 0){
+      assignments[assignments[[assignment_column]] == ll_id, ]$age <- ll_age
+      assignments[assignments[[assignment_column]] == ll_id, ]$gender <- ll_gender
+    }
+    else{
+      print(paste(ll_id, 'not in object'))
+    }
+  }
+  #})
+  # add this info to the object
+  seurat_object <- AddMetaData(seurat_object, assignments['age'], column_to_add_age)
+  seurat_object <- AddMetaData(seurat_object, assignments['gender'], column_to_add_gender)
+  return(seurat_object)
+}
+
 ####################
 # main code        #
 ####################
 
 # we need some more memory to do 
 options(future.globals.maxSize = 120 * 1000 * 1024^2)
+
+# get age-gender file
+age_gender_file_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/metadata/stemi_age_gender_match.tsv'
 
 # the location of the objects
 object_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/'
@@ -128,8 +177,11 @@ cardio.integrated@meta.data[is.na(cardio.integrated@meta.data$cell_type_lowerres
 cardio.integrated@meta.data[cardio.integrated@meta.data$orig.ident == 'stemi_v2', ]$chem <- 'V2'
 cardio.integrated@meta.data[is.na(cardio.integrated@meta.data$batch), ]$batch <- cardio.integrated@meta.data[is.na(cardio.integrated@meta.data$batch), ]$lane
 
+# add the age and gender
+cardio.integrated <- add_gender_and_age(cardio.integrated, age_gender_file_loc)
+
 # remove doublets mono 4
 cardio.integrated <- subset(cardio.integrated, subset = cell_type != 'mono 4')
 
 # save our efforts
-saveRDS(cardio.integrated, paste(object_loc, 'cardio.integrated_20200625.rds', sep = ''))
+saveRDS(cardio.integrated, paste(object_loc, 'cardio.integrated_20200820.rds', sep = ''))
