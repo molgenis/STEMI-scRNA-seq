@@ -42,7 +42,7 @@ harmonized_ref_alt <- function(genotype_file1, genotype_file2){
 }
 
 # correlate from two genotype files and put the result in a matrix
-get_gt_correlation <- function(genotype_file1, genotype_file2){
+get_gt_correlation <- function(genotype_file1, genotype_file2, verbose=T ){
   # get the participants/clusters/etc.
   geno1_cols <- colnames(genotype_file1)[10:ncol(genotype_file1)]
   geno2_cols <- colnames(genotype_file2)[10:ncol(genotype_file2)]
@@ -65,6 +65,9 @@ get_gt_correlation <- function(genotype_file1, genotype_file2){
       # add value in matrix
       cor_matrix[gt1, gt2] <- correlation
     }
+  }
+  if(verbose){
+    print(cor_matrix)
   }
   return(cor_matrix)
 }
