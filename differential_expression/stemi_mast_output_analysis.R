@@ -279,30 +279,22 @@ get_color_coding_dict <- function(){
   return(color_coding)
 }
 
-get_top_vary_genes <- function(de_table, use_tp=T, use_pathogen=T, use_ct=T, sd_cutoff=0.5, use_dynamic_sd=F, top_so_many=10, must_be_positive_once=F, pathogens=c("CA", "MTB", "PA"), timepoints=c("3h", "24h"), cell_types=c("CD4T", "CD8T", "monocyte", "NK", "B", "DC")){
+get_top_vary_genes <- function(de_table, use_tp=T, use_ct=T, sd_cutoff=0.5, use_dynamic_sd=F, top_so_many=10, must_be_positive_once=F, timepoints=c("Baselinet24h", "Baselinet8w", "t24ht8w"), cell_types=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK")){
   top_vary_de <- c()
   cols_to_loop <- NULL
   # grab the appriate grep
-  if(use_tp & use_pathogen){
-    # we want a combo of pathogen and timepoints, so 3hCA for example
-    cols_to_loop <- paste(rep(timepoints, each = length(pathogens)), pathogens, sep = "")
-  }
-  else if(use_pathogen & use_ct){
-    # cell type and pathogen, so monocyte3hCA and monocyte24hCA for example
-    cols_to_loop <- paste(rep(cell_types, each = length(pathogens)), pathogens, sep = ".*")
-  }
-  else if(use_tp & use_ct){
+  if(use_tp & use_ct){
     # cell type at a timepoint, so monocyte3hCA and monocyte3hPA and monocyte3hMTB for example
     cols_to_loop <- paste(rep(cell_types, each = length(timepoints)), timepoints, sep = ".*")
-  }
-  else if(use_pathogen){
-    cols_to_loop <- pathogens
   }
   else if(use_tp){
     cols_to_loop <- timepoints
   }
   else if(use_ct){
     cols_to_loop <- cell_types
+  }
+  else{
+    cols_to_loop <- c(paste(colnames(de_table), collapse='|'))
   }
   # go through our group of columns
   for(col_grep in cols_to_loop){
@@ -356,6 +348,40 @@ get_most_varying_from_df <- function(dataframe, top_so_many=10){
     most_varied <- rownames(dataframe)[1:top_so_many]
   }
   return(most_varied)
+}
+
+get_combined_meta_de_table <- function(meta_output_loc, must_be_positive_once=F, timepoints=c("Baselinet24h", "Baselinet8w", "t24ht8w"), cell_types_to_use=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK")){
+  de_table <- read.table(paste0(meta_output_loc, cell_types_to_use[1], timepoints[1], ".tsv"), stringsAsFactors = F, sep = "\t")
+  de_table <- de_table['metafc']
+  colnames(de_table) <- c(paste(cell_types_to_use[1], timepoints[1], sep=''))
+  deg_meta_combined <- data.frame(row.names = rownames(de_table))
+  rows <- rownames(deg_meta_combined)
+  deg_meta_combined <- data.table(deg_meta_combined)
+  deg_meta_combined$genes <- rows
+  
+  
+  for (timepoint in timepoints) {
+    for (cell_type in cell_types_to_use) {
+      deg_table <- read.table(paste0(meta_output_loc, cell_type, timepoint, ".tsv"), stringsAsFactors = F, sep = "\t")
+      deg_table <- deg_table['metafc']
+      colnames(deg_table) <- c(paste(cell_type, timepoint, sep=''))
+      deg_table$genes <- rownames(deg_table)
+      deg_table <- data.table(deg_table)
+      print(head(deg_table))
+      deg_meta_combined <- merge(deg_meta_combined, deg_table, by.x='genes', by.y='genes', all=TRUE)
+      #deg_meta_combined[,paste(cell_type, timepoint, pathogen, sep = "_")] <- deg_table$metafc
+    }
+  }
+  
+  deg_meta_combined <- data.frame(deg_meta_combined)
+  rownames(deg_meta_combined) <- deg_meta_combined$genes
+  deg_meta_combined$genes <- NULL
+  deg_meta_combined[is.na(deg_meta_combined)] <- 0
+  # limit to those that were upregulated at least once if requested
+  if(must_be_positive_once){
+    deg_meta_combined <- deg_meta_combined[apply(deg_meta_combined,1,min) < 0,]
+  }
+  return(deg_meta_combined)
 }
 
 
@@ -437,7 +463,7 @@ colors_m <- cbind(colors_ct, colors_cond)
 colnames(colors_m) <- c('celltype',
                         'condition')
 heatmap.3(t(as.matrix(pathway_up_df_top_3)),
-          col=rev(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(15,10))
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(15,10))
 
 # get the location of the pathways
 v2_pathway_up_output_loc <- '/data/cardiology/pathways/sigs_pos/v2_paired_lores_lfc01minpct01_20200707_ensid/rna/'
@@ -448,7 +474,7 @@ v2_pathway_up_df[v2_pathway_up_df==0] <- 350
 v2_pathway_up_df_top_3 <- get_top_pathways(v2_pathway_up_df, 3, T)
 
 heatmap.3(t(as.matrix(v2_pathway_up_df_top_3)),
-          col=rev(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(15,10))
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(15,10))
 
 # get the location of the pathways
 pathway_down_output_loc <- '/data/cardiology/pathways/sigs_neg/meta_paired_lores_lfc01minpct01_20200707_ensid/rna/'
@@ -459,7 +485,7 @@ pathway_down_df[pathway_down_df==0] <- 400
 pathway_down_df_top_3 <- get_top_pathways(pathway_down_df, 3, T)
 
 heatmap.3(t(as.matrix(pathway_down_df_top_3)),
-          col=rev(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(15,10))
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(15,10))
 
 # get the location of the pathways
 v2_pathway_down_output_loc <- '/data/cardiology/pathways/sigs_neg/v2_paired_lores_lfc01minpct01_20200707_ensid/rna/'
@@ -470,5 +496,65 @@ v2_pathway_down_df[v2_pathway_down_df==0] <- 400
 v2_pathway_down_df_top_3 <- get_top_pathways(v2_pathway_down_df, 3, T)
 
 heatmap.3(t(as.matrix(v2_pathway_down_df_top_3)),
-          col=rev(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(15,10))
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(15,10))
+
+
+# create heatmap of Baseline vs t24h
+cc <- get_color_coding_dict()
+stemi_de_table <- get_combined_meta_de_table(mast_meta_output_loc_lfc01)
+# do per combination
+stemi_de_table_baseline_t24h <- stemi_de_table[, colnames(stemi_de_table)[grep('Baselinet24h', colnames(stemi_de_table))]]
+stemi_de_table_baseline_t24h_vary <- get_top_vary_genes(stemi_de_table_baseline_t24h, use_ct = F, use_tp = T, top_so_many = 50, use_dynamic_sd = T, timepoints=c("Baselinet24h"))
+deg_meta_stemi_de_table_baseline_t24h_ct_vary <- stemi_de_table_baseline_t24h[(rownames(stemi_de_table_baseline_t24h) %in% stemi_de_table_baseline_t24h_vary), ]
+t24h_vary_colors_cond <- rep(c(cc[['Baselinet24h']]), times = 6)
+t24h_vary_colors_ct <- c(rep(cc[['B']], times=1),rep(cc[['CD4T']], times=1),rep(cc[['CD8T']], times=1),rep(cc[['DC']], times=1),rep(cc[['monocyte']], times=1),rep(cc[['NK']], times=1))
+t24h_vary_colors_m <- cbind(t24h_vary_colors_ct, t24h_vary_colors_cond)
+colnames(t24h_vary_colors_m) <- c('celltype',
+                        'condition')
+heatmap.3(t(as.matrix(deg_meta_stemi_de_table_baseline_t24h_ct_vary)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24h_vary_colors_m), margins=c(5,11), main = 't0/t24h DE lfc varied')
+heatmap.3(t(as.matrix(stemi_de_table_baseline_t24h)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24h_vary_colors_m), margins=c(5,11), labCol=NA, main = 't0/t24h DE lfc')
+
+# create heatmp of Baseline vs t8w
+stemi_de_table_baseline_t8w <- stemi_de_table[, colnames(stemi_de_table)[grep('Baselinet8w', colnames(stemi_de_table))]]
+stemi_de_table_baseline_t8w_vary <- get_top_vary_genes(stemi_de_table_baseline_t8w, use_ct = F, use_tp = T, top_so_many = 50, use_dynamic_sd = T, timepoints=c("Baselinet8w"))
+deg_meta_stemi_de_table_baseline_t8w_ct_vary <- stemi_de_table_baseline_t8w[(rownames(stemi_de_table_baseline_t8w) %in% stemi_de_table_baseline_t8w_vary), ]
+t8w_vary_colors_cond <- rep(c(cc[['Baselinet8w']]), times = 6)
+t8w_vary_colors_ct <- c(rep(cc[['B']], times=1),rep(cc[['CD4T']], times=1),rep(cc[['CD8T']], times=1),rep(cc[['DC']], times=1),rep(cc[['monocyte']], times=1),rep(cc[['NK']], times=1))
+t8w_vary_colors_m <- cbind(t8w_vary_colors_ct, t8w_vary_colors_cond)
+colnames(t8w_vary_colors_m) <- c('celltype',
+                                  'condition')
+heatmap.3(t(as.matrix(deg_meta_stemi_de_table_baseline_t8w_ct_vary)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t8w_vary_colors_m), margins=c(5,11), main = 't0/t8w DE lfc varied')
+heatmap.3(t(as.matrix(stemi_de_table_baseline_t8w)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t8w_vary_colors_m), margins=c(5,11), labCol=NA, main = 't0/t8w DE lfc')
+
+# create heatmp of t24h vs t8w
+stemi_de_table_t24h_t8w <- stemi_de_table[, colnames(stemi_de_table)[grep('t24ht8w', colnames(stemi_de_table))]]
+stemi_de_table_t24h_t8w_vary <- get_top_vary_genes(stemi_de_table_t24h_t8w, use_ct = F, use_tp = T, top_so_many = 50, use_dynamic_sd = T, timepoints=c("t24ht8w"))
+deg_meta_stemi_de_table_t24h_t8w_ct_vary <- stemi_de_table_t24h_t8w[(rownames(stemi_de_table_t24h_t8w) %in% stemi_de_table_t24h_t8w_vary), ]
+t24ht8w_vary_colors_cond <- rep(c(cc[['t24ht8w']]), times = 6)
+t24ht8w_vary_colors_ct <- c(rep(cc[['B']], times=1),rep(cc[['CD4T']], times=1),rep(cc[['CD8T']], times=1),rep(cc[['DC']], times=1),rep(cc[['monocyte']], times=1),rep(cc[['NK']], times=1))
+t24ht8w_vary_colors_m <- cbind(t24ht8w_vary_colors_ct, t24ht8w_vary_colors_cond)
+colnames(t24ht8w_vary_colors_m) <- c('celltype',
+                                 'condition')
+heatmap.3(t(as.matrix(deg_meta_stemi_de_table_t24h_t8w_ct_vary)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24ht8w_vary_colors_m), margins=c(5,11), main = 't24h/t8w DE lfc varied')
+heatmap.3(t(as.matrix(stemi_de_table_t24h_t8w)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24ht8w_vary_colors_m), margins=c(5,11), labCol=NA, main = 't24h/t8w DE lfc')
+
+# create the full table and heatmap
+stemi_de_table_andut <- get_combined_meta_de_table(mast_meta_output_loc_lfc01, timepoints=c("UTBaseline", "UTt24h", "UTt8w", "Baselinet24h", "Baselinet8w", "t24ht8w"))
+stemi_de_table_andut_vary <- get_top_vary_genes(stemi_de_table_andut, use_ct = F, use_tp = F, top_so_many = 50, use_dynamic_sd = T, timepoints=c("UTBaseline", "UTt24h", "UTt8w", "Baselinet24h", "Baselinet8w", "t24ht8w"))
+deg_meta_stemi_de_table_andut_vary <- stemi_de_table_andut[(rownames(stemi_de_table_andut) %in% stemi_de_table_andut_vary), ]
+colors_cond <- rep(c(cc[['UTBaseline']],cc[['UTt24h']],cc[['UTt8w']],cc[['Baselinet24h']],cc[['Baselinet8w']],cc[['t24ht8w']]), times = 6)
+colors_ct <- c(rep(cc[['B']], times=6),rep(cc[['CD4T']], times=6),rep(cc[['CD8T']], times=6),rep(cc[['DC']], times=6),rep(cc[['monocyte']], times=6),rep(cc[['NK']], times=6))
+colors_m <- cbind(colors_ct, colors_cond)
+colnames(colors_m) <- c('celltype',
+                        'condition')
+heatmap.3(t(as.matrix(deg_meta_stemi_de_table_andut_vary)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(5,9), main = 'DE lfc varied')
+heatmap.3(t(as.matrix(stemi_de_table_andut)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(5,9), labCol=NA, main = 'DE lfc')
 

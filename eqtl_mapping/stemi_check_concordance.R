@@ -13,7 +13,7 @@ require(scales)
 ###########################################################################################################################
 
 # plot concordance
-concordance_plot <- function(x, y, ylim=c(-13,13), xlim=c(-200,200), ...) {
+concordance_plot <- function(x, y, xlab, ylab, ylim=c(-13,13), xlim=c(-200,200), ...) {
   # get the rows of X that are in Y as well
   x.union <- x[paste(x$SNPName, x$ProbeName) %in% paste(y$SNPName, y$ProbeName), ]
   # get the rows of Y that are in the union (match to get correct order as well)
@@ -48,7 +48,8 @@ concordance_plot <- function(x, y, ylim=c(-13,13), xlim=c(-200,200), ...) {
   abline(v=0)
   abline(h=2.774223, lty=5)
   abline(h=-2.774223, lty=5)
-  
+  # add titles
+  title(main = 'concordance', xlab=xlab, ylab=ylab)
 }
 
 ###########################################################################################################################
@@ -66,19 +67,19 @@ save_loc <- args[3]
 # these are all optional
 res_vert <- 600
 if(!is.na(match('-res_vert', args))){
-  res_vert <- args[match('-res_vert', args) + 1]
+  res_vert <- as.numeric(args[match('-res_vert', args) + 1])
 }
 res_hori <- 600
 if(!is.na(match('-res_hori', args))){
-  res_hori <- args[match('-res_hori', args) + 1]
+  res_hori <- as.numeric(args[match('-res_hori', args) + 1])
 }
 xlab = set1_loc
-if(!is.na(match('-set1_name', args))){
-  xlab <- args[match('-set1_name', args) + 1]
+if(!is.na(match('-xlab', args))){
+  xlab <- args[match('-xlab', args) + 1]
 }
 ylab = set2_loc
-if(!is.na(match('-set2_name', args))){
-  ylab <- args[match('-set2_name', args) + 1]
+if(!is.na(match('-ylab', args))){
+  ylab <- args[match('-ylab', args) + 1]
 }
 # read the two files
 set1 <- read.table(set1_loc, header = T, sep = "\t", stringsAsFactors = F)

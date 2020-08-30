@@ -73,8 +73,8 @@ mast_output_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoi
 # for a MAST comparison, also do only paired comparisons
 mast_output_paired_loc_v2 <- paste(mast_output_loc, 'stemi_v2_paired_unconfined_20200707/', sep = '')
 mast_output_paired_loc_v3 <- paste(mast_output_loc, 'stemi_v3_paired_unconfined_20200707/', sep = '')
-mast_output_paired_lores_loc_v2 <- paste(mast_output_loc, 'stemi_v2_paired_lores_lfc025minpct01ncountrna_20200707/', sep = '')
-mast_output_paired_lores_loc_v3 <- paste(mast_output_loc, 'stemi_v3_paired_lores_lfc025minpct01ncountrna_20200707/', sep = '')
+mast_output_paired_lores_loc_v2 <- paste(mast_output_loc, 'stemi_v2_paired_lores_lfc0minpct01ncountrna_20200707/', sep = '')
+mast_output_paired_lores_loc_v3 <- paste(mast_output_loc, 'stemi_v3_paired_lores_lfc0minpct01ncountrna_20200707/', sep = '')
 mast_output_paired_loc_v2_rna <- paste(mast_output_paired_loc_v2, 'rna/', sep = '')
 mast_output_paired_loc_v3_rna <- paste(mast_output_paired_loc_v3, 'rna/', sep = '')
 mast_output_paired_loc_v2_sct <- paste(mast_output_paired_loc_v2, 'sct/', sep = '')
@@ -90,11 +90,11 @@ cardio.integrated <- readRDS(cardio_object_loc)
 cardio.chem2 <- subset(cardio.integrated, subset = chem == 'V2')
 DefaultAssay(cardio.chem2) <- 'RNA'
 cardio.chem2 <- NormalizeData(cardio.chem2)
-perform_mast_per_celltype(cardio.chem2, mast_output_paired_lores_loc_v2_rna, split.column = 'timepoint.final', cell.type.column = 'cell_type_lowerres', assay = 'RNA', min.pct = 0.1, features=NULL, logfc.threshold=0.25, latent.vars=c('nCount_RNA'))
+perform_mast_per_celltype(cardio.chem2, mast_output_paired_lores_loc_v2_rna, split.column = 'timepoint.final', cell.type.column = 'cell_type_lowerres', assay = 'RNA', min.pct = 0.1, features=NULL, logfc.threshold=0.0, latent.vars=c('nCount_RNA'))
 rm(cardio.chem2)
 # do the work for v3
 cardio.chem3 <- subset(cardio.integrated, subset = chem == 'V3')
 DefaultAssay(cardio.chem3) <- 'RNA'
 cardio.chem3 <- NormalizeData(cardio.chem3)
-perform_mast_per_celltype(cardio.chem3, mast_output_paired_lores_loc_v3_rna, split.column = 'timepoint.final', cell.type.column = 'cell_type_lowerres', assay = 'RNA', min.pct = 0.1, features=NULL, logfc.threshold=0.25, latent.vars=c('nCount_RNA'))
+perform_mast_per_celltype(cardio.chem3, mast_output_paired_lores_loc_v3_rna, split.column = 'timepoint.final', cell.type.column = 'cell_type_lowerres', assay = 'RNA', min.pct = 0.1, features=NULL, logfc.threshold=0.0, latent.vars=c('nCount_RNA'))
 rm(cardio.chem3)
