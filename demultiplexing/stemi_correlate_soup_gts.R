@@ -46,6 +46,9 @@ get_gt_correlation <- function(genotype_file1, genotype_file2, verbose=T ){
   # get the participants/clusters/etc.
   geno1_cols <- colnames(genotype_file1)[10:ncol(genotype_file1)]
   geno2_cols <- colnames(genotype_file2)[10:ncol(genotype_file2)]
+  # add a ref_alt column
+  genotype_file1$snprefalt <- paste(genotype_file1$ID, genotype_file1$REF, genotype_file1$ALT, sep = '_')
+  genotype_file2$snprefalt <- paste(genotype_file2$ID, genotype_file2$REF, genotype_file2$ALT, sep = '_')
   # create df
   cor_matrix <- data.frame(matrix(NA, nrow=length(geno1_cols), ncol=length(geno2_cols)))
   rownames(cor_matrix) <- geno1_cols
@@ -54,12 +57,12 @@ get_gt_correlation <- function(genotype_file1, genotype_file2, verbose=T ){
   for(gt1 in geno1_cols){
     for(gt2 in geno2_cols){
       # get SNPs known in both instances
-      known_snps_geno1 <- genotype_file1[!is.na(genotype_file1[[gt1]]), ]$ID
-      known_snps_geno2 <- genotype_file2[!is.na(genotype_file2[[gt2]]), ]$ID
+      known_snps_geno1 <- genotype_file1[!is.na(genotype_file1[[gt1]]), ]$snprefalt
+      known_snps_geno2 <- genotype_file2[!is.na(genotype_file2[[gt2]]), ]$snprefalt
       known_snps <- intersect(known_snps_geno1, known_snps_geno2)
       # grab genotypes
-      geno1_gts <- genotype_file1[genotype_file1$ID %in% known_snps, ][[gt1]]
-      geno2_gts <- genotype_file2[genotype_file2$ID %in% known_snps, ][[gt2]]
+      geno1_gts <- genotype_file1[genotype_file1$snprefalt %in% known_snps, ][[gt1]]
+      geno2_gts <- genotype_file2[genotype_file2$snprefalt %in% known_snps, ][[gt2]]
       # check correlation
       correlation <- cor(geno1_gts, geno2_gts, method='pearson')
       # add value in matrix
@@ -116,8 +119,8 @@ output_file <- args[4]
 #</TEST>
 
 # read the genotype files
-soup_vcf <- fread(soup_vcf_loc)
-geno_vcf <- fread(geno_vcf_loc)
+soup_vcf <- unique(fread(soup_vcf_loc))
+geno_vcf <- unique(fread(geno_vcf_loc))
 
 # get the SNPs in both files
 common_snps <- intersect(soup_vcf$ID, geno_vcf$ID)

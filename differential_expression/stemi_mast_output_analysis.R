@@ -6,6 +6,8 @@ library(RColorBrewer)
 library(MetaVolcanoR)
 library(ggplot2)
 library(data.table)
+library(ggpubr)
+
 
 
 ####################
@@ -385,6 +387,72 @@ get_combined_meta_de_table <- function(meta_output_loc, must_be_positive_once=F,
 }
 
 
+plot_de_vs_cell_type_numbers <- function(mast_output_loc, metadata, timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', "Baselinet24h", "Baselinet8w", "t24ht8w"), cell_types_to_use=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK"), pval_column='metap_bonferroni', sig_pval=0.05, plot_separately=T, proportion=F){
+  # init table
+  table <- NULL
+  for(timepoint in timepoints){
+    for(cell_type in cell_types_to_use){
+      # grab the number of cells, I would like to do this in a better way, but can't think of something now
+      nr_of_cells <- 0
+      if(timepoint == 'UTBaseline'){
+        nr_of_cells <- get_nr_of_cells(metadata, cell_type, 'UT', 'Baseline', proportion = proportion)
+      }
+      else if(timepoint == 'UTt24h'){
+        nr_of_cells <- get_nr_of_cells(metadata, cell_type, 'UT', 't24h', proportion = proportion)
+      }
+      else if(timepoint == 'UTt8w'){
+        nr_of_cells <- get_nr_of_cells(metadata, cell_type, 'UT', 't8w', proportion = proportion)
+      }
+      else if(timepoint == 'Baselinet24h'){
+        nr_of_cells <- get_nr_of_cells(metadata, cell_type, 'Baseline', 't24h', proportion = proportion)
+      }
+      else if(timepoint == 'Baselinet8w'){
+        nr_of_cells <- get_nr_of_cells(metadata, cell_type, 'Baseline', 't8w', proportion = proportion)
+      }
+      else if(timepoint == 't24ht8w'){
+        nr_of_cells <- get_nr_of_cells(metadata, cell_type, 't24h', 't8w', proportion = proportion)
+      }
+      # grab the nr of genes that are significant
+      de_table_loc <- paste(mast_output_loc, cell_type, timepoint, '.tsv', sep = '')
+      de_table <- read.table(de_table_loc, sep = '\t', header = T, row.names = 1)
+      sig_gene_number <- nrow(de_table[de_table[[pval_column]] < sig_pval, ])
+      # add to the table
+      if(is.null(table)){
+        table <- data.frame(c(timepoint), c(cell_type), c(nr_of_cells), c(sig_gene_number), stringsAsFactors = F)
+        colnames(table) <- c('timepoint', 'cell_type', 'nr_of_cells', 'sig_gene_number')
+      }
+      else{
+        table <- rbind(table, c(timepoint, cell_type, nr_of_cells, sig_gene_number))
+      }
+    }
+    if(plot_separately){
+      ggplot(table[table$timepoint==timepoint, ], aes(x=nr_of_cells, y=sig_gene_number, shape=timepoint, color=cell_type)) +
+        geom_point()
+    }
+  }
+  print(table)
+  if(!plot_separately){
+    xlab <- 'nr of cells'
+    if(proportion){
+      xlab <- 'proportion of cells'
+    }
+    
+    ggplot(table, aes(x=as.numeric(nr_of_cells), y=as.numeric(sig_gene_number), shape=timepoint, color=cell_type)) +
+      #scale_x_discrete(breaks = seq(0, 1, by = 0.1)) +
+      #scale_y_discrete(breaks = seq(0, 1000, by = 100)) +
+      geom_point(size=3) +
+      labs(x = xlab, y = 'nr of DE genes', title = 'cells vs nr of DE genes')
+  }
+}
+
+get_nr_of_cells <- function(metadata, cell_type, condition1, condition2, cell_type_column='cell_type_lowerres', condition_column='timepoint.final', proportion=F){
+  nr_of_cells <- nrow(metadata[metadata[[cell_type_column]] == cell_type & (metadata[[condition_column]] == condition1 | metadata[[condition_column]] == condition2), ])
+  if(proportion){
+    nr_of_cells <- nr_of_cells / nrow(metadata[metadata[[condition_column]] == condition1 | metadata[[condition_column]] == condition2, ])
+  }
+  return(nr_of_cells)
+}
+
 
 ####################
 # Main Code        #
@@ -498,6 +566,54 @@ v2_pathway_down_df_top_3 <- get_top_pathways(v2_pathway_down_df, 3, T)
 heatmap.3(t(as.matrix(v2_pathway_down_df_top_3)),
           col=(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(15,10))
 
+# create subset heatmaps of conditions
+pathway_up_df_baselinet24h <- pathway_up_df[, colnames(pathway_up_df)[grep('Baselinet24h', colnames(pathway_up_df))]]
+pathway_up_df_baselinet24h_top_10 <- get_top_pathways(pathway_up_df_baselinet24h, 10, T)
+cc <- get_color_coding_dict()
+t24h_vary_colors_cond <- rep(c(cc[['Baselinet24h']]), times = 6)
+t24h_vary_colors_ct <- c(rep(cc[['B']], times=1),rep(cc[['CD4T']], times=1),rep(cc[['CD8T']], times=1),rep(cc[['DC']], times=1),rep(cc[['monocyte']], times=1),rep(cc[['NK']], times=1))
+t24h_vary_colors_m <- cbind(t24h_vary_colors_ct, t24h_vary_colors_cond)
+colnames(t24h_vary_colors_m) <- c('celltype',
+                                  'condition')
+heatmap.3(t(as.matrix(pathway_up_df_baselinet24h_top_10)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24h_vary_colors_m), margins=c(11,11), main = 'upregulated pathways t0 vs t24h')
+# now down
+pathway_down_df_baselinet24h <- pathway_down_df[, colnames(pathway_down_df)[grep('Baselinet24h', colnames(pathway_down_df))]]
+pathway_down_df_baselinet24h_top_10 <- get_top_pathways(pathway_down_df_baselinet24h, 10, T)
+heatmap.3(t(as.matrix(pathway_down_df_baselinet24h_top_10)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24h_vary_colors_m), margins=c(11,11), main = 'downregulated pathways t0 vs t24h')
+# baseline vs t8w
+pathway_up_df_baselinet8w <- pathway_up_df[, colnames(pathway_up_df)[grep('Baselinet8w', colnames(pathway_up_df))]]
+pathway_up_df_baselinet8w_top_10 <- get_top_pathways(pathway_up_df_baselinet8w, 10, T)
+baselinet8w_vary_colors_cond <- rep(c(cc[['Baselinet8w']]), times = 6)
+baselinet8w_vary_colors_ct <- c(rep(cc[['B']], times=1),rep(cc[['CD4T']], times=1),rep(cc[['CD8T']], times=1),rep(cc[['DC']], times=1),rep(cc[['monocyte']], times=1),rep(cc[['NK']], times=1))
+baselinet8w_vary_colors_m <- cbind(baselinet8w_vary_colors_ct, baselinet8w_vary_colors_cond)
+colnames(baselinet8w_vary_colors_m) <- c('celltype',
+                                  'condition')
+heatmap.3(t(as.matrix(pathway_up_df_baselinet8w_top_10)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(baselinet8w_vary_colors_m), margins=c(11,11), main = 'upregulated pathways t24h vs t8w')
+# now down
+pathway_down_df_baselinet8w <- pathway_down_df[, colnames(pathway_down_df)[grep('Baselinet8w', colnames(pathway_down_df))]]
+pathway_down_df_baselinet8w_top_10 <- get_top_pathways(pathway_down_df_baselinet8w, 10, T)
+heatmap.3(t(as.matrix(pathway_down_df_baselinet8w_top_10)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(baselinet8w_vary_colors_m), margins=c(11,11), main = 'downregulated pathways t24h vs t8w')
+# t24h vs t8w
+pathway_up_df_t24ht8w <- pathway_up_df[, colnames(pathway_up_df)[grep('t24ht8w', colnames(pathway_up_df))]]
+pathway_up_df_t24ht8w_top_10 <- get_top_pathways(pathway_up_df_t24ht8w, 10, T)
+t24ht8w_vary_colors_cond <- rep(c(cc[['t24ht8w']]), times = 6)
+t24ht8w_vary_colors_ct <- c(rep(cc[['B']], times=1),rep(cc[['CD4T']], times=1),rep(cc[['CD8T']], times=1),rep(cc[['DC']], times=1),rep(cc[['monocyte']], times=1),rep(cc[['NK']], times=1))
+t24ht8w_vary_colors_m <- cbind(t24ht8w_vary_colors_ct, t24ht8w_vary_colors_cond)
+colnames(t24ht8w_vary_colors_m) <- c('celltype',
+                                  'condition')
+heatmap.3(t(as.matrix(pathway_up_df_t24ht8w_top_10)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24ht8w_vary_colors_m), margins=c(11,11), main = 'upregulated pathways t24h vs t8w')
+# now down
+pathway_down_df_t24ht8w <- pathway_down_df[, colnames(pathway_down_df)[grep('t24ht8w', colnames(pathway_down_df))]]
+pathway_down_df_t24ht8w_top_10 <- get_top_pathways(pathway_down_df_t24ht8w, 10, T)
+heatmap.3(t(as.matrix(pathway_down_df_t24ht8w_top_10)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24ht8w_vary_colors_m), margins=c(11,11), main = 'downregulated pathways t24h vs t8w')
+
+
 
 # create heatmap of Baseline vs t24h
 cc <- get_color_coding_dict()
@@ -558,3 +674,7 @@ heatmap.3(t(as.matrix(deg_meta_stemi_de_table_andut_vary)),
 heatmap.3(t(as.matrix(stemi_de_table_andut)),
           col=(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(5,9), labCol=NA, main = 'DE lfc')
 
+# grab the metadata
+meta.data <- read.table('/data/cardiology/metadata/cardio.integrated_meta.data.tsv', sep='\t', header=T, row.names=1)
+plot_de_vs_cell_type_numbers(mast_meta_output_loc_lfc01, meta.data, plot_separately = T, proportion = T)
+plot_de_vs_cell_type_numbers(mast_meta_output_loc_lfc01, meta.data, plot_separately = F, proportion = T)
