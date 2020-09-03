@@ -27,6 +27,7 @@ write_version_chemistry_overlap <- function(mast_meta_output_loc, venn_output_lo
     # check for overlap of significant DE genes in v2, v3 and meta
     venn.diagram(x = list(rownames(table[table$p_val_v2*nrow(table)<0.05, ]),rownames(table[table$p_val_v3*nrow(table)<0.05, ]),rownames(table[table$metap_bonferroni<0.05, ])),
                  category.names = c('v2', 'v3', 'meta'),
+                 main = substr(file, 1, regexpr("\\.[^\\.]*$", file)-1),
                  filename = paste(venn_output_loc, '/', output_file, '.png', sep = ''),
                  imagetype="png" ,
                  height = 480 , 
@@ -432,6 +433,7 @@ plot_de_vs_cell_type_numbers <- function(mast_output_loc, metadata, timepoints=c
   }
   print(table)
   if(!plot_separately){
+    # the label is different depending on whether we show the proportion or not
     xlab <- 'nr of cells'
     if(proportion){
       xlab <- 'proportion of cells'
@@ -446,11 +448,50 @@ plot_de_vs_cell_type_numbers <- function(mast_output_loc, metadata, timepoints=c
 }
 
 get_nr_of_cells <- function(metadata, cell_type, condition1, condition2, cell_type_column='cell_type_lowerres', condition_column='timepoint.final', proportion=F){
+  # the number of cells is the number of rows in the metadata that are of that cell type
   nr_of_cells <- nrow(metadata[metadata[[cell_type_column]] == cell_type & (metadata[[condition_column]] == condition1 | metadata[[condition_column]] == condition2), ])
+  # if we want the proportion, we need to divide by the total number of cells, which is all rows
   if(proportion){
     nr_of_cells <- nr_of_cells / nrow(metadata[metadata[[condition_column]] == condition1 | metadata[[condition_column]] == condition2, ])
   }
   return(nr_of_cells)
+}
+
+filter_pathway_df_on_starting_id <- function(pathway_df, filtered_pathway_names){
+  # get the ones now in the pathway df
+  pathway_names_with_id <- rownames(pathway_df)
+  last_dash_pos <- "\\_[^\\_]*$"
+  # get the pathway names by skipping from the underscore
+  pathway_names <- substr(pathway_names_with_id, regexpr(last_dash_pos, pathway_names_with_id)+1, nchar(pathway_names_with_id))
+  print(head(pathway_names))
+  # filter the pathway df
+  pathway_df_filtered <- pathway_df[pathway_names %in% filtered_pathway_names, ]
+  return(pathway_df_filtered)
+}
+
+get_filtered_pathway_names <- function(pathway_table, relation_table, starting_id){
+  # get all of the children of the starting ID
+  all_children <- get_children(relation_table, starting_id)
+  # get the names of the pathways that are children
+  pathway_names <- as.character(pathway_table[pathway_table$V1 %in% all_children, ]$V2)
+  return(pathway_names)
+}
+
+get_children <- function(relation_table, starting_id){
+  # get all of the children of the starting ID
+  children <- as.character(relation_table[relation_table$V1 == starting_id, 'V2'])
+  # these children are all family
+  family <- children
+  # see if there were any children
+  if(length(children) > 0){
+    # if there were children, we need to get their children as well
+    for(child in children){
+      # get the grandchildren and add these to the family
+      grand_children <- get_children(relation_table, child)
+      family <- c(family, grand_children)
+    }
+  }
+  return(family)
 }
 
 
@@ -473,6 +514,10 @@ mast_meta_output_loc_lfc01 <- '/data/cardiology/differential_expression/MAST/res
 # write meta output
 write_meta_mast(mast_output_prepend, mast_output_append, mast_meta_output_loc)
 write_meta_mast(mast_output_prepend, mast_output_append_lfc01, mast_meta_output_loc_lfc01)
+
+# check the overlap between chemistries
+overlap_venn_loc <- '/data/cardiology/differential_expression/MAST/overlap/stemi_meta_paired_lores_lfc01minpct01ncountrna_20200707/rna/'
+write_version_chemistry_overlap(mast_meta_output_loc_lfc01, overlap_venn_loc)
 
 # mapping of gene symbol to ensemble id
 gene_to_ens_mapping <- "/data/scRNA/differential_expression/genesymbol_to_ensid.tsv"
@@ -591,12 +636,12 @@ baselinet8w_vary_colors_m <- cbind(baselinet8w_vary_colors_ct, baselinet8w_vary_
 colnames(baselinet8w_vary_colors_m) <- c('celltype',
                                   'condition')
 heatmap.3(t(as.matrix(pathway_up_df_baselinet8w_top_10)),
-          col=(brewer.pal(10,"RdBu")), RowSideColors = t(baselinet8w_vary_colors_m), margins=c(11,11), main = 'upregulated pathways t24h vs t8w')
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(baselinet8w_vary_colors_m), margins=c(11,11), main = 'upregulated pathways t0 vs t8w')
 # now down
 pathway_down_df_baselinet8w <- pathway_down_df[, colnames(pathway_down_df)[grep('Baselinet8w', colnames(pathway_down_df))]]
 pathway_down_df_baselinet8w_top_10 <- get_top_pathways(pathway_down_df_baselinet8w, 10, T)
 heatmap.3(t(as.matrix(pathway_down_df_baselinet8w_top_10)),
-          col=(brewer.pal(10,"RdBu")), RowSideColors = t(baselinet8w_vary_colors_m), margins=c(11,11), main = 'downregulated pathways t24h vs t8w')
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(baselinet8w_vary_colors_m), margins=c(11,11), main = 'downregulated pathways t0 vs t8w')
 # t24h vs t8w
 pathway_up_df_t24ht8w <- pathway_up_df[, colnames(pathway_up_df)[grep('t24ht8w', colnames(pathway_up_df))]]
 pathway_up_df_t24ht8w_top_10 <- get_top_pathways(pathway_up_df_t24ht8w, 10, T)
@@ -612,6 +657,28 @@ pathway_down_df_t24ht8w <- pathway_down_df[, colnames(pathway_down_df)[grep('t24
 pathway_down_df_t24ht8w_top_10 <- get_top_pathways(pathway_down_df_t24ht8w, 10, T)
 heatmap.3(t(as.matrix(pathway_down_df_t24ht8w_top_10)),
           col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24ht8w_vary_colors_m), margins=c(11,11), main = 'downregulated pathways t24h vs t8w')
+
+# UT vs t8w
+pathway_up_df_utt8w <- pathway_up_df[, colnames(pathway_up_df)[grep('UTt8w', colnames(pathway_up_df))]]
+pathway_up_df_utt8w_top_10 <- get_top_pathways(pathway_up_df_utt8w, 10, T)
+utt8w_vary_colors_cond <- rep(c(cc[['UTt8w']]), times = 6)
+utt8w_vary_colors_ct <- c(rep(cc[['B']], times=1),rep(cc[['CD4T']], times=1),rep(cc[['CD8T']], times=1),rep(cc[['DC']], times=1),rep(cc[['monocyte']], times=1),rep(cc[['NK']], times=1))
+utt8w_vary_colors_m <- cbind(utt8w_vary_colors_ct, utt8w_vary_colors_cond)
+colnames(utt8w_vary_colors_m) <- c('celltype',
+                                     'condition')
+heatmap.3(t(as.matrix(pathway_up_df_utt8w_top_10)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(utt8w_vary_colors_m), margins=c(11,11), main = 'upregulated pathways HC vs t8w')
+
+# UT vs Baseline
+pathway_up_df_utbaseline <- pathway_up_df[, colnames(pathway_up_df)[grep('UTBaseline', colnames(pathway_up_df))]]
+pathway_up_df_utbaseline_top_10 <- get_top_pathways(pathway_up_df_utbaseline, 10, T)
+utbaseline_vary_colors_cond <- rep(c(cc[['UTBaseline']]), times = 6)
+utbaseline_vary_colors_ct <- c(rep(cc[['B']], times=1),rep(cc[['CD4T']], times=1),rep(cc[['CD8T']], times=1),rep(cc[['DC']], times=1),rep(cc[['monocyte']], times=1),rep(cc[['NK']], times=1))
+utbaseline_vary_colors_m <- cbind(utbaseline_vary_colors_ct, utbaseline_vary_colors_cond)
+colnames(utbaseline_vary_colors_m) <- c('celltype',
+                                   'condition')
+heatmap.3(t(as.matrix(pathway_up_df_utbaseline_top_10)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(utbaseline_vary_colors_m), margins=c(11,11), main = 'upregulated pathways HC vs t0')
 
 
 
@@ -677,4 +744,4 @@ heatmap.3(t(as.matrix(stemi_de_table_andut)),
 # grab the metadata
 meta.data <- read.table('/data/cardiology/metadata/cardio.integrated_meta.data.tsv', sep='\t', header=T, row.names=1)
 plot_de_vs_cell_type_numbers(mast_meta_output_loc_lfc01, meta.data, plot_separately = T, proportion = T)
-plot_de_vs_cell_type_numbers(mast_meta_output_loc_lfc01, meta.data, plot_separately = F, proportion = T)
+plot_de_vs_cell_type_numbers(mast_meta_output_loc_lfc01, meta.data, plot_separately = F, proportion = F)
