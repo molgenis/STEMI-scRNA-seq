@@ -8,8 +8,6 @@ library(ggplot2)
 library(data.table)
 library(ggpubr)
 
-
-
 ####################
 # Functions        #
 ####################
@@ -457,7 +455,7 @@ get_nr_of_cells <- function(metadata, cell_type, condition1, condition2, cell_ty
   return(nr_of_cells)
 }
 
-filter_pathway_df_on_starting_id <- function(pathway_df, filtered_pathway_names){
+filter_pathway_df_on_starting_id <- function(pathway_df, filtered_pathway_names, remove_id_from_pathway_name=T){
   # get the ones now in the pathway df
   pathway_names_with_id <- rownames(pathway_df)
   last_dash_pos <- "\\_[^\\_]*$"
@@ -466,6 +464,10 @@ filter_pathway_df_on_starting_id <- function(pathway_df, filtered_pathway_names)
   print(head(pathway_names))
   # filter the pathway df
   pathway_df_filtered <- pathway_df[pathway_names %in% filtered_pathway_names, ]
+  # remove the ID from the pathway name if asked
+  if(remove_id_from_pathway_name){
+    rownames(pathway_df_filtered) <- substr(rownames(pathway_df_filtered), regexpr(last_dash_pos, rownames(pathway_df_filtered))+1, nchar(rownames(pathway_df_filtered)))
+  }
   return(pathway_df_filtered)
 }
 
@@ -492,6 +494,72 @@ get_children <- function(relation_table, starting_id){
     }
   }
   return(family)
+}
+
+get_subcell_ratio <- function(cell_type_large, subcell_type, metadata, condition, cell_type_column_higherres='cell_type', cell_type_column_lowerres='cell_type_lowerres', condition.column='timepoint.final'){
+  number_of_cells_large <- nrow(metadata[metadata[[condition.column]] == condition & metadata[[cell_type_column_lowerres]] == cell_type_large, ])
+  number_of_cells_small <- nrow(metadata[metadata[[condition.column]] == condition & metadata[[cell_type_column_higherres]] == subcell_type, ])
+  ratio <- number_of_cells_small/number_of_cells_large
+  return(ratio)
+}
+
+
+plot_de_number_vs_subcell_population <- function(mast_output_loc, cell_type_large, subcell_type, metadata, timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', "Baselinet24h", "Baselinet8w", "t24ht8w"), cell_type_column_higherres='cell_type', cell_type_column_lowerres='cell_type_lowerres', condition.column='timepoint.final', pval_column='metap_bonferroni', sig_pval=0.05, make_absolute=F){
+  # init table
+  table <- NULL
+  for(timepoint in timepoints){
+      # grab the number of cells, I would like to do this in a better way, but can't think of something now
+      ratio1 <- NA
+      ratio2 <- NA
+      if(timepoint == 'UTBaseline'){
+        ratio1 <- get_subcell_ratio(cell_type_large, subcell_type, metadata, 'UT', cell_type_column_higherres, cell_type_column_lowerres, condition.column)
+        ratio2 <- get_subcell_ratio(cell_type_large, subcell_type, metadata, 'Baseline', cell_type_column_higherres, cell_type_column_lowerres, condition.column)
+      }
+      else if(timepoint == 'UTt24h'){
+        ratio1 <- get_subcell_ratio(cell_type_large, subcell_type, metadata, 'UT', cell_type_column_higherres, cell_type_column_lowerres, condition.column)
+        ratio2 <- get_subcell_ratio(cell_type_large, subcell_type, metadata, 't24h', cell_type_column_higherres, cell_type_column_lowerres, condition.column)
+      }
+      else if(timepoint == 'UTt8w'){
+        ratio1 <- get_subcell_ratio(cell_type_large, subcell_type, metadata, 'UT', cell_type_column_higherres, cell_type_column_lowerres, condition.column)
+        ratio2 <- get_subcell_ratio(cell_type_large, subcell_type, metadata, 't8w', cell_type_column_higherres, cell_type_column_lowerres, condition.column)
+      }
+      else if(timepoint == 'Baselinet24h'){
+        ratio1 <- get_subcell_ratio(cell_type_large, subcell_type, metadata, 'Baseline', cell_type_column_higherres, cell_type_column_lowerres, condition.column)
+        ratio2 <- get_subcell_ratio(cell_type_large, subcell_type, metadata, 't24h', cell_type_column_higherres, cell_type_column_lowerres, condition.column)
+      }
+      else if(timepoint == 'Baselinet8w'){
+        ratio1 <- get_subcell_ratio(cell_type_large, subcell_type, metadata, 'Baseline', cell_type_column_higherres, cell_type_column_lowerres, condition.column)
+        ratio2 <- get_subcell_ratio(cell_type_large, subcell_type, metadata, 't8w', cell_type_column_higherres, cell_type_column_lowerres, condition.column)
+      }
+      else if(timepoint == 't24ht8w'){
+        ratio1 <- get_subcell_ratio(cell_type_large, subcell_type, metadata, 't24h', cell_type_column_higherres, cell_type_column_lowerres, condition.column)
+        ratio2 <- get_subcell_ratio(cell_type_large, subcell_type, metadata, 't8w', cell_type_column_higherres, cell_type_column_lowerres, condition.column)
+      }
+      # switch to log2 so it is a positive/negative number instead of 0-1 and 1+
+      log2ratio1 <- log2(ratio1)
+      log2ratio2 <- log2(ratio2)
+      # calculate difference
+      difference <- diff(c(log2ratio1,log2ratio2))
+      # convert to absolute number if requested
+      if(make_absolute){
+        difference <- abs(difference)
+      }
+      # grab the nr of genes that are significant
+      de_table_loc <- paste(mast_output_loc, cell_type_large, timepoint, '.tsv', sep = '')
+      de_table <- read.table(de_table_loc, sep = '\t', header = T, row.names = 1)
+      sig_gene_number <- nrow(de_table[de_table[[pval_column]] < sig_pval, ])
+      # add to the table
+      if(is.null(table)){
+        table <- data.frame(c(timepoint), c(cell_type_large), c(difference), c(sig_gene_number), stringsAsFactors = F)
+        colnames(table) <- c('timepoint', 'cell_type', 'log2_ratio_difference', 'sig_gene_number')
+      }
+      else{
+        table <- rbind(table, c(timepoint, cell_type_large, difference, sig_gene_number))
+      }
+  }
+  ggplot(table, aes(x=as.numeric(log2_ratio_difference), y=as.numeric(sig_gene_number), color=timepoint)) +
+    geom_point(size=3) +
+    labs(x = 'log2 subceltype ratio difference', y = 'nr of DE genes', title = 'subcelltype ratio difference vs nr of DE genes')   
 }
 
 
@@ -741,7 +809,33 @@ heatmap.3(t(as.matrix(deg_meta_stemi_de_table_andut_vary)),
 heatmap.3(t(as.matrix(stemi_de_table_andut)),
           col=(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(5,9), labCol=NA, main = 'DE lfc')
 
+# this is the reactome ID for the immune system
+immune_system_reactome_id <- 'R-HSA-168256'
+# load the pathways
+pathways <- read.table('/data/scRNA/pathways/ReactomePathways.tsv', sep='\t')
+# subset to just human to speed up the search
+pathways <- pathways[pathways$V3 == 'Homo sapiens', ]
+# load the pathway mapping
+pathway_mappings <- read.table('/data/scRNA/pathways/ReactomePathwaysRelation.tsv', sep = '\t')
+# get the filtered names
+filtered_names <- get_filtered_pathway_names(pathways, pathway_mappings, 'R-HSA-168256')
+# get the df that is left after filtering
+pathway_up_df_filtered <- filter_pathway_df_on_starting_id(pathway_up_df, filtered_names)
+# check what is top now
+pathway_up_df_filtered_top_5 <- get_top_pathways(pathway_up_df_filtered, 5, T)
+heatmap.3(t(as.matrix(pathway_up_df_filtered)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(18,10))
+
+
+
 # grab the metadata
 meta.data <- read.table('/data/cardiology/metadata/cardio.integrated_meta.data.tsv', sep='\t', header=T, row.names=1)
 plot_de_vs_cell_type_numbers(mast_meta_output_loc_lfc01, meta.data, plot_separately = T, proportion = T)
 plot_de_vs_cell_type_numbers(mast_meta_output_loc_lfc01, meta.data, plot_separately = F, proportion = F)
+
+
+# specifically for monocytes, check the number of DE genes and the fractional differences of their sub-celltype populations
+plot_de_number_vs_subcell_population(mast_meta_output_loc_lfc01, 'monocyte', 'mono 1', meta.data, timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', "Baselinet24h", "Baselinet8w", "t24ht8w"), cell_type_column_higherres='cell_type', cell_type_column_lowerres='cell_type_lowerres', make_absolute=F)
+
+plot_de_number_vs_subcell_population(mast_meta_output_loc_lfc01, 'monocyte', 'mono 1', meta.data[meta.data$chem=='V2',], timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', "Baselinet24h", "Baselinet8w", "t24ht8w"), cell_type_column_higherres='cell_type', cell_type_column_lowerres='cell_type_lowerres', make_absolute=F)
+
