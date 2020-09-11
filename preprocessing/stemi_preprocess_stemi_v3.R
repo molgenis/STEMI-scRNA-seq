@@ -23,6 +23,7 @@ read_all_lanes <- function(cellranger_lanes_dir, exclude_lanes = c(), min.cells 
   }
   # set the chemicality version of the lanes
   seurat_object$chem <- as.factor(ifelse(grepl(pattern = "^18", seurat_object$lane), "V2", "V3"))
+  seurat_object$orig.ident <- as.factor(ifelse(grepl(pattern = "^18", seurat_object$lane), "stemi_v2", "stemi_v3"))
   return(seurat_object)
 }
 
@@ -45,7 +46,7 @@ add_data <- function(seurat_to_add_to = NULL, lane, base_counts_dir, min.cells =
   seurat_new <- Seurat::CreateSeuratObject(counts = counts,
                                            min.cells = min.cells,
                                            min.features = min.features,
-                                           project = "cardio_v3",
+                                           project = "stemi",
                                            meta.data = metadata)
   # if we're starting from NULL, just return the current Seurat object
   if (is.null(seurat_to_add_to)){
@@ -205,13 +206,20 @@ object_loc <- "/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Ca
 # this is what we will save as
 stemi_v3_raw_loc <- paste(object_loc, "stemi_v3_raw_samples.rds", sep = "/")
 stemi_v3_filtered_loc <- paste(object_loc, "stemi_v3_filtered_samples.rds", sep = "/")
+stemi_v2_raw_loc <- paste(object_loc, "stemi_v2_raw_samples.rds", sep = "/")
+stemi_v2_filtered_loc <- paste(object_loc, "stemi_v2_filtered_samples.rds", sep = "/")
+
 
 # this is where our cellranger outputs are
-cellranger_lanes_dir_v3 <- "/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cellranger_output/"
+cellranger_lanes_dir <- "/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cellranger_output/"
 
 # read all the lanes
-stemi_v3 <- read_all_lanes(cellranger_lanes_dir_v3, exclude_lanes = exclude_lanes, min.cells = 3, min.features = 200)
+stemi <- read_all_lanes(cellranger_lanes_dir, exclude_lanes = exclude_lanes, min.cells = 3, min.features = 200)
+# separate the v2 and v3 ones
+stemi_v2 <- subset(stemi, subset = chem == 'V2')
+stemi_v3 <- subset(stemi, subset = chem == 'V3')
 # save this raw file
+saveRDS(stemi_v2, stemi_v2_raw_loc)
 saveRDS(stemi_v3, stemi_v3_raw_loc)
 
 # these are the soup pre- and appends
@@ -221,9 +229,31 @@ soup_append <- "_correlated.tsv"
 demux_prepend <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/demuxlet/demuxlet_output/'
 demux_append <- '_mmaf002.best'
 # scrublet loc
+scrublet_v2_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/scrublet/scrublet_assignment_v2.tsv'
 scrublet_v3_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/scrublet/scrublet_assignment_v3.tsv'
 # location of the simulation mapping
 stim_mapping_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/stemi-sampleIDs.txt'
+
+# add souporcell assignments
+stemi_v2 <- add_soup_assignments(stemi_v2, soup_prepend, soup_append)
+# add demuxlet
+stemi_v2 <- add_demux_assignments(stemi_v2, demux_prepend, demux_append)
+# add scrublet
+stemi_v2 <- add_scrublet_assignments(stemi_v2, scrublet_v2_loc)
+# add stim tags
+stemi_v2 <- add_stim_tags(stemi_v2, stim_mapping_loc = stim_mapping_loc, assignment_key = 'assignment_key', tp_key = 'timepoint.ll')
+stemi_v2 <- add_stim_tags(stemi_v2, stim_mapping_loc = stim_mapping_loc, assignment_key = 'SNG.1ST', tp_key = 'timepoint.demux')
+
+# remove samples called as doublets by souporcell
+stemi_v2 <- remove_doublets(stemi_v2, detection_method="souporcell")
+
+# calculate mt fraction
+stemi_v2[["percent.mt"]] <- PercentageFeatureSet(stemi_v2, pattern = "^MT-")
+# remove objects cells with too high MT percentage, HBB expression and too few genes expressed
+stemi_v2 <- subset(stemi_v2, subset = nFeature_RNA > 200 & percent.mt < 8 & HBB < 10)
+# save the preprocessed file
+saveRDS(stemi_v2, stemi_v2_filtered_loc)
+
 
 # add souporcell assignments
 stemi_v3 <- add_soup_assignments(stemi_v3, soup_prepend, soup_append)
