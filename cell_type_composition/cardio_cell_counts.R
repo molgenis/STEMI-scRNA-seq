@@ -162,6 +162,61 @@ plot_lymphoid_vs_myeloid <- function(cell_counts, plot_combined=T, log2transform
 }
 
 
+metadata_to_cell_counts <- function(metadata, cell_type_column='cell_type', assignment.column='assignment.final', timepoint.column='timepoint.final'){
+  formatted_counts <- NULL
+  # check each condition
+  for(condition in unique(metadata[[timepoint.column]])){
+    # grab for this timepoint
+    metadata_timepoint <- metadata[metadata[[timepoint.column]] == condition, ]
+    # check each participant
+    for(participant in unique(metadata_timepoint[[assignment.column]])){
+      # grab for this participant
+      metadata_tp_participant <- metadata_timepoint[metadata_timepoint[[assignment.column]] == participant, ]
+      # check each cell type
+      for(cell_type in unique(metadata_tp_participant[[cell_type_column]])){
+        # finally grab the number we want
+        cells_tp_part_ct <- nrow(metadata_tp_participant[metadata_tp_participant[[cell_type_column]] == cell_type, ])
+        # only add if there are more than zero cells
+        if(cells_tp_part_ct > 0){
+          # grab the chemistry
+          chem <- as.character(metadata_tp_participant$chem[1])
+          # add to table
+          if(is.null(formatted_counts)){
+            formatted_counts <- data.frame(c(participant), c(cell_type), c(cells_tp_part_ct), c(condition), c(chem), stringsAsFactors = F)
+            colnames(formatted_counts) <- c('sample', 'cell_type', 'count', 'condition', 'chemistry')
+          }
+          else{
+            formatted_counts <- rbind(formatted_counts, c(participant, cell_type, cells_tp_part_ct, condition, chem))
+          }
+        }
+      }
+    }
+  }
+  return(formatted_counts)
+}
+
+plot_mono1_vs_mono2 <- function(counts_data, cell_type_column='cell_type', mono1_name='mono 1', mono2_name='mono 2'){
+  # subset to only have the mono 1 and mono 2 numbers
+  counts_data_monos <- counts_data[counts_data[[cell_type_column]] == mono1_name | counts_data[[cell_type_column]] == mono2_name, ]
+  ggplot(counts_data_monos, aes(x=cell_type, y=as.numeric(count), fill=cell_type)) +
+    geom_boxplot(color = "black", outlier.shape=NA,lwd=0.4, alpha=1) +
+    #geom_boxplot(color = "black", lwd=0.4, alpha=1) +
+    scale_y_continuous(limits = c(0, 900)) +
+    facet_grid(vars(chemistry), vars(condition)) +
+    theme_minimal(base_family = "Helvetica") +
+    theme(strip.text.x = element_text(colour = "black", size = 12, family = "Helvetica"),
+          strip.text.y = element_text(colour = "black", size = 12, family = "Helvetica"),
+          title = element_text(size = 12),
+          axis.title.y = element_text(size = 12, family = "Helvetica"),
+          axis.title.x = element_blank(),
+          axis.text.y = element_text(size = 8, family = "Helvetica"),
+          axis.text.x = element_blank(),
+          # panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+          panel.border = element_rect(colour = "grey", fill=NA, size=1)) +
+    scale_fill_manual(values = c('brown', 'gray'), name = "Cell type")
+  
+}
+
 
 features_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/features/'
 features_loc <- '/data/cardiology/eQTL_mapping/features/'
@@ -291,4 +346,7 @@ ggplot(filter(cell_counts), aes(condition, count)) +
 ggsave('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/plots/cell_counts_v2_and_v3_20200622.png', dpi = 600, width = 10, height = 10)
 
 
-
+# grab the metadata
+meta.data <- read.table('/data/cardiology/metadata/cardio.integrated_meta.data.tsv', sep='\t', header=T, row.names=1)
+meta_data_counts <- metadata_to_cell_counts(meta.data)
+plot_mono1_vs_mono2(meta_data_counts)
