@@ -7,6 +7,7 @@ library(MetaVolcanoR)
 library(ggplot2)
 library(data.table)
 library(ggpubr)
+library(UpSetR)
 
 ####################
 # Functions        #
@@ -436,12 +437,14 @@ plot_de_vs_cell_type_numbers <- function(mast_output_loc, metadata, timepoints=c
     if(proportion){
       xlab <- 'proportion of cells'
     }
-    
+    cc <- get_color_coding_dict()
+    colScale <- scale_colour_manual(name = "cell_type",values = unlist(cc[cell_types_to_use]))
     ggplot(table, aes(x=as.numeric(nr_of_cells), y=as.numeric(sig_gene_number), shape=timepoint, color=cell_type)) +
       #scale_x_discrete(breaks = seq(0, 1, by = 0.1)) +
       #scale_y_discrete(breaks = seq(0, 1000, by = 100)) +
       geom_point(size=3) +
-      labs(x = xlab, y = 'nr of DE genes', title = 'cells vs nr of DE genes')
+      labs(x = xlab, y = 'nr of DE genes', title = 'cells vs nr of DE genes') +
+      colScale
   }
 }
 
@@ -560,6 +563,37 @@ plot_de_number_vs_subcell_population <- function(mast_output_loc, cell_type_larg
   ggplot(table, aes(x=as.numeric(log2_ratio_difference), y=as.numeric(sig_gene_number), color=timepoint)) +
     geom_point(size=3) +
     labs(x = 'log2 subceltype ratio difference', y = 'nr of DE genes', title = 'subcelltype ratio difference vs nr of DE genes')   
+}
+
+
+plot_DE_sharing_per_celltype <- function(condition_combination, mast_output_loc, cell_types_to_use=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK"), pval_column='metap_bonferroni', sig_pval=0.05, only_positive=F, only_negative=F, lfc_column='metafc'){
+  DE_genes_per_ct <- list()
+  # get the DE genes for each cell type
+  for(cell_type in cell_types_to_use){
+    # build the full path
+    full_mast_path <- paste(mast_output_loc, cell_type, condition_combination, '.tsv', sep = '')
+    # grab the significant genes
+    try({
+      # read the mast output
+      mast <- read.table(full_mast_path, header=T, row.names = 1, sep = '\t')
+      # filter to only include the significant results
+      mast <- mast[mast[[pval_column]] <= 0.05, ]
+      # filter for only the positive lfc if required
+      if(only_positive){
+        mast <- mast[mast[[lfc_column]] < 0, ]
+      }
+      # filter for only the positive lfc if required
+      if(only_negative){
+        mast <- mast[mast[[lfc_column]] > 0, ]
+      }
+      # we just care about the gene names
+      sig_genes <- rownames(mast)
+      # store these for the cell type
+      DE_genes_per_ct[[cell_type]] <- sig_genes
+    })
+  }
+  upset(fromList(DE_genes_per_ct), order.by = 'freq', nsets = length(DE_genes_per_ct))
+  #return(DE_genes_per_ct)
 }
 
 
@@ -830,12 +864,27 @@ heatmap.3(t(as.matrix(pathway_up_df_filtered)),
 
 # grab the metadata
 meta.data <- read.table('/data/cardiology/metadata/cardio.integrated_meta.data.tsv', sep='\t', header=T, row.names=1)
-plot_de_vs_cell_type_numbers(mast_meta_output_loc_lfc01, meta.data, plot_separately = T, proportion = T)
+plot_de_vs_cell_type_numbers(mast_meta_output_loc_lfc01, meta.data, plot_separately = F, proportion = T)
 plot_de_vs_cell_type_numbers(mast_meta_output_loc_lfc01, meta.data, plot_separately = F, proportion = F)
+plot_de_vs_cell_type_numbers(mast_meta_output_loc_lfc01, meta.data, plot_separately = F, proportion = F, cell_types_to_use = c('monocyte'))
 
 
 # specifically for monocytes, check the number of DE genes and the fractional differences of their sub-celltype populations
 plot_de_number_vs_subcell_population(mast_meta_output_loc_lfc01, 'monocyte', 'mono 1', meta.data, timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', "Baselinet24h", "Baselinet8w", "t24ht8w"), cell_type_column_higherres='cell_type', cell_type_column_lowerres='cell_type_lowerres', make_absolute=F)
-
 plot_de_number_vs_subcell_population(mast_meta_output_loc_lfc01, 'monocyte', 'mono 1', meta.data[meta.data$chem=='V2',], timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', "Baselinet24h", "Baselinet8w", "t24ht8w"), cell_type_column_higherres='cell_type', cell_type_column_lowerres='cell_type_lowerres', make_absolute=F)
+plot_de_number_vs_subcell_population(mast_meta_output_loc_lfc01, 'monocyte', 'mono 1', meta.data[meta.data$chem=='V3',], timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', "Baselinet24h", "Baselinet8w", "t24ht8w"), cell_type_column_higherres='cell_type', cell_type_column_lowerres='cell_type_lowerres', make_absolute=F)
 
+# plot the sharing of DE genes
+plot_DE_sharing_per_celltype('UTBaseline', mast_meta_output_loc_lfc01)
+plot_DE_sharing_per_celltype('UTt24h', mast_meta_output_loc_lfc01)
+plot_DE_sharing_per_celltype('UTt8w', mast_meta_output_loc_lfc01)
+plot_DE_sharing_per_celltype('Baselinet24h', mast_meta_output_loc_lfc01)
+plot_DE_sharing_per_celltype('t24ht8w', mast_meta_output_loc_lfc01)
+plot_DE_sharing_per_celltype('Baselinet8w', mast_meta_output_loc_lfc01)
+
+plot_DE_sharing_per_celltype('UTBaseline', mast_meta_output_loc_lfc01, only_positive = T)
+plot_DE_sharing_per_celltype('UTt24h', mast_meta_output_loc_lfc01, only_positive = T)
+plot_DE_sharing_per_celltype('UTt8w', mast_meta_output_loc_lfc01, only_positive = T)
+plot_DE_sharing_per_celltype('Baselinet24h', mast_meta_output_loc_lfc01, only_positive = T)
+plot_DE_sharing_per_celltype('t24ht8w', mast_meta_output_loc_lfc01, only_positive = T)
+plot_DE_sharing_per_celltype('Baselinet8w', mast_meta_output_loc_lfc01, only_positive = T)
