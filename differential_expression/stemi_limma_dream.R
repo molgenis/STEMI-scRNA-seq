@@ -3,18 +3,28 @@ library('variancePartition')
 library('edgeR')
 library('BiocParallel')
 library('Seurat')
+library(Matrix)
+library(Matrix.utils)
 
-dreamer <- function(seurat_object, output_loc){
+dreamer <- function(seurat_object, output_loc, aggregates=c('assignment.final', 'timepoint.final')){
   # grab the countmatrix
   countMatrix <- seurat_object@assays$RNA@counts
   # get the metadata
   metadata <- seurat_object@meta.data
+  # create the groups to aggregate on, here it's on sample and timepoint
+  groups <- metadata[, aggregates]
+  # create an aggregated counts matrix
+  aggregate_countMatrix <- t(aggregate.Matrix(t(countMatrix), groupings = groups, fun = 'sum'))
+  # create aggregated metadata
+  aggregate_metadata <- unique(metadata[, aggregates])
+  # set the rownames to be the same as the countsMatrix aggregate colnames, should go correctly if data is valid
+  rownames(aggregate_metadata) <- colnames(aggregate_countMatrix)
   
   # filter genes by number of counts
-  isexpr = rowSums(cpm(countMatrix)>0.1) >= 5
+  isexpr = rowSums(cpm(aggregate_countMatrix)>0.1) >= 5
   
   # Standard usage of limma/voom
-  geneExpr = DGEList( countMatrix[isexpr,] )
+  geneExpr = DGEList( aggregate_countMatrix[isexpr,] )
   geneExpr = calcNormFactors( geneExpr )
   
   # Specify parallel processing parameters
@@ -26,7 +36,7 @@ dreamer <- function(seurat_object, output_loc){
   form <- ~ timepoint.final + (1|assignment.final) 
   
   # estimate weights using linear mixed model of dream
-  vobjDream = voomWithDreamWeights( geneExpr, form, metadata )
+  vobjDream = voomWithDreamWeights( geneExpr, form, aggregate_metadata )
   
   # Fit the dream model on each gene
   # By default, uses the Satterthwaite approximation for the hypothesis test
@@ -34,13 +44,13 @@ dreamer <- function(seurat_object, output_loc){
   
   # use a contrast matrix
   # define and then cbind contrasts
-  L1 = getContrast( vobjDream, form, metadata, c("timepoint.finalt24h", "timepoint.finalt8w"))
-  L2 = getContrast( vobjDream, form, metadata, c("timepoint.finalt24h", "timepoint.finalBaseline"))
-  L3 = getContrast( vobjDream, form, metadata, c("timepoint.finalBaseline", "timepoint.finalt8w"))
+  L1 = getContrast( vobjDream, form, metadata_metadata, c("timepoint.finalt24h", "timepoint.finalt8w"))
+  L2 = getContrast( vobjDream, form, metadata_metadata, c("timepoint.finalt24h", "timepoint.finalBaseline"))
+  L3 = getContrast( vobjDream, form, metadata_metadata, c("timepoint.finalBaseline", "timepoint.finalt8w"))
   L = cbind(L1, L2, L3)     
   
   # fit both contrasts
-  fit = dream( vobjDream, form, metadata, L)
+  fit = dream( vobjDream, form, metadata_metadata, L)
   
   # create list of variables
   vars <- list()
@@ -70,6 +80,4 @@ output_limma <- paste(output_limma_base, orig_ident, '_', cell_type, '.rds')
 # call the method
 dreamer(ct_and_oi, output_limma)
 
-
-
-
+pilot3 <- readRDS('/data/scRNA/Seurat/objects/pilot3_seurat3_200420_phenofixed_ctfixed.rds')
