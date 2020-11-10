@@ -44,9 +44,9 @@ dreamer <- function(seurat_object, output_loc, aggregates=c('assignment.final', 
   
   # use a contrast matrix
   # define and then cbind contrasts
-  L1 = getContrast( vobjDream, form, metadata_metadata, c("timepoint.finalt24h", "timepoint.finalt8w"))
-  L2 = getContrast( vobjDream, form, metadata_metadata, c("timepoint.finalt24h", "timepoint.finalBaseline"))
-  L3 = getContrast( vobjDream, form, metadata_metadata, c("timepoint.finalBaseline", "timepoint.finalt8w"))
+  L1 = getContrast( vobjDream, form, aggregate_metadata, c("timepoint.finalt24h", "timepoint.finalt8w"))
+  L2 = getContrast( vobjDream, form, aggregate_metadata, c("timepoint.finalt24h", "timepoint.finalBaseline"))
+  L3 = getContrast( vobjDream, form, aggregate_metadata, c("timepoint.finalBaseline", "timepoint.finalt8w"))
   L = cbind(L1, L2, L3)     
   
   # fit both contrasts
@@ -69,15 +69,13 @@ args = commandArgs(trailingOnly=TRUE)
 orig_ident <- args[1]
 cell_type <- args[2]
 # read the file
-cardio.integrated <- readRDS('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/cardio.integrated_20200820.rds')
+cardio.integrated <- readRDS('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/cardio.integrated_20201102.rds')
 # subset to the cell type and original identity
 ct_and_oi <- cardio.integrated[, (cardio.integrated@meta.data$cell_type_lowerres == cell_type & cardio.integrated@meta.data$orig.ident == orig_ident)]
 # clear some memory
 rm(cardio.integrated)
 # the output location
 output_limma_base <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/differential_expression/limma/output/dream_contrast_'
-output_limma <- paste(output_limma_base, orig_ident, '_', cell_type, '.rds')
+output_limma <- paste(output_limma_base, orig_ident, '_', cell_type, '_pseudobulked.rds', sep='')
 # call the method
 dreamer(ct_and_oi, output_limma)
-
-pilot3 <- readRDS('/data/scRNA/Seurat/objects/pilot3_seurat3_200420_phenofixed_ctfixed.rds')

@@ -80,7 +80,7 @@ add_soup_assignments <- function(seurat_object, soup_dir, soup_append, batch_key
   for(column in colnames(soup_assignments)){
     #seurat_object <- AddMetaData(seurat_object, soup_assignments[column], paste("soup", column, sep = "_"))
     if(column != "lane" & column != "barcode")
-    seurat_object <- AddMetaData(seurat_object, soup_assignments[column], column)
+      seurat_object <- AddMetaData(seurat_object, soup_assignments[column], column)
   }
   return(seurat_object)
 }
@@ -89,6 +89,8 @@ add_soup_assignments <- function(seurat_object, soup_dir, soup_append, batch_key
 add_scrublet_assignments <- function(seurat_object, scrublet_loc){
   # read the output
   scrublet_output <- read.table(scrublet_loc, sep = '\t', header = T)
+  # in case we accidently ran in twice on some samples
+  scrublet_output <- unique(scrublet_output)
   rownames(scrublet_output) <- scrublet_output$lane_barcode
   # add the assignment
   seurat_object <- AddMetaData(seurat_object, scrublet_output['doublet'], 'scrublet_doublet')
@@ -142,6 +144,10 @@ get_demux_assignments <- function(seurat_object, demux_dir, demux_append, batch_
     }
     # otherwise just append
     else{
+      # add any missing columns in the new output (if less clusters than seen before)
+      demuxlet_output[setdiff(colnames(demux_output_all), colnames(demuxlet_output))] <- NA
+      # add any missing columns in the current output (if more clusters than seen before)
+      demux_output_all[setdiff(colnames(demuxlet_output), colnames(demux_output_all))] <- NA
       demux_output_all <- rbind(demux_output_all, demuxlet_output)
     }
   }
@@ -202,19 +208,24 @@ add_stim_tags <- function(seurat_object, stim_mapping_loc, assignment_key='assig
 ####################
 
 # this is where our objects are on disk
-object_loc <- "/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/"
+object_loc <- "/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/"
 # this is what we will save as
 stemi_v3_raw_loc <- paste(object_loc, "stemi_v3_raw_samples.rds", sep = "/")
 stemi_v3_filtered_loc <- paste(object_loc, "stemi_v3_filtered_samples.rds", sep = "/")
 stemi_v2_raw_loc <- paste(object_loc, "stemi_v2_raw_samples.rds", sep = "/")
 stemi_v2_filtered_loc <- paste(object_loc, "stemi_v2_filtered_samples.rds", sep = "/")
-
+stemi_v3_raw_loc <- paste(object_loc, "stemi_v3_raw_samples_20201110.rds", sep = "/")
+stemi_v3_filtered_loc <- paste(object_loc, "stemi_v3_filtered_samples_20201110.rds", sep = "/")
+stemi_v2_raw_loc <- paste(object_loc, "stemi_v2_raw_samples_20201110.rds", sep = "/")
+stemi_v2_filtered_loc <- paste(object_loc, "stemi_v2_filtered_samples_20201110.rds", sep = "/")
+stemi_v2_normalized_loc <- paste(object_loc, "stemi_v3_normalized_samples_20201110.rds", sep = "/")
+stemi_v3_normalized_loc <- paste(object_loc, "stemi_v3_normalized_samples_20201110.rds", sep = "/")
 
 # this is where our cellranger outputs are
-cellranger_lanes_dir <- "/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cellranger_output/"
+cellranger_lanes_dir <- "/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/alignment/hg19/cellranger_output/"
 
 # read all the lanes
-stemi <- read_all_lanes(cellranger_lanes_dir, exclude_lanes = exclude_lanes, min.cells = 3, min.features = 200)
+stemi <- read_all_lanes(cellranger_lanes_dir, exclude_lanes = c(), min.cells = 3, min.features = 200)
 # separate the v2 and v3 ones
 stemi_v2 <- subset(stemi, subset = chem == 'V2')
 stemi_v3 <- subset(stemi, subset = chem == 'V3')
@@ -223,16 +234,22 @@ saveRDS(stemi_v2, stemi_v2_raw_loc)
 saveRDS(stemi_v3, stemi_v3_raw_loc)
 
 # these are the soup pre- and appends
-soup_prepend <- "/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/souporcell/correlate_clusters/correlated_output/"
+#soup_prepend <- "/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/souporcell/correlate_clusters/correlated_output/"
+soup_prepend <- "/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/souporcell/correlate_clusters/correlated_output/"
 soup_append <- "_correlated.tsv"
+
 # these are the demux pre- and appends
-demux_prepend <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/demuxlet/demuxlet_output/'
+#demux_prepend <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/demuxlet/demuxlet_output/'
+demux_prepend <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/demuxlet/demuxlet_output/'
 demux_append <- '_mmaf002.best'
 # scrublet loc
-scrublet_v2_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/scrublet/scrublet_assignment_v2.tsv'
-scrublet_v3_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/scrublet/scrublet_assignment_v3.tsv'
+#scrublet_v2_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/scrublet/scrublet_assignment_v2.tsv'
+#scrublet_v3_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/scrublet/scrublet_assignment_v3.tsv'
+scrublet_v2_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/scrublet/scrublet_assignment_v2.tsv'
+scrublet_v3_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/scrublet/scrublet_assignment_v3.tsv'
 # location of the simulation mapping
-stim_mapping_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/stemi-sampleIDs.txt'
+#stim_mapping_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/stemi-sampleIDs.txt'
+stim_mapping_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/stemi-sampleIDs.txt'
 
 # add souporcell assignments
 stemi_v2 <- add_soup_assignments(stemi_v2, soup_prepend, soup_append)
@@ -241,8 +258,11 @@ stemi_v2 <- add_demux_assignments(stemi_v2, demux_prepend, demux_append)
 # add scrublet
 stemi_v2 <- add_scrublet_assignments(stemi_v2, scrublet_v2_loc)
 # add stim tags
-stemi_v2 <- add_stim_tags(stemi_v2, stim_mapping_loc = stim_mapping_loc, assignment_key = 'assignment_key', tp_key = 'timepoint.ll')
+stemi_v2 <- add_stim_tags(stemi_v2, stim_mapping_loc = stim_mapping_loc, assignment_key = 'assignment_ll', tp_key = 'timepoint_ll')
 stemi_v2 <- add_stim_tags(stemi_v2, stim_mapping_loc = stim_mapping_loc, assignment_key = 'SNG.1ST', tp_key = 'timepoint.demux')
+
+# save this raw file
+saveRDS(stemi_v2, stemi_v2_raw_loc)
 
 # remove samples called as doublets by souporcell
 stemi_v2 <- remove_doublets(stemi_v2, detection_method="souporcell")
@@ -251,19 +271,31 @@ stemi_v2 <- remove_doublets(stemi_v2, detection_method="souporcell")
 stemi_v2[["percent.mt"]] <- PercentageFeatureSet(stemi_v2, pattern = "^MT-")
 # remove objects cells with too high MT percentage, HBB expression and too few genes expressed
 stemi_v2 <- subset(stemi_v2, subset = nFeature_RNA > 200 & percent.mt < 8 & HBB < 10)
+# we're going to keep to the souporcell assignments for now
+stemi_v2@meta.data$assignment.final <- stemi_v2@meta.data$assignment_ll
+stemi_v2@meta.data$timepoint.final <- stemi_v2@meta.data$timepoint_ll
+
 # save the preprocessed file
 saveRDS(stemi_v2, stemi_v2_filtered_loc)
 
-
 # add souporcell assignments
 stemi_v3 <- add_soup_assignments(stemi_v3, soup_prepend, soup_append)
+# fix for the missing GT
+levels(stemi_v3@meta.data$assignment_ll) <- c(levels(stemi_v3@meta.data$assignment_ll), 'TEST_88')
+stemi_v3@meta.data[!is.na(stemi_v3@meta.data$correlation_ll) & stemi_v3@meta.data$correlation_ll < 0.4, ]$assignment_ll <- 'TEST_88'
 # add demuxlet
 stemi_v3 <- add_demux_assignments(stemi_v3, demux_prepend, demux_append)
 # add scrublet
 stemi_v3 <- add_scrublet_assignments(stemi_v3, scrublet_v3_loc)
 # add stim tags
-stemi_v3 <- add_stim_tags(stemi_v3, stim_mapping_loc = stim_mapping_loc, assignment_key = 'assignment_key', tp_key = 'timepoint.ll')
+stemi_v3 <- add_stim_tags(stemi_v3, stim_mapping_loc = stim_mapping_loc, assignment_key = 'assignment_ll', tp_key = 'timepoint_ll')
 stemi_v3 <- add_stim_tags(stemi_v3, stim_mapping_loc = stim_mapping_loc, assignment_key = 'SNG.1ST', tp_key = 'timepoint.demux')
+# we're going to keep to the souporcell assignments for now
+stemi_v3@meta.data$assignment.final <- stemi_v3@meta.data$assignment_ll
+stemi_v3@meta.data$timepoint.final <- stemi_v3@meta.data$timepoint_ll
+
+# save this raw file
+saveRDS(stemi_v3, stemi_v3_raw_loc)
 
 # remove samples called as doublets by souporcell
 stemi_v3 <- remove_doublets(stemi_v3, detection_method="souporcell")
@@ -274,4 +306,16 @@ stemi_v3[["percent.mt"]] <- PercentageFeatureSet(stemi_v3, pattern = "^MT-")
 stemi_v3 <- subset(stemi_v3, subset = nFeature_RNA > 200 & percent.mt < 15 & HBB < 10)
 # save the preprocessed file
 saveRDS(stemi_v3, stemi_v3_filtered_loc)
+
+# remove some samples that should not be in there
+stemi_v3 <- subset(stemi_v3, subset = assignment.final != 'TEST_60' & assignment.final != 'TEST_62')
+stemi_v3 <- stemi_v3[, !(stemi_v3@meta.data$assignment.final == 'TEST_68' & stemi_v3@meta.data$timepoint.final == 't24h')]
+
+# do normalization
+stemi_v2 <- NormalizeData(stemi_v2)
+stemi_v2 <- SCTransform(stemi_v2, vars.to.regress = c('percent.mt'))
+stemi_v3 <- NormalizeData(stemi_v3)
+stemi_v3 <- SCTransform(stemi_v3, vars.to.regress = c('percent.mt'))
+saveRDS(stemi_v2, stemi_v2_normalized_loc)
+saveRDS(stemi_v3, stemi_v3_normalized_loc)
 

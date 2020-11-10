@@ -84,7 +84,7 @@ readd_lanes <- function(seurat_object, lane_loc){
 }
 
 # add the experiment tags, the experiment number beloninging to an LLID
-add_exp_tags <- function(seurat_object, exp_to_ll_loc, assignment_key='assignment.ll'){
+add_exp_tags <- function(seurat_object, exp_to_ll_loc, assignment_key='assignment'){
   # add the column for expIDs to the Seurat object
   seurat_object@meta.data$exp.id <- NA
   # grab the mapping of expnr to ll
@@ -133,29 +133,57 @@ add_stim_tags <- function(seurat_object, stim_mapping_loc, assignment_key='exp.i
   return(seurat_object)
 }
 
+add_soup_assignments <- function(seurat_object, soup_dir, soup_append, batch_key='batch'){
+  # grab the assignments
+  soup_assignments <- get_soup_assignments(seurat_object, soup_dir, soup_append, batch_key)
+  # create a regex to get the last index of -
+  last_dash_pos <- "\\-[^\\-]*$"
+  # add the lane/barcode combo
+  rownames(soup_assignments) <- paste0(substr(soup_assignments$barcode, 1, regexpr(last_dash_pos, soup_assignments$barcode)-1), "_", soup_assignments$lane)
+  # now add the information to the object
+  for(column in colnames(soup_assignments)){
+    #seurat_object <- AddMetaData(seurat_object, soup_assignments[column], paste("soup", column, sep = "_"))
+    if(column != "lane" & column != "barcode")
+      seurat_object <- AddMetaData(seurat_object, soup_assignments[column], column)
+  }
+  return(seurat_object)
+}
+
+# add scrublet doublet assignments
+add_scrublet_assignments <- function(seurat_object, scrublet_loc){
+  # read the output
+  scrublet_output <- read.table(scrublet_loc, sep = '\t', header = T)
+  # in case we accidently ran in twice on some samples
+  scrublet_output <- unique(scrublet_output)
+  rownames(scrublet_output) <- scrublet_output$lane_barcode
+  # add the assignment
+  seurat_object <- AddMetaData(seurat_object, scrublet_output['doublet'], 'scrublet_doublet')
+  seurat_object <- AddMetaData(seurat_object, scrublet_output['doublet_score'], 'scrublet_dscore')
+  return(seurat_object)
+}
+
 # add the assignments based on demuxlet demultiplexing
 add_demux_assignments <- function(seurat_object, demux_dir, demux_append, batch_key='batch'){
   # grab the demux assignments
   demux_output_all <- get_demux_assignments(seurat_object, demux_dir, demux_append, batch_key)
-  # create a regex to get the first index of -
-  last_dash_pos <- "\\-"
-  # get the full barcodes
-  barcodes_full_demux <- demux_output_all$BARCODE
-  # create the cut barcodes
-  barcodes_cut_demux <- substr(barcodes_full_demux, 1, regexpr(last_dash_pos, barcodes_full_demux)-1)
-  demux_output_all$bare_barcode_lane <- paste0(barcodes_cut_demux, "_", demux_output_all$lane)
-  # set as rownames to allow for matching
-  rownames(demux_output_all) <- demux_output_all$bare_barcode_lane
-  print(head(demux_output_all))
-  # add demux info
-  seurat_object <- AddMetaData(seurat_object, demux_output_all['BEST'], col.name = 'BEST')
-
-  seurat_object <- AddMetaData(seurat_object, demux_output_all['SNG.1ST'], col.name = "SNG.1ST")
-
-  seurat_object <- AddMetaData(seurat_object, demux_output_all['SNG.LLK1'], col.name = 'SNG.LLK1')
-
-  seurat_object <- AddMetaData(seurat_object, demux_output_all['LLK12'], col.name = 'LLK12')
+  # create a regex to get the last index of -
+  last_dash_pos <- "\\-[^\\-]*$"
+  # add the lane/barcode combo
+  rownames(demux_output_all) <- paste0(substr(demux_output_all$BARCODE, 1, regexpr(last_dash_pos, demux_output_all$BARCODE)-1), "_", demux_output_all$lane)
+  # add the values
+  seurat_object <- AddMetaData(seurat_object, demux_output_all['SNG.1ST'])
+  seurat_object <- AddMetaData(seurat_object, demux_output_all['BEST'])
+  seurat_object <- AddMetaData(seurat_object, demux_output_all['SNG.LLK1'])
+  seurat_object <- AddMetaData(seurat_object, demux_output_all['LLK12'])
   return(seurat_object)
+}
+
+
+# grab a dataframe with the souporcell results for the lanes in the given object
+get_soup_assignments <- function(seurat_object, soup_dir, soup_append, batch_key='batch'){
+  # the method for getting demux output, also works for souporcell output
+  soup_assignments <- get_demux_assignments(seurat_object, soup_dir, soup_append, batch_key)
+  return(soup_assignments)
 }
 
 # grab a dataframe with the demux results for the lanes in the given object
@@ -180,36 +208,14 @@ get_demux_assignments <- function(seurat_object, demux_dir, demux_append, batch_
     }
     # otherwise just append
     else{
+      # add any missing columns in the new output (if less clusters than seen before)
+      demuxlet_output[setdiff(colnames(demux_output_all), colnames(demuxlet_output))] <- NA
+      # add any missing columns in the current output (if more clusters than seen before)
+      demux_output_all[setdiff(colnames(demuxlet_output), colnames(demux_output_all))] <- NA
       demux_output_all <- rbind(demux_output_all, demuxlet_output)
     }
   }
   return(demux_output_all)
-}
-
-# add the assignments based on souporcell demultiplexing
-add_soup_assignments <- function(seurat_object, soup_dir, soup_append, batch_key='batch'){
-  # grab from the souporcell output
-  soup_assignments <- get_soup_assignments(seurat_object, soup_dir, soup_append, batch_key)
-  # create a regex to get the first index of -
-  last_dash_pos <- "\\-"
-  # get the full barcodes
-  barcodes_full_soup <- soup_assignments$barcode
-  # create the cut barcodes
-  barcodes_cut_soup <- substr(barcodes_full_soup, 1, regexpr(last_dash_pos, barcodes_full_soup)-1)
-  soup_assignments$bare_barcode_lane <- paste0(barcodes_cut_soup, "_", soup_assignments$lane)
-  # set as rownames to allow for matching
-  rownames(soup_assignments) <- soup_assignments$bare_barcode_lane
-  # add the data to the metadata, checking if we need to overwrite or not
-  seurat_object <- AddMetaData(seurat_object, soup_assignments['assignment_ll'], col.name = 'assignment.ll')
-  seurat_object <- AddMetaData(seurat_object, soup_assignments['status'], col.name = 'status')
-  return(seurat_object)
-}
-
-# grab a dataframe with the souporcell results for the lanes in the given object
-get_soup_assignments <- function(seurat_object, soup_dir, soup_append, batch_key='batch'){
-  # the method for getting demux output, also works for souporcell output
-  soup_assignments <- get_demux_assignments(seurat_object, soup_dir, soup_append, batch_key)
-  return(soup_assignments)
 }
 
 # add base barcodes to seurat metadata, to without the last append that scanpy added
@@ -272,29 +278,29 @@ get_na_dataframe <- function(colnames, rownames){
 }
 
 # where to store the objects
-object_loc <- "/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/"
+object_loc <- "/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/"
 # this directory contains the cellranger outputs
-cellranger_lanes_dir <- "/groups/umcg-lld/tmp04/projects/1MCellRNAseq/processed/cellranger_output/"
+cellranger_lanes_dir <- "/groups/umcg-franke-scrna/tmp01/releases/wijst-2020-hg19/v1/alignment/cellranger_output/"
 # we'll save some plots here
-plot_dir = "/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/plots/"
+plot_dir = "/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/plots/"
 # excluding some lanes
 exclude_lanes <- c("181010_lane3", "181011_lane3", "181017_lane3", "181105_lane3", "181106_lane3", "181121_lane3", "181122_lane3", "181213_lane4", "181214_lane3","181024_lane1","181024_lane2","181024_lane3","190101_lane1","190101_lane2")
 # include HCs
-include_hc_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/hc-sampleIDs.txt'
+include_hc_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/metadata/hc-sampleIDs.txt'
 
 # this directory houses the barcode assignments to the participants based on souporcell
-base_soup_dir <- "/groups/umcg-bios/tmp04/projects/1M_cells_scRNAseq/soupor_matchgts/doublet_out_gts/"
+base_soup_dir <- "/groups/umcg-bios/tmp01/projects/1M_cells_scRNAseq/ongoing/demultiplexing/souporcell/correlate_clusters/correlated_output/"
 # this is the append of the barcode assignments souporcell file
-soup_extension <- "_doub_gt.tsv"
+soup_extension <- "_correlated.tsv"
 # this directory houses the barcode assignments to the participants based on demuxlet
 base_demux_dir <- "/groups/umcg-bios/tmp04/projects/1M_cells_scRNAseq/demux_relevant_samples/demux_output_cytosnp/"
 #this is the append of the barcode assignments demux file
 demux_extension <- "_sorted_hfixed.best"
 
 # this file contains the lanes as rownames, timepoints as colnames and the partipants in the cells, split by a comma
-stim_mapping_loc <- "/groups/umcg-bios/tmp04/projects/1M_cells_scRNAseq/scanpy_preprocess_samples/descriptions/lane_to_tp.txt"
+stim_mapping_loc <- "/groups/umcg-franke-scrna/tmp01/releases/wijst-2020-hg19/v1/metadata/1M_lane_to_tp.tsv"
 # this file contains the expnr to ll id
-exp_to_ll_loc <- "/groups/umcg-bios/tmp04/projects/1M_cells_scRNAseq/scanpy_preprocess_samples/descriptions/exp_to_ll.txt"
+exp_to_ll_loc <- "/groups/umcg-franke-scrna/tmp01/releases/wijst-2020-hg19/v1/metadata/1M_exp_to_ll.tsv"
 
 
 # read all the lanes
@@ -304,19 +310,19 @@ cells_1M <- add_bare_barcodes(cells_1M)
 cells_1M <- add_lane_bare_barcode_combo(cells_1M)
 cells_1M <- RenameCells(cells_1M, new.names = cells_1M@meta.data$bare_barcode_lane)
 # add the identities
-cells_1M <- add_demux_assignments(cells_1M, base_demux_dir, demux_extension)
+#cells_1M <- add_demux_assignments(cells_1M, base_demux_dir, demux_extension)
 # add the exp nr
-cells_1M <- add_exp_tags(cells_1M, exp_to_ll_loc, assignment_key='SNG.1ST')
+#cells_1M <- add_exp_tags(cells_1M, exp_to_ll_loc, assignment_key='SNG.1ST')
 # we want to add the exp tag based on souporcell as well, so let's store the exp column under an other name as well
-cells_1M@meta.data$exp.id.demux <- cells_1M@meta.data$exp.id
+#cells_1M@meta.data$exp.id.demux <- cells_1M@meta.data$exp.id
 # add the condition
-cells_1M <- add_stim_tags(cells_1M, stim_mapping_loc)
+#cells_1M <- add_stim_tags(cells_1M, stim_mapping_loc)
 # we want to add the condition tag based on souporcell as well, so let's store the exp column under an other name as well
-cells_1M@meta.data$timepoint.demux <- cells_1M@meta.data$timepoint
+#cells_1M@meta.data$timepoint.demux <- cells_1M@meta.data$timepoint
 # add souporcell assignments
 cells_1M <- add_soup_assignments(cells_1M, base_soup_dir, soup_extension)
 # add the exp nr for souporcell this time
-cells_1M <- add_exp_tags(cells_1M, exp_to_ll_loc, assignment_key='assignment.ll')
+cells_1M <- add_exp_tags(cells_1M, exp_to_ll_loc, assignment_key='assignment_ll')
 cells_1M@meta.data$exp.id.ll <- cells_1M@meta.data$exp.id
 # add the condition again, but now the exp nr is the ll one
 cells_1M <- add_stim_tags(cells_1M, stim_mapping_loc)
@@ -324,9 +330,9 @@ cells_1M@meta.data$timepoint.ll <- cells_1M@meta.data$timepoint
 # remove the doublets
 cells_1M <- remove_doublets(cells_1M)
 # set the final assignments
-cells_1M@meta.data$assignment.final <- cells_1M@meta.data$SNG.1ST
-cells_1M@meta.data$timepoint.final <- cells_1M@meta.data$timepoint.demux
-cells_1M@meta.data$exp.id.final <- cells_1M@meta.data$exp.id.demux
+cells_1M@meta.data$assignment.final <- cells_1M@meta.data$assignment.ll
+cells_1M@meta.data$timepoint.final <- cells_1M@meta.data$timepoint.ll
+cells_1M@meta.data$exp.id.final <- cells_1M@meta.data$exp.id.ll
 # grab just UT
 cells_1M <- subset(cells_1M, subset = timepoint.final == 'UT')
 # grab just the participants that are HC
@@ -339,11 +345,11 @@ HC_v3 <- subset(cells_1M, subset = chem == 'V3')
 HC_v2[["percent.mt"]] <- PercentageFeatureSet(HC_v2, pattern = "^MT-")
 HC_v3[["percent.mt"]] <- PercentageFeatureSet(HC_v3, pattern = "^MT-")
 # remove objects cells with too high MT percentage, HBB expression and too few genes expressed
-HC_v2 <- subset(HC_v2, subset = nFeature_RNA > 200 & percent.mt < 10 & HBB < 10)
+HC_v2 <- subset(HC_v2, subset = nFeature_RNA > 200 & percent.mt < 8 & HBB < 10)
 HC_v3 <- subset(HC_v3, subset = nFeature_RNA > 200 & percent.mt < 15 & HBB < 10)
 # do normalization
 HC_v2 <- SCTransform(HC_v2, vars.to.regress = c('percent.mt'))
 HC_v3 <- SCTransform(HC_v3, vars.to.regress = c('percent.mt'))
 # save the HC objects
-saveRDS(HC_v2, paste(object_loc, 'HC_v2_20200616.rds', sep = ''))
-saveRDS(HC_v3, paste(object_loc, 'HC_v3_20200616.rds', sep = ''))
+saveRDS(HC_v2, paste(object_loc, 'HC_v2_20201110.rds', sep = ''))
+saveRDS(HC_v3, paste(object_loc, 'HC_v3_20201110.rds', sep = ''))
