@@ -218,7 +218,7 @@ stemi_v3_raw_loc <- paste(object_loc, "stemi_v3_raw_samples_20201110.rds", sep =
 stemi_v3_filtered_loc <- paste(object_loc, "stemi_v3_filtered_samples_20201110.rds", sep = "/")
 stemi_v2_raw_loc <- paste(object_loc, "stemi_v2_raw_samples_20201110.rds", sep = "/")
 stemi_v2_filtered_loc <- paste(object_loc, "stemi_v2_filtered_samples_20201110.rds", sep = "/")
-stemi_v2_normalized_loc <- paste(object_loc, "stemi_v3_normalized_samples_20201110.rds", sep = "/")
+stemi_v2_normalized_loc <- paste(object_loc, "stemi_v2_normalized_samples_20201110.rds", sep = "/")
 stemi_v3_normalized_loc <- paste(object_loc, "stemi_v3_normalized_samples_20201110.rds", sep = "/")
 
 # this is where our cellranger outputs are

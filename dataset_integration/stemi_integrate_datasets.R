@@ -98,15 +98,16 @@ add_gender_and_age <- function(seurat_object, gender_age_file_loc, assignment_co
 options(future.globals.maxSize = 120 * 1000 * 1024^2)
 
 # get age-gender file
-age_gender_file_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/metadata/stemi_age_gender_match.tsv'
+age_gender_file_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/metadata/stemi_age_gender_match_wtestid.tsv'
 
 # the location of the objects
 object_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/'
 # specific objects
-stemi_v2_loc <- paste(object_loc, 'stemi_final_wdemuxcorrectedassignments.rds', sep = '')
-stemi_v3_loc <- paste(object_loc, 'v3_stemi_sct_idfixed_pca_SCTandRNAnorm.rds', sep = '')
-hc_v2_loc <- paste(object_loc, 'HC_v2_20200616.rds', sep = '')
-hc_v3_loc <- paste(object_loc, 'HC_v3_20200616.rds', sep = '')
+stemi_v2_loc <- paste(object_loc, 'stemi_v2_normalized_samples_20201110.rds', sep = '')
+stemi_v3_loc <- paste(object_loc, 'stemi_v3_normalized_samples_20201110.rds', sep = '')
+hc_v2_loc <- paste(object_loc, 'HC_v2_20201110.rds', sep = '')
+hc_v3_loc <- paste(object_loc, 'HC_v3_20201110.rds', sep = '')
+cardio.integrated.loc <- paste(object_loc, 'cardio.integrated.20201110.rds', sep = '')
 
 # read the objects
 stemi_v2 <- readRDS(stemi_v2_loc)
@@ -121,15 +122,21 @@ DefaultAssay(hc_v2) <- 'SCT'
 DefaultAssay(hc_v3) <- 'SCT'
 
 # fix some things in the objects
-stemi_v2@meta.data$assignment.final <- stemi_v2@meta.data$SNG.1ST
-stemi_v2@meta.data$assignment_final <- NULL
-stemi_v2@meta.data$timepoint.final <- stemi_v2@meta.data$timepoint.demux
-stemi_v2@meta.data$assignment.ll <- stemi_v2@meta.data$assignment_ll
-stemi_v2@meta.data$assignment_ll <- NULL
-stemi_v2@meta.data$bare_barcode_lane <- rownames(stemi_v2@meta.data)
+#stemi_v2@meta.data$assignment.final <- stemi_v2@meta.data$SNG.1ST
+#stemi_v2@meta.data$assignment_final <- NULL
+#stemi_v2@meta.data$timepoint.final <- stemi_v2@meta.data$timepoint.demux
+#stemi_v2@meta.data$assignment.ll <- stemi_v2@meta.data$assignment_ll
+#stemi_v2@meta.data$assignment_ll <- NULL
+#stemi_v2@meta.data$bare_barcode_lane <- rownames(stemi_v2@meta.data)
 stemi_v2@meta.data$orig.ident <- 'stemi_v2'
 stemi_v3@meta.data$orig.ident <- 'stemi_v3'
-stemi_v3@meta.data$bare_barcode_lane <- rownames(stemi_v3@meta.data)
+#stemi_v3@meta.data$bare_barcode_lane <- rownames(stemi_v3@meta.data)
+
+#v2 <- merge(hc_v2, stemi_v2)
+#v2 <- SCTransform(v2, vars.to.regress = c('percent.mt'))
+#v3 <- merge(hc_v3, stemi_v3)
+#v3 <- SCTransform(v3, vars.to.regress = c('percent.mt'))
+#cardio.list <- list(v2, v3)
 
 
 # add objects to list
@@ -140,11 +147,11 @@ rm(stemi_v3)
 rm(hc_v2)
 rm(hc_v3)
 # select the features to use for integrating
-cardio.features <- SelectIntegrationFeatures(object.list = cardio.list, nfeatures = 3000)
+cardio.features <- SelectIntegrationFeatures(object.list = cardio.list, nfeatures = 2000)
 # perpare for the integration
 cardio.list <- PrepSCTIntegration(object.list = cardio.list, anchor.features = cardio.features, verbose = T)
 # get the anchors for integration
-cardio.anchors <- FindIntegrationAnchors(object.list = cardio.list, normalization.method = "SCT", anchor.features = cardio.features, verbose = T)
+cardio.anchors <- FindIntegrationAnchors(object.list = cardio.list, normalization.method = "SCT", anchor.features = cardio.features, verbose = T, k.filter = 200)
 # finally create the integrated object
 cardio.integrated <- IntegrateData(anchorset = cardio.anchors, normalization.method = "SCT", verbose = T)
 # clear memory by removing the list
@@ -155,16 +162,26 @@ cardio.integrated <- FindVariableFeatures(cardio.integrated)
 # run PCA on the integrated object
 cardio.integrated <- RunPCA(cardio.integrated)
 # find the neighbours
-cardio.integrated <- FindNeighbors(cardio.integrated, dims = 1:20)
+cardio.integrated <- FindNeighbors(cardio.integrated, dims = 1:30)
 # construct clusters from the neighbours
-cardio.integrated <- FindClusters(cardio.integrated)
+cardio.integrated <- FindClusters(cardio.integrated, resolution = 1.5)
 # perform UMAP dimension reduction for visualisation
-cardio.integrated <- RunUMAP(cardio.integrated, dims = 1:20)
+cardio.integrated <- RunUMAP(cardio.integrated, dims = 1:30)
+# make this a bit easier to plot
+cardio.integrated@meta.data[cardio.integrated@meta.data$orig.ident == '1M_cells' & cardio.integrated@meta.data$chem == 'V2', ]$orig.ident <- 'hc_v2'
+cardio.integrated@meta.data[cardio.integrated@meta.data$orig.ident == '1M_cells' & cardio.integrated@meta.data$chem == 'V3', ]$orig.ident <- 'hc_v3'
+# do RNA norm
+DefaultAssay(cardio.integrated) <- 'RNA'
+cardio.integrated <- NormalizeData(cardio.integrated)
+# add the age and gender
+cardio.integrated <- add_gender_and_age(cardio.integrated, age_gender_file_loc)
+# save the object
+saveRDS(cardio.integrated.loc)
 
 # grab our previously defined cell types
 cell_types <- read.table('/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/metadata/cardio.integrated_cell_types_20200630.tsv', sep = '\t', header = T)
-cardio.integrated <- AddMetaData(cardio.integrated, cell_types['cell_type'])
-cardio.integrated <- AddMetaData(cardio.integrated, cell_types['cell_type_lowerres'])
+cardio.integrated <- AddMetaData(cardio.integrated, cell_types['cell_type'], 'cell_type.20200630')
+cardio.integrated <- AddMetaData(cardio.integrated, cell_types['cell_type_lowerres'], 'cell_type_lowerres.20200630')
 
 # some may be undefined, we'll impute these, but we do need to keep track
 cardio.integrated@meta.data$ct_was_imputed <- T
@@ -174,11 +191,9 @@ cardio.integrated <- add_imputed_meta_data(cardio.integrated, 'seurat_clusters',
 # for the missing cells, set this imputed cell type
 cardio.integrated@meta.data[is.na(cardio.integrated@meta.data$cell_type_lowerres), ]$cell_type_lowerres <- cardio.integrated@meta.data[is.na(cardio.integrated@meta.data$cell_type_lowerres), ]$imputed_ct
 # fix this little thing
-cardio.integrated@meta.data[cardio.integrated@meta.data$orig.ident == 'stemi_v2', ]$chem <- 'V2'
+#cardio.integrated@meta.data[cardio.integrated@meta.data$orig.ident == 'stemi_v2', ]$chem <- 'V2'
 cardio.integrated@meta.data[is.na(cardio.integrated@meta.data$batch), ]$batch <- cardio.integrated@meta.data[is.na(cardio.integrated@meta.data$batch), ]$lane
 
-# add the age and gender
-cardio.integrated <- add_gender_and_age(cardio.integrated, age_gender_file_loc)
 
 # remove doublets mono 4
 cardio.integrated <- subset(cardio.integrated, subset = cell_type != 'mono 4')

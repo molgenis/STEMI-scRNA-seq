@@ -327,12 +327,14 @@ cells_1M@meta.data$exp.id.ll <- cells_1M@meta.data$exp.id
 # add the condition again, but now the exp nr is the ll one
 cells_1M <- add_stim_tags(cells_1M, stim_mapping_loc)
 cells_1M@meta.data$timepoint.ll <- cells_1M@meta.data$timepoint
-# remove the doublets
-cells_1M <- remove_doublets(cells_1M)
 # set the final assignments
-cells_1M@meta.data$assignment.final <- cells_1M@meta.data$assignment.ll
+cells_1M@meta.data$assignment.final <- cells_1M@meta.data$assignment_ll
 cells_1M@meta.data$timepoint.final <- cells_1M@meta.data$timepoint.ll
 cells_1M@meta.data$exp.id.final <- cells_1M@meta.data$exp.id.ll
+# save just to be sure
+saveRDS(cells_1M, '1M_cells_seurat_object_hg19_soup_raw.rds')
+# remove the doublets
+cells_1M <- remove_doublets(cells_1M)
 # grab just UT
 cells_1M <- subset(cells_1M, subset = timepoint.final == 'UT')
 # grab just the participants that are HC
@@ -348,6 +350,8 @@ HC_v3[["percent.mt"]] <- PercentageFeatureSet(HC_v3, pattern = "^MT-")
 HC_v2 <- subset(HC_v2, subset = nFeature_RNA > 200 & percent.mt < 8 & HBB < 10)
 HC_v3 <- subset(HC_v3, subset = nFeature_RNA > 200 & percent.mt < 15 & HBB < 10)
 # do normalization
+HC_v2 <- NormalizeData(HC_v2)
+HC_v3 <- NormalizeData(HC_v3)
 HC_v2 <- SCTransform(HC_v2, vars.to.regress = c('percent.mt'))
 HC_v3 <- SCTransform(HC_v3, vars.to.regress = c('percent.mt'))
 # save the HC objects
