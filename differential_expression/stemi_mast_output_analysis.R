@@ -662,7 +662,7 @@ get_significant_genes(mast_meta_output_loc_lfc01, sig_down_output_loc_gs_lfc01, 
 
 
 # get the location of the pathways
-pathway_up_output_loc <- '/data/cardiology/pathways/sigs_pos/meta_paired_lores_lfc01minpct01_20200707_ensid/rna/'
+pathway_up_output_loc <- '/data/cardiology/pathways/sigs_pos/meta_paired_lores_lfc01minpct01_20200707_ensid_all/rna/'
 # write the combined pathway file
 pathway_up_df <- get_pathway_table(pathway_up_output_loc, append = '_sig_up_pathways.txt')
 pathway_up_df[pathway_up_df==0] <- 350
@@ -723,12 +723,12 @@ t24h_vary_colors_m <- cbind(t24h_vary_colors_ct, t24h_vary_colors_cond)
 colnames(t24h_vary_colors_m) <- c('celltype',
                                   'condition')
 heatmap.3(t(as.matrix(pathway_up_df_baselinet24h_top_10)),
-          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24h_vary_colors_m), margins=c(11,11), main = 'upregulated pathways t0 vs t24h')
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24h_vary_colors_m), margins=c(29,11), main = 'upregulated pathways t0 vs t24h')
 # now down
 pathway_down_df_baselinet24h <- pathway_down_df[, colnames(pathway_down_df)[grep('Baselinet24h', colnames(pathway_down_df))]]
 pathway_down_df_baselinet24h_top_10 <- get_top_pathways(pathway_down_df_baselinet24h, 10, T)
 heatmap.3(t(as.matrix(pathway_down_df_baselinet24h_top_10)),
-          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24h_vary_colors_m), margins=c(11,11), main = 'downregulated pathways t0 vs t24h')
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24h_vary_colors_m), margins=c(29,11), main = 'downregulated pathways t0 vs t24h')
 # baseline vs t8w
 pathway_up_df_baselinet8w <- pathway_up_df[, colnames(pathway_up_df)[grep('Baselinet8w', colnames(pathway_up_df))]]
 pathway_up_df_baselinet8w_top_10 <- get_top_pathways(pathway_up_df_baselinet8w, 10, T)
@@ -738,12 +738,12 @@ baselinet8w_vary_colors_m <- cbind(baselinet8w_vary_colors_ct, baselinet8w_vary_
 colnames(baselinet8w_vary_colors_m) <- c('celltype',
                                   'condition')
 heatmap.3(t(as.matrix(pathway_up_df_baselinet8w_top_10)),
-          col=(brewer.pal(10,"RdBu")), RowSideColors = t(baselinet8w_vary_colors_m), margins=c(11,11), main = 'upregulated pathways t0 vs t8w')
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(baselinet8w_vary_colors_m), margins=c(29,11), main = 'upregulated pathways t0 vs t8w')
 # now down
 pathway_down_df_baselinet8w <- pathway_down_df[, colnames(pathway_down_df)[grep('Baselinet8w', colnames(pathway_down_df))]]
 pathway_down_df_baselinet8w_top_10 <- get_top_pathways(pathway_down_df_baselinet8w, 10, T)
 heatmap.3(t(as.matrix(pathway_down_df_baselinet8w_top_10)),
-          col=(brewer.pal(10,"RdBu")), RowSideColors = t(baselinet8w_vary_colors_m), margins=c(11,11), main = 'downregulated pathways t0 vs t8w')
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(baselinet8w_vary_colors_m), margins=c(29,11), main = 'downregulated pathways t0 vs t8w')
 # t24h vs t8w
 pathway_up_df_t24ht8w <- pathway_up_df[, colnames(pathway_up_df)[grep('t24ht8w', colnames(pathway_up_df))]]
 pathway_up_df_t24ht8w_top_10 <- get_top_pathways(pathway_up_df_t24ht8w, 10, T)
@@ -753,12 +753,12 @@ t24ht8w_vary_colors_m <- cbind(t24ht8w_vary_colors_ct, t24ht8w_vary_colors_cond)
 colnames(t24ht8w_vary_colors_m) <- c('celltype',
                                   'condition')
 heatmap.3(t(as.matrix(pathway_up_df_t24ht8w_top_10)),
-          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24ht8w_vary_colors_m), margins=c(11,11), main = 'upregulated pathways t24h vs t8w')
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24ht8w_vary_colors_m), margins=c(29,11), main = 'upregulated pathways t24h vs t8w')
 # now down
 pathway_down_df_t24ht8w <- pathway_down_df[, colnames(pathway_down_df)[grep('t24ht8w', colnames(pathway_down_df))]]
 pathway_down_df_t24ht8w_top_10 <- get_top_pathways(pathway_down_df_t24ht8w, 10, T)
 heatmap.3(t(as.matrix(pathway_down_df_t24ht8w_top_10)),
-          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24ht8w_vary_colors_m), margins=c(11,11), main = 'downregulated pathways t24h vs t8w')
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24ht8w_vary_colors_m), margins=c(29,11), main = 'downregulated pathways t24h vs t8w')
 
 # UT vs t8w
 pathway_up_df_utt8w <- pathway_up_df[, colnames(pathway_up_df)[grep('UTt8w', colnames(pathway_up_df))]]
@@ -769,7 +769,7 @@ utt8w_vary_colors_m <- cbind(utt8w_vary_colors_ct, utt8w_vary_colors_cond)
 colnames(utt8w_vary_colors_m) <- c('celltype',
                                      'condition')
 heatmap.3(t(as.matrix(pathway_up_df_utt8w_top_10)),
-          col=(brewer.pal(10,"RdBu")), RowSideColors = t(utt8w_vary_colors_m), margins=c(11,11), main = 'upregulated pathways HC vs t8w')
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(utt8w_vary_colors_m), margins=c(29,11), main = 'upregulated pathways HC vs t8w')
 
 # UT vs Baseline
 pathway_up_df_utbaseline <- pathway_up_df[, colnames(pathway_up_df)[grep('UTBaseline', colnames(pathway_up_df))]]
@@ -780,8 +780,40 @@ utbaseline_vary_colors_m <- cbind(utbaseline_vary_colors_ct, utbaseline_vary_col
 colnames(utbaseline_vary_colors_m) <- c('celltype',
                                    'condition')
 heatmap.3(t(as.matrix(pathway_up_df_utbaseline_top_10)),
-          col=(brewer.pal(10,"RdBu")), RowSideColors = t(utbaseline_vary_colors_m), margins=c(11,11), main = 'upregulated pathways HC vs t0')
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(utbaseline_vary_colors_m), margins=c(29,11), main = 'upregulated pathways HC vs t0')
 
+# UT vs t24h
+pathway_up_df_utt24h <- pathway_up_df[, colnames(pathway_up_df)[grep('UTt24h', colnames(pathway_up_df))]]
+pathway_up_df_utt24h_top_10 <- get_top_pathways(pathway_up_df_utt24h, 10, T)
+utt24h_vary_colors_cond <- rep(c(cc[['UTt24h']]), times = 6)
+utt24h_vary_colors_ct <- c(rep(cc[['B']], times=1),rep(cc[['CD4T']], times=1),rep(cc[['CD8T']], times=1),rep(cc[['DC']], times=1),rep(cc[['monocyte']], times=1),rep(cc[['NK']], times=1))
+utt24h_vary_colors_m <- cbind(utt24h_vary_colors_ct, utt24h_vary_colors_cond)
+colnames(utt24h_vary_colors_m) <- c('celltype',
+                                        'condition')
+heatmap.3(t(as.matrix(pathway_up_df_utt24h_top_10)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(utt24h_vary_colors_m), margins=c(29,11), main = 'upregulated pathways HC vs t24h')
+
+# UT downs
+pathway_down_df_utt8w <- pathway_down_df[, colnames(pathway_down_df)[grep('UTt8w', colnames(pathway_down_df))]]
+max(pathway_down_df_utt8w)
+pathway_down_df_utt8w[pathway_down_df_utt8w == 0] <- 400
+pathway_down_df_utt8w_top_10 <- get_top_pathways(pathway_down_df_utt8w, 10, T)
+heatmap.3(t(as.matrix(pathway_down_df_utt8w_top_10)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(utt8w_vary_colors_m), margins=c(29,11), main = 'downregulated pathways HC vs t8w')
+
+pathway_down_df_utt24h <- pathway_down_df[, colnames(pathway_down_df)[grep('UTt24h', colnames(pathway_down_df))]]
+max(pathway_down_df_utt24h)
+pathway_down_df_utt24h[pathway_down_df_utt24h == 0] <- 300
+pathway_down_df_utt24h_top_10 <- get_top_pathways(pathway_down_df_utt24h, 10, T)
+heatmap.3(t(as.matrix(pathway_down_df_utt24h_top_10)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(utt24h_vary_colors_m), margins=c(29,11), main = 'downregulated pathways HC vs t24h')
+
+pathway_down_df_utbaseline <- pathway_down_df[, colnames(pathway_down_df)[grep('UTBaseline', colnames(pathway_down_df))]]
+max(pathway_down_df_utbaseline)
+pathway_down_df_utbaseline[pathway_down_df_utbaseline == 0] <- 400
+pathway_down_df_utbaseline_top_10 <- get_top_pathways(pathway_down_df_utbaseline, 10, T)
+heatmap.3(t(as.matrix(pathway_down_df_utbaseline_top_10)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(utbaseline_vary_colors_m), margins=c(29,11), main = 'downregulated pathways HC vs t0')
 
 
 # create heatmap of Baseline vs t24h

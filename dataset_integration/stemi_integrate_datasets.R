@@ -103,11 +103,11 @@ age_gender_file_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/o
 # the location of the objects
 object_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/'
 # specific objects
-stemi_v2_loc <- paste(object_loc, 'stemi_v2_normalized_samples_20201110.rds', sep = '')
-stemi_v3_loc <- paste(object_loc, 'stemi_v3_normalized_samples_20201110.rds', sep = '')
-hc_v2_loc <- paste(object_loc, 'HC_v2_20201110.rds', sep = '')
-hc_v3_loc <- paste(object_loc, 'HC_v3_20201110.rds', sep = '')
-cardio.integrated.loc <- paste(object_loc, 'cardio.integrated.20201110.rds', sep = '')
+stemi_v2_loc <- paste(object_loc, 'stemi_v2_normalized_samples_20201126.rds', sep = '')
+stemi_v3_loc <- paste(object_loc, 'stemi_v3_normalized_samples_20201126.rds', sep = '')
+hc_v2_loc <- paste(object_loc, 'HC_v2_normalized_samples_20201126.rds', sep = '')
+hc_v3_loc <- paste(object_loc, 'HC_v3_normalized_samples_20201126.rds', sep = '')
+cardio.integrated.loc <- paste(object_loc, 'cardio.integrated.20201126.rds', sep = '')
 
 # read the objects
 stemi_v2 <- readRDS(stemi_v2_loc)
@@ -182,6 +182,28 @@ saveRDS(cardio.integrated.loc)
 cell_types <- read.table('/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/metadata/cardio.integrated_cell_types_20200630.tsv', sep = '\t', header = T)
 cardio.integrated <- AddMetaData(cardio.integrated, cell_types['cell_type'], 'cell_type.20200630')
 cardio.integrated <- AddMetaData(cardio.integrated, cell_types['cell_type_lowerres'], 'cell_type_lowerres.20200630')
+
+# read the azimuth imputed data
+azimuth_ct <- read.table('/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell-type-classifying/seurat_multimodal/azimuth_cell_types_20201125.tsv', sep = '\t', row.names=1, header=T)
+cardio.integrated <- AddMetaData(cardio.integrated, azimuth_ct['predicted.celltype.l1.score'])
+cardio.integrated <- AddMetaData(cardio.integrated, azimuth_ct['predicted.celltype.l2.score'])
+cardio.integrated <- AddMetaData(cardio.integrated, azimuth_ct['predicted.celltype.l1'])
+cardio.integrated <- AddMetaData(cardio.integrated, azimuth_ct['predicted.celltype.l2'])
+FeaturePlot(cardio.integrated, features = c('predicted.celltype.l2.score'))
+
+# plot the imputed data
+DimPlot(cardio.integrated, label=T, label.size = 3, repel = T) + NoLegend()
+ggsave('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/plots/dimplots/cardio.integrated.30pcs.res1.2.clusters.20201125nl.png', width=10, height=10)
+DimPlot(cardio.integrated, group.by='cell_type.20200630', label=T, label.size = 3, repel = T) + NoLegend()
+ggsave('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/plots/dimplots/cardio.integrated.30pcs.res1.2.cell_type_20200630.20201125nl.png', width=10, height=10)
+DimPlot(cardio.integrated, group.by='cell_type_lowerres.20200630', label=T, label.size = 3, repel = T) + NoLegend()
+ggsave('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/plots/dimplots/cardio.integrated.30pcs.res1.2.cell_type_lowerres_20200630.20201125nl.png', width=10, height=10)
+DimPlot(cardio.integrated, group.by='predicted.celltype.l1', label=T, label.size = 3, repel = T) + NoLegend()
+ggsave('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/plots/dimplots/cardio.integrated.30pcs.res1.2.predicted.celltype.l1.20201125nl.png', width=10, height=10)
+DimPlot(cardio.integrated, group.by='predicted.celltype.l2', label=T, label.size = 3, repel = T) + NoLegend()
+ggsave('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/plots/dimplots/cardio.integrated.30pcs.res1.2.predicted.celltype.l2.20201125nl.png', width=10, height=10)
+# save the object
+saveRDS(cardio.integrated, '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/cardio.integrated.20201126_wazi.rds')
 
 # some may be undefined, we'll impute these, but we do need to keep track
 cardio.integrated@meta.data$ct_was_imputed <- T
