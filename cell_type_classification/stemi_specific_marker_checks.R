@@ -43,7 +43,7 @@ plot_celltype_violins_l2 <- function(seurat_object, celltype_marker_genes=c("CCR
   # we don't want to error because of missing genes
   genes_to_plot <- intersect(rownames(seurat_object), celltype_marker_genes)
   # plot per cluster
-  for(ident in levels(seurat_object@meta.data$predicted.celltype.l2)){
+  for(ident in unique(as.character(seurat_object@meta.data$predicted.celltype.l2))){
     # plot the violins and save
     VlnPlot(seurat_object, features = genes_to_plot, idents = c(ident), assay=assay, slot=slot)
     ggsave(paste(plot_dir,ident,"_violin.png", sep=""), dpi=600, width=25, height=25)
@@ -52,7 +52,7 @@ plot_celltype_violins_l2 <- function(seurat_object, celltype_marker_genes=c("CCR
 
 
 # run findmarkers
-run_findmarkers <- function(seurat_object, output_loc_final, ident_to_set, ident.1, ident.2=NULL){
+run_findmarkers <- function(seurat_object, output_loc_final, ident_to_set, ident.1, ident.2=NULL, assay='RNA', min.pct=0.1, logfc.threshold=0.25, latent.vars=NULL, features=NULL){
   # set the assay we wish to analyse
   DefaultAssay(seurat_object) <- assay
   # a hard column name is required for the model.matrix step, so let's add that
@@ -88,8 +88,8 @@ DefaultAssay(cardio.integrated) <- 'RNA'
 cardio.integrated <- NormalizeData(cardio.integrated)
 
 # plot the cell type markers requested
-plot_celltype_markers_l2(seurat_object = cardio.integrated, celltype_marker_genes=c('MKI67', 'HBB', 'HBA', 'HBC'), plot_dir = paste(features_plot_loc, "cardio_integrated_20201126_30pcs/", "irene/", sep = ""))
-plot_celltype_violins_l2(seurat_object = cardio.integrated, celltype_marker_genes=c('MKI67', 'HBB', 'HBA', 'HBC'), plot_dir = paste(features_plot_loc, "cardio_integrated_20201126_30pcs/", "irene/", sep = ""))
+plot_celltype_markers_l2(seurat_object = cardio.integrated, celltype_marker_genes=c('MKI67', 'HBB', 'HBA', 'HBC'), plot_dir = paste(features_plot_loc, "cardio_integrated_20201126_30pcs/", "irene_l2/", sep = ""))
+plot_celltype_violins_l2(seurat_object = cardio.integrated, celltype_marker_genes=c('MKI67', 'HBB', 'HBA', 'HBC'), plot_dir = paste(violins_plot_loc, "cardio_integrated_20201126_30pcs/", "irene_l2/", sep = ""))
 
 # expression pattern is different in v2 and v3, better split these two up
 cardio.integrated.v2 <- cardio.integrated[, cardio.integrated@meta.data$chem == 'V2']
@@ -196,8 +196,8 @@ cardio.integrated.v3.b.pb <- cardio.integrated.v3[, cardio.integrated.v3@meta.da
 v2_b_plasblas_out_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell-type-classifying/marker_output/cardio_integrated_20201126_30pcs/v2_BplasblasvsB.tsv'
 v3_b_plasblas_out_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell-type-classifying/marker_output/cardio_integrated_20201126_30pcs/v3_BplasblasvsB.tsv'
 # do the actual analysis
-run_findmarkers(seurat_object=cardio.integrated.v2.b, output_loc_final=v2_b_plasblas_out_loc, ident_to_set='predicted.celltype.l2', ident.1='plasmablast', ident.2=NULL)
-run_findmarkers(seurat_object=cardio.integrated.v3.b, output_loc_final=v3_b_plasblas_out_loc, ident_to_set='predicted.celltype.l2', ident.1='plasmablast', ident.2=NULL)
+run_findmarkers(seurat_object=cardio.integrated.v2.b.pb, output_loc_final=v2_b_plasblas_out_loc, ident_to_set='predicted.celltype.l2', ident.1='plasmablast', ident.2=NULL)
+run_findmarkers(seurat_object=cardio.integrated.v3.b.pb, output_loc_final=v3_b_plasblas_out_loc, ident_to_set='predicted.celltype.l2', ident.1='plasmablast', ident.2=NULL)
 # clear memory
 rm(cardio.integrated.v2.b.pb)
 rm(cardio.integrated.v3.b.pb)
