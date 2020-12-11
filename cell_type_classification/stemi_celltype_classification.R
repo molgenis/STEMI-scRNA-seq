@@ -116,4 +116,8 @@ DimPlot(cardio.integrated, group.by = 'cell_type')
 ggsave(dimplot_ct_loc, width=10, height=10)
 DimPlot(cardio.integrated, group.by = 'cell_type_lowerres')
 ggsave(dimplot_ctl_loc, width=10, height=10)
+DimPlot(cardio.integrated, group.by = 'cell_type', label=T, label.size = 3, repel = T) + NoLegend()
+ggsave('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/plots/dimplots/cardio.integrated.20201209.cell_type.nl.png', width=10, height=10)
+DimPlot(cardio.integrated, group.by = 'cell_type_lowerres', label=T, label.size = 3, repel = T) + NoLegend()
+ggsave('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/plots/dimplots/cardio.integrated.20201209.cell_type_lowerres.nl.png', width=10, height=10)
 
