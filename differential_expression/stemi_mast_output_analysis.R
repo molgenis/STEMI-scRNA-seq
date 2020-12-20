@@ -274,8 +274,8 @@ get_color_coding_dict <- function(){
   color_coding[["Bulk"]] <- "black"
   color_coding[["CD4T"]] <- "#153057"
   color_coding[["CD8T"]] <- "#009DDB"
-  color_coding[["monocyte"]] <- "#E64B50"
-  color_coding[["NK"]] <- "#EDBA1B"
+  color_coding[["monocyte"]] <- "#EDBA1B"
+  color_coding[["NK"]] <- "#E64B50"
   color_coding[["B"]] <- "#71BC4B"
   color_coding[["DC"]] <- "#965EC8"
   return(color_coding)
@@ -669,7 +669,8 @@ get_significant_genes(paste(mast_output_prepend, '2', mast_output_append_lfc01, 
 
 
 # get the location of the pathways
-pathway_up_output_loc <- '/data/cardiology/pathways/sigs_pos/meta_paired_lores_lfc01minpct01_20200707_ensid_all/rna/'
+#pathway_up_output_loc <- '/data/cardiology/pathways/sigs_pos/meta_paired_lores_lfc01minpct01_20200707_ensid_all/rna/'
+pathway_up_output_loc <- '/data/cardiology/pathways/sigs_pos/meta_paired_lores_lfc01minpct01_20201209_ensid_all/rna/'
 # write the combined pathway file
 pathway_up_df <- get_pathway_table(pathway_up_output_loc, append = '_sig_up_pathways.txt')
 pathway_up_df[pathway_up_df==0] <- 350
@@ -684,8 +685,10 @@ colors_ct <- c(rep(cc[['B']], times=6),rep(cc[['CD4T']], times=6),rep(cc[['CD8T'
 colors_m <- cbind(colors_ct, colors_cond)
 colnames(colors_m) <- c('celltype',
                         'condition')
+png('/data/cardiology/plots/pathways/meta_pathway_ensid_up_all.png', width = 1200, height = 900)
 heatmap.3(t(as.matrix(pathway_up_df_top_3)),
           col=(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(15,10))
+dev.off()
 
 # get the location of the pathways
 v2_pathway_up_output_loc <- '/data/cardiology/pathways/sigs_pos/v2_paired_lores_lfc01minpct01_20200707_ensid/rna/'
@@ -699,15 +702,21 @@ heatmap.3(t(as.matrix(v2_pathway_up_df_top_3)),
           col=(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(15,10))
 
 # get the location of the pathways
-pathway_down_output_loc <- '/data/cardiology/pathways/sigs_neg/meta_paired_lores_lfc01minpct01_20200707_ensid/rna/'
+pathway_down_output_loc <- '/data/cardiology/pathways/sigs_neg/meta_paired_lores_lfc01minpct01_20201209_all/rna/'
 # write the combined pathway file
-pathway_down_df <- get_pathway_table(pathway_down_output_loc, append = '_pathwayneg.txt')
-pathway_down_df[pathway_down_df==0] <- 400
+pathway_down_df <- get_pathway_table(pathway_down_output_loc, append = '_sig_down_pathways.txt')
+pathway_down_df[pathway_down_df==0] <- 500
 # get the df limited by top pathways of upregulated genes
 pathway_down_df_top_3 <- get_top_pathways(pathway_down_df, 3, T)
 
 heatmap.3(t(as.matrix(pathway_down_df_top_3)),
           col=(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(15,10))
+
+png('/data/cardiology/plots/pathways/meta_pathway_ensid_down_all.png', width = 1200, height = 900)
+heatmap.3(t(as.matrix(pathway_up_df_top_3)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(15,10))
+dev.off()
+
 
 # get the location of the pathways
 v2_pathway_down_output_loc <- '/data/cardiology/pathways/sigs_neg/v2_paired_lores_lfc01minpct01_20200707_ensid/rna/'
@@ -729,13 +738,18 @@ t24h_vary_colors_ct <- c(rep(cc[['B']], times=1),rep(cc[['CD4T']], times=1),rep(
 t24h_vary_colors_m <- cbind(t24h_vary_colors_ct, t24h_vary_colors_cond)
 colnames(t24h_vary_colors_m) <- c('celltype',
                                   'condition')
+png('/data/cardiology/plots/pathways/meta_pathway_ensid_up_all_baselinet24h_top_10.png', width = 1200, height = 900)
 heatmap.3(t(as.matrix(pathway_up_df_baselinet24h_top_10)),
           col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24h_vary_colors_m), margins=c(29,11), main = 'upregulated pathways t0 vs t24h')
+dev.off()
+
 # now down
 pathway_down_df_baselinet24h <- pathway_down_df[, colnames(pathway_down_df)[grep('Baselinet24h', colnames(pathway_down_df))]]
 pathway_down_df_baselinet24h_top_10 <- get_top_pathways(pathway_down_df_baselinet24h, 10, T)
+png('/data/cardiology/plots/pathways/meta_pathway_ensid_down_all_baselinet24h_top_10.png', width = 1200, height = 900)
 heatmap.3(t(as.matrix(pathway_down_df_baselinet24h_top_10)),
           col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24h_vary_colors_m), margins=c(29,11), main = 'downregulated pathways t0 vs t24h')
+dev.off()
 # baseline vs t8w
 pathway_up_df_baselinet8w <- pathway_up_df[, colnames(pathway_up_df)[grep('Baselinet8w', colnames(pathway_up_df))]]
 pathway_up_df_baselinet8w_top_10 <- get_top_pathways(pathway_up_df_baselinet8w, 10, T)
@@ -744,13 +758,17 @@ baselinet8w_vary_colors_ct <- c(rep(cc[['B']], times=1),rep(cc[['CD4T']], times=
 baselinet8w_vary_colors_m <- cbind(baselinet8w_vary_colors_ct, baselinet8w_vary_colors_cond)
 colnames(baselinet8w_vary_colors_m) <- c('celltype',
                                   'condition')
+png('/data/cardiology/plots/pathways/meta_pathway_ensid_up_all_baselinet8w_top_10.png', width = 1200, height = 900)
 heatmap.3(t(as.matrix(pathway_up_df_baselinet8w_top_10)),
           col=(brewer.pal(10,"RdBu")), RowSideColors = t(baselinet8w_vary_colors_m), margins=c(29,11), main = 'upregulated pathways t0 vs t8w')
+dev.off()
 # now down
 pathway_down_df_baselinet8w <- pathway_down_df[, colnames(pathway_down_df)[grep('Baselinet8w', colnames(pathway_down_df))]]
 pathway_down_df_baselinet8w_top_10 <- get_top_pathways(pathway_down_df_baselinet8w, 10, T)
+png('/data/cardiology/plots/pathways/meta_pathway_ensid_down_all_baselinet8w_top_10.png', width = 1200, height = 900)
 heatmap.3(t(as.matrix(pathway_down_df_baselinet8w_top_10)),
           col=(brewer.pal(10,"RdBu")), RowSideColors = t(baselinet8w_vary_colors_m), margins=c(29,11), main = 'downregulated pathways t0 vs t8w')
+dev.off()
 # t24h vs t8w
 pathway_up_df_t24ht8w <- pathway_up_df[, colnames(pathway_up_df)[grep('t24ht8w', colnames(pathway_up_df))]]
 pathway_up_df_t24ht8w_top_10 <- get_top_pathways(pathway_up_df_t24ht8w, 10, T)
@@ -759,13 +777,17 @@ t24ht8w_vary_colors_ct <- c(rep(cc[['B']], times=1),rep(cc[['CD4T']], times=1),r
 t24ht8w_vary_colors_m <- cbind(t24ht8w_vary_colors_ct, t24ht8w_vary_colors_cond)
 colnames(t24ht8w_vary_colors_m) <- c('celltype',
                                   'condition')
+png('/data/cardiology/plots/pathways/meta_pathway_ensid_up_all_t24ht8w_top_10.png', width = 1200, height = 900)
 heatmap.3(t(as.matrix(pathway_up_df_t24ht8w_top_10)),
           col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24ht8w_vary_colors_m), margins=c(29,11), main = 'upregulated pathways t24h vs t8w')
+dev.off()
 # now down
 pathway_down_df_t24ht8w <- pathway_down_df[, colnames(pathway_down_df)[grep('t24ht8w', colnames(pathway_down_df))]]
 pathway_down_df_t24ht8w_top_10 <- get_top_pathways(pathway_down_df_t24ht8w, 10, T)
+png('/data/cardiology/plots/pathways/meta_pathway_ensid_down_all_t24ht8w_top_10.png', width = 1200, height = 900)
 heatmap.3(t(as.matrix(pathway_down_df_t24ht8w_top_10)),
           col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24ht8w_vary_colors_m), margins=c(29,11), main = 'downregulated pathways t24h vs t8w')
+dev.off()
 
 # UT vs t8w
 pathway_up_df_utt8w <- pathway_up_df[, colnames(pathway_up_df)[grep('UTt8w', colnames(pathway_up_df))]]
@@ -775,8 +797,10 @@ utt8w_vary_colors_ct <- c(rep(cc[['B']], times=1),rep(cc[['CD4T']], times=1),rep
 utt8w_vary_colors_m <- cbind(utt8w_vary_colors_ct, utt8w_vary_colors_cond)
 colnames(utt8w_vary_colors_m) <- c('celltype',
                                      'condition')
+png('/data/cardiology/plots/pathways/meta_pathway_ensid_up_all_UTt8w_top_10.png', width = 1200, height = 900)
 heatmap.3(t(as.matrix(pathway_up_df_utt8w_top_10)),
           col=(brewer.pal(10,"RdBu")), RowSideColors = t(utt8w_vary_colors_m), margins=c(29,11), main = 'upregulated pathways HC vs t8w')
+dev.off()
 
 # UT vs Baseline
 pathway_up_df_utbaseline <- pathway_up_df[, colnames(pathway_up_df)[grep('UTBaseline', colnames(pathway_up_df))]]
@@ -786,8 +810,10 @@ utbaseline_vary_colors_ct <- c(rep(cc[['B']], times=1),rep(cc[['CD4T']], times=1
 utbaseline_vary_colors_m <- cbind(utbaseline_vary_colors_ct, utbaseline_vary_colors_cond)
 colnames(utbaseline_vary_colors_m) <- c('celltype',
                                    'condition')
+png('/data/cardiology/plots/pathways/meta_pathway_ensid_up_all_UTBaseline_top_10.png', width = 1200, height = 900)
 heatmap.3(t(as.matrix(pathway_up_df_utbaseline_top_10)),
           col=(brewer.pal(10,"RdBu")), RowSideColors = t(utbaseline_vary_colors_m), margins=c(29,11), main = 'upregulated pathways HC vs t0')
+dev.off()
 
 # UT vs t24h
 pathway_up_df_utt24h <- pathway_up_df[, colnames(pathway_up_df)[grep('UTt24h', colnames(pathway_up_df))]]
@@ -797,31 +823,38 @@ utt24h_vary_colors_ct <- c(rep(cc[['B']], times=1),rep(cc[['CD4T']], times=1),re
 utt24h_vary_colors_m <- cbind(utt24h_vary_colors_ct, utt24h_vary_colors_cond)
 colnames(utt24h_vary_colors_m) <- c('celltype',
                                         'condition')
+png('/data/cardiology/plots/pathways/meta_pathway_ensid_up_all_ut24h_top_10.png', width = 1200, height = 900)
 heatmap.3(t(as.matrix(pathway_up_df_utt24h_top_10)),
           col=(brewer.pal(10,"RdBu")), RowSideColors = t(utt24h_vary_colors_m), margins=c(29,11), main = 'upregulated pathways HC vs t24h')
+dev.off()
 
 # UT downs
 pathway_down_df_utt8w <- pathway_down_df[, colnames(pathway_down_df)[grep('UTt8w', colnames(pathway_down_df))]]
 max(pathway_down_df_utt8w)
 pathway_down_df_utt8w[pathway_down_df_utt8w == 0] <- 400
 pathway_down_df_utt8w_top_10 <- get_top_pathways(pathway_down_df_utt8w, 10, T)
+png('/data/cardiology/plots/pathways/meta_pathway_ensid_down_all_utt8w_top_10.png', width = 1200, height = 900)
 heatmap.3(t(as.matrix(pathway_down_df_utt8w_top_10)),
           col=(brewer.pal(10,"RdBu")), RowSideColors = t(utt8w_vary_colors_m), margins=c(29,11), main = 'downregulated pathways HC vs t8w')
+dev.off()
 
 pathway_down_df_utt24h <- pathway_down_df[, colnames(pathway_down_df)[grep('UTt24h', colnames(pathway_down_df))]]
 max(pathway_down_df_utt24h)
 pathway_down_df_utt24h[pathway_down_df_utt24h == 0] <- 300
 pathway_down_df_utt24h_top_10 <- get_top_pathways(pathway_down_df_utt24h, 10, T)
+png('/data/cardiology/plots/pathways/meta_pathway_ensid_down_all_ut24h_top_10.png', width = 1200, height = 900)
 heatmap.3(t(as.matrix(pathway_down_df_utt24h_top_10)),
           col=(brewer.pal(10,"RdBu")), RowSideColors = t(utt24h_vary_colors_m), margins=c(29,11), main = 'downregulated pathways HC vs t24h')
+dev.off()
 
 pathway_down_df_utbaseline <- pathway_down_df[, colnames(pathway_down_df)[grep('UTBaseline', colnames(pathway_down_df))]]
 max(pathway_down_df_utbaseline)
 pathway_down_df_utbaseline[pathway_down_df_utbaseline == 0] <- 400
 pathway_down_df_utbaseline_top_10 <- get_top_pathways(pathway_down_df_utbaseline, 10, T)
+png('/data/cardiology/plots/pathways/meta_pathway_ensid_down_all_utbaseline_top_10.png', width = 1200, height = 900)
 heatmap.3(t(as.matrix(pathway_down_df_utbaseline_top_10)),
           col=(brewer.pal(10,"RdBu")), RowSideColors = t(utbaseline_vary_colors_m), margins=c(29,11), main = 'downregulated pathways HC vs t0')
-
+dev.off()
 
 # create heatmap of Baseline vs t24h
 cc <- get_color_coding_dict()
