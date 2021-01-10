@@ -192,15 +192,15 @@ two.class.test<-function(obs.table, all.exp, cond.control="C", cond.treatment="P
 ########################################################################################
 
 # get the cell counts from the metadata object
-get_cell_counts <- function(metadata){
+get_cell_counts <- function(metadata, cell_type_column='cell_type_lowerres'){
   # init count matrix
-  cell_counts <- matrix(nrow=length(unique(metadata$timepoint.final)), ncol = length(unique(metadata$cell_type_lowerres)), dimnames = list(unique(metadata$timepoint.final), unique(metadata$cell_type_lowerres)))
+  cell_counts <- matrix(nrow=length(unique(metadata$timepoint.final)), ncol = length(unique(metadata[[cell_type_column]])), dimnames = list(unique(metadata$timepoint.final), unique(metadata[[cell_type_column]])))
   # check each condition
   for(condition in unique(metadata$timepoint.final)){
     total_cells_condition <- nrow(metadata[metadata$timepoint.final == condition, ])
     # check each cell type
-    for(cell_type in unique(metadata$cell_type_lowerres)){
-      cells_type_condition <- nrow(metadata[metadata$timepoint.final == condition & metadata$cell_type_lowerres == cell_type, ])
+    for(cell_type in unique(metadata[[cell_type_column]])){
+      cells_type_condition <- nrow(metadata[metadata$timepoint.final == condition & metadata[[cell_type_column]] == cell_type, ])
       # cant devide by zero and don't want to devide zero
       cells_fraction <- 0
       if(total_cells_condition > 0 & cells_type_condition > 0 ){

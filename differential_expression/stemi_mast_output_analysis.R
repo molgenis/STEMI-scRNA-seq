@@ -8,6 +8,7 @@ library(ggplot2)
 library(data.table)
 library(ggpubr)
 library(UpSetR)
+library(VennDiagram)
 
 ####################
 # Functions        #
@@ -240,6 +241,70 @@ get_pathway_table <- function(pathway_output_loc, sig_val_to_use = 'q.value.FDR.
   # remove rows which amount to zero
   pathway_df <- pathway_df[apply(pathway_df[,-1], 1, function(x) !all(x==0)),]
   return(pathway_df)
+}
+
+
+get_de_genes <- function(mast_output_loc, pval_column='metap_bonferroni', sig_pval=0.05, max=NULL, max_by_pval=T, only_positive=F, only_negative=F, lfc_column='metafc', to_ens=F, symbols.to.ensg.mapping='genes.tsv', cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), stims=c('UT', 'Baseline', 't24h', 't8w')){
+  # set up per cell type
+  de_per_ct <- list()
+  # check each cell type
+  for(cell_type in cell_types){
+    # set up per stim combination
+    de_per_condition <- list()
+    # check each stim
+    for(stim in stims){
+      for(stim2 in stims){
+        try({
+          if(stim != stim2){
+            print(paste(cell_type, stim, stim2, sep = ' '))
+            # paste the filepath together
+            filepath <- paste(mast_output_loc, cell_type, stim,stim2, '.tsv', sep = '')
+            # read the file
+            # read the mast output
+            mast <- read.table(filepath, header=T)
+            # filter to only include the significant results
+            mast <- mast[mast[[pval_column]] <= 0.05, ]
+            # filter for only the positive lfc if required
+            if(only_positive){
+              mast <- mast[mast[[lfc_column]] < 0, ]
+            }
+            # filter for only the positive lfc if required
+            if(only_negative){
+              mast <- mast[mast[[lfc_column]] > 0, ]
+            }
+            # confine in some way if reporting a max number of genes
+            if(!is.null(max)){
+              # by p if required
+              if(max_by_pval){
+                mast <- mast[order(mast[[p_val_column]]), ]
+              }
+              # by lfc otherwise
+              else{
+                mast <- mast[order(mast[[lfc_column]], decreasing = T), ]
+              }
+              # subset to the number we requested if max was set
+              mast <- mast[1:max,]
+            }
+            # grab the genes from the column names
+            genes <- rownames(mast)
+            # convert the symbols to ensemble IDs
+            if (to_ens) {
+              mapping <- read.table(symbols.to.ensg.mapping, header = F, stringsAsFactors = F)
+              mapping$V2 <- gsub("_", "-", make.unique(mapping$V2))
+              genes <- mapping[match(genes, mapping$V2),"V1"]
+            }
+            # otherwise change the Seurat replacement back
+            else{
+              #genes <- gsub("-", "_", genes)
+            }
+            de_per_condition[[paste(stim, stim2, sep = '')]] <- genes
+          }
+        })
+      }
+    }
+    de_per_ct[[cell_type]] <- de_per_condition
+  }
+  return(de_per_ct)
 }
 
 get_top_pathways <- function(pathway_table, nr_of_top_genes, is_ranked=F){
@@ -1005,3 +1070,12 @@ plot_DE_sharing_per_celltype('UTt8w', mast_meta_output_loc_lfc01, only_positive 
 plot_DE_sharing_per_celltype('Baselinet24h', mast_meta_output_loc_lfc01, only_positive = T)
 plot_DE_sharing_per_celltype('t24ht8w', mast_meta_output_loc_lfc01, only_positive = T)
 plot_DE_sharing_per_celltype('Baselinet8w', mast_meta_output_loc_lfc01, only_positive = T)
+
+
+mast_lfc01_de_genes <- get_de_genes(mast_output_loc = mast_meta_output_loc_lfc01)
+upset(fromList(mast_lfc01_de_genes[['monocyte']]), nsets = length(mast_lfc01_de_genes[['monocyte']]), order.by = 'freq')
+mast_lfc01_de_genes_up <- get_de_genes(mast_output_loc = mast_meta_output_loc_lfc01, only_positive = T)
+mast_lfc01_de_genes_down <- get_de_genes(mast_output_loc = mast_meta_output_loc_lfc01, only_negative = T)
+names(mast_lfc01_de_genes_up[['monocyte']]) <- paste(names(mast_lfc01_de_genes_up[['monocyte']]), '_up')
+names(mast_lfc01_de_genes_down[['monocyte']]) <- paste(names(mast_lfc01_de_genes_down[['monocyte']]), '_down')
+upset(fromList(append(mast_lfc01_de_genes_up[['monocyte']], mast_lfc01_de_genes_down[['monocyte']])), order.by = 'freq', length(append(mast_lfc01_de_genes_up[['monocyte']], mast_lfc01_de_genes_down[['monocyte']])))
