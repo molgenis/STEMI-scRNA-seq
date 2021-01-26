@@ -72,19 +72,12 @@ add_module_score_from_table <- function(pathway_gene_table_loc, pathway_name, se
 get_color_coding_dict <- function(){
   # set the condition colors
   color_coding <- list()
-  color_coding[["UT"]] <- 'grey'
-  color_coding[["3hCA"]] <- "khaki2"
-  color_coding[["24hCA"]] <- "khaki4"
-  color_coding[["3hMTB"]] <- "paleturquoise1"
-  color_coding[["24hMTB"]] <- "paleturquoise3"
-  color_coding[["3hPA"]] <- "rosybrown1"
-  color_coding[["24hPA"]] <- "rosybrown3"
-  color_coding[["X3hCA"]] <- "khaki2"
-  color_coding[["X24hCA"]] <- "khaki4"
-  color_coding[["X3hMTB"]] <- "paleturquoise1"
-  color_coding[["X24hMTB"]] <- "paleturquoise3"
-  color_coding[["X3hPA"]] <- "rosybrown1"
-  color_coding[["X24hPA"]] <- "rosybrown3"
+  color_coding[["UTBaseline"]] <- "khaki2"
+  color_coding[["UTt24h"]] <- "khaki4"
+  color_coding[["UTt8w"]] <- "paleturquoise1"
+  color_coding[["Baselinet24h"]] <- "paleturquoise3"
+  color_coding[["Baselinet8w"]] <- "rosybrown1"
+  color_coding[["t24ht8w"]] <- "rosybrown3"
   # set the cell type colors
   color_coding[["Bulk"]] <- "black"
   color_coding[["CD4T"]] <- "#153057"
@@ -122,7 +115,9 @@ for(pathway_file in pathway_files){
   # create a regex to get the last index of .
   last_dot_pos <- "\\.[^\\.]*$"
   # this allows us to remove the filename extention, which we will use as the name
-  pathway_name <- substr(file, 1, regexpr(last_dot_pos, pathway_file)-1)
+  pathway_name <- substr(full_pathway_file, 1, regexpr(last_dot_pos, pathway_file)-1)
+  # we need to replace dashes with underscores
+  pathway_name <- gsub('-', '_', pathway_name)
   # do for v2
   add_module_score_from_table(full_pathway_file, pathway_name, cardio.v2, cell_types=c('monocyte'), cell_type_column='cell_type_lowerres', condition_column='timepoint.final', color_by_ct = F)
   output_loc_v2 <- paste(plot_output_loc, 'mono_v2_', pathway_name, '.png', sep = '')
