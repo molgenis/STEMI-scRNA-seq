@@ -70,7 +70,7 @@ add_module_score_from_table <- function(pathway_gene_table_loc, pathway_name, se
 
 # mapping of conditions and cell types to colours
 get_color_coding_dict <- function(){
-  # set the condition colors
+  # set the condition combo colors
   color_coding <- list()
   color_coding[["UTBaseline"]] <- "khaki2"
   color_coding[["UTt24h"]] <- "khaki4"
@@ -78,6 +78,11 @@ get_color_coding_dict <- function(){
   color_coding[["Baselinet24h"]] <- "paleturquoise3"
   color_coding[["Baselinet8w"]] <- "rosybrown1"
   color_coding[["t24ht8w"]] <- "rosybrown3"
+  # set the condition colors
+  color_coding[["UT"]] <- "#D4ECF4"
+  color_coding[["t24h"]] <- "#008BC4"
+  color_coding[["t8w"]] <- "#262D60"
+  color_coding[["Baseline"]] <- "#66C5DD"
   # set the cell type colors
   color_coding[["Bulk"]] <- "black"
   color_coding[["CD4T"]] <- "#153057"
