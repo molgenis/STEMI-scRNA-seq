@@ -195,6 +195,49 @@ metadata_to_cell_counts <- function(metadata, cell_type_column='cell_type', assi
   return(formatted_counts)
 }
 
+metadata_to_cell_counts_colmethod <- function(metadata, cell_type_column='cell_type', assignment.column='assignment.final', timepoint.column='timepoint.final'){
+  formatted_counts <- NULL
+  # get all cell types
+  possible_cell_types <- as.character(unique(metadata[[cell_type_column]]))
+  # check each condition
+  for(condition in unique(metadata[[timepoint.column]])){
+    # grab for this timepoint
+    metadata_timepoint <- metadata[metadata[[timepoint.column]] == condition, ]
+    # check each participant
+    for(participant in unique(metadata_timepoint[[assignment.column]])){
+      # grab for this participant
+      metadata_tp_participant <- metadata_timepoint[metadata_timepoint[[assignment.column]] == participant, ]
+      # store the counts per cell type for the participant
+      counts_part_and_condition <- c()
+      # get the chemistry
+      chem <- as.character(metadata_tp_participant$chem[1])
+      # check each cell type
+      for(cell_type in unique(metadata[[cell_type_column]])){
+        # finally grab the number we want
+        cells_tp_part_ct <- nrow(metadata_tp_participant[metadata_tp_participant[[cell_type_column]] == cell_type, ])
+        # add this number of cells
+        counts_part_and_condition <- c(counts_part_and_condition, cells_tp_part_ct)
+      }
+      # add the bulk number as well
+      counts_part_and_condition <- c(counts_part_and_condition, nrow(metadata_tp_participant))
+      # add to table
+      if(is.null(formatted_counts)){
+        formatted_counts <- data.frame(c(participant, counts_part_and_condition, condition, chem))
+        # transpose
+        formatted_counts <- t(formatted_counts)
+        rownames(formatted_counts) <- NULL
+        colnames(formatted_counts) <- c('sample', possible_cell_types,  'total', 'condition', 'chem')
+      }
+      else{
+        formatted_counts <- rbind(formatted_counts, c(participant, counts_part_and_condition, condition, chem))
+      }
+    }
+  }
+  return(formatted_counts)
+}
+
+
+
 plot_mono1_vs_mono2 <- function(counts_data, cell_type_column='cell_type', mono1_name='mono 1', mono2_name='mono 2'){
   # subset to only have the mono 1 and mono 2 numbers
   counts_data_monos <- counts_data[counts_data[[cell_type_column]] == mono1_name | counts_data[[cell_type_column]] == mono2_name, ]

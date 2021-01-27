@@ -192,15 +192,15 @@ two.class.test<-function(obs.table, all.exp, cond.control="C", cond.treatment="P
 ########################################################################################
 
 # get the cell counts from the metadata object
-get_cell_counts <- function(metadata){
+get_cell_counts <- function(metadata, cell_type_column='cell_type_lowerres'){
   # init count matrix
-  cell_counts <- matrix(nrow=length(unique(metadata$timepoint.final)), ncol = length(unique(metadata$cell_type_lowerres)), dimnames = list(unique(metadata$timepoint.final), unique(metadata$cell_type_lowerres)))
+  cell_counts <- matrix(nrow=length(unique(metadata$timepoint.final)), ncol = length(unique(metadata[[cell_type_column]])), dimnames = list(unique(metadata$timepoint.final), unique(metadata[[cell_type_column]])))
   # check each condition
   for(condition in unique(metadata$timepoint.final)){
     total_cells_condition <- nrow(metadata[metadata$timepoint.final == condition, ])
     # check each cell type
-    for(cell_type in unique(metadata$cell_type_lowerres)){
-      cells_type_condition <- nrow(metadata[metadata$timepoint.final == condition & metadata$cell_type_lowerres == cell_type, ])
+    for(cell_type in unique(metadata[[cell_type_column]])){
+      cells_type_condition <- nrow(metadata[metadata$timepoint.final == condition & metadata[[cell_type_column]] == cell_type, ])
       # cant devide by zero and don't want to devide zero
       cells_fraction <- 0
       if(total_cells_condition > 0 & cells_type_condition > 0 ){
@@ -769,7 +769,7 @@ fitGLM_mc <- function(res, condition, subject_effect = TRUE, pairwise = TRUE, fi
 ####################################################################################
 
 # read Seurat file
-cardio.integrated <- readRDS('/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/cardio.integrated_20200625.rds')
+cardio.integrated <- readRDS('/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/cardio.integrated.20201209.rds')
 # grab metadata
 metadata <- cardio.integrated@meta.data
 # grab all the cell counts
@@ -794,12 +794,12 @@ pairs[['t24h_t8w']] <- t24h_t8w
 # get the results
 diff_all <- test_two_class_mt(cell_count_all, null_dist_all, pairs)
 # write results
-write.table(diff_all[['ut_baseline']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_baseline_20200710.tsv', sep = '\t', row.names=T)
-write.table(diff_all[['ut_t24h']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_t24h_20200710.tsv', sep = '\t', row.names=T)
-write.table(diff_all[['ut_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_t8w_20200710.tsv', sep = '\t', row.names=T)
-write.table(diff_all[['baseline_t24h']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_baseline_t24h_20200710.tsv', sep = '\t', row.names=T)
-write.table(diff_all[['baseline_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_baseline_t8w_20200710.tsv', sep = '\t', row.names=T)
-write.table(diff_all[['t24h_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_t24h_t8w_20200710.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['ut_baseline']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_baseline_20201209.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['ut_t24h']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_t24h_20201209.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['ut_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_t8w_20201209.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['baseline_t24h']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_baseline_t24h_20201209.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['baseline_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_baseline_t8w_20201209.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['t24h_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_t24h_t8w_20201209.tsv', sep = '\t', row.names=T)
 
 
 metadata_v2 <- metadata[metadata$chem == 'V2', ]
@@ -809,9 +809,9 @@ null_dist_v2 <- get_null_distributions_mt(cell_count_v2)
 # get the results
 diff_v2 <- test_two_class_mt(cell_count_v2, null_dist_v2, pairs)
 # write results
-write.table(diff_v2[['ut_baseline']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v2_ut_baseline_20200705.tsv', sep = '\t', row.names=T)
-write.table(diff_v2[['ut_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v2_ut_t8w_20200705.tsv', sep = '\t', row.names=T)
-write.table(diff_v2[['baseline_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v2_baseline_t8w_20200705.tsv', sep = '\t', row.names=T)
+write.table(diff_v2[['ut_baseline']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v2_ut_baseline_20201209.tsv', sep = '\t', row.names=T)
+write.table(diff_v2[['ut_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v2_ut_t8w_20201209.tsv', sep = '\t', row.names=T)
+write.table(diff_v2[['baseline_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v2_baseline_t8w_20201209.tsv', sep = '\t', row.names=T)
 
 metadata_v3 <- metadata[metadata$chem == 'V3', ]
 cell_count_v3 <- get_cell_counts(metadata_v3)
@@ -820,9 +820,9 @@ null_dist_v3 <- get_null_distributions_mt(cell_count_v3)
 # get the results
 diff_v3 <- test_two_class_mt(cell_count_v3, null_dist_v3, pairs)
 # write results
-write.table(diff_v3[['ut_baseline']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v3_ut_baseline_20200705.tsv', sep = '\t', row.names=T)
-write.table(diff_v3[['ut_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v3_ut_t8w_20200705.tsv', sep = '\t', row.names=T)
-write.table(diff_v3[['baseline_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v3_baseline_t8w_20200705.tsv', sep = '\t', row.names=T)
+write.table(diff_v3[['ut_baseline']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v3_ut_baseline_20201209.tsv', sep = '\t', row.names=T)
+write.table(diff_v3[['ut_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v3_ut_t8w_20201209.tsv', sep = '\t', row.names=T)
+write.table(diff_v3[['baseline_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v3_baseline_t8w_20201209.tsv', sep = '\t', row.names=T)
 
 
 
@@ -847,7 +847,7 @@ for(ct in names(chisq_all_ct_vs_all)){
   row <- c(p, p.bonferroni)
   chisq_all_ct_vs_all_m[ct,] <- row
 }
-write.table(chisq_all_ct_vs_all_m, '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/chi-squared/all_20200710.tsv', sep = '\t', row.names=T)
+write.table(chisq_all_ct_vs_all_m, '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/chi-squared/all_20201209.tsv', sep = '\t', row.names=T)
 
 # meta chi-squared method might yield more clear effects
 chisq_all_ct_vs_all_pertpcomb <- perform_chisq_paired_tp(cell_count_all)
@@ -871,7 +871,7 @@ for(tpcomb in names(chisq_all_ct_vs_all_pertpcomb)){
     row <- c(p, p.bonferroni.ct, p.bonferroni.ct.tp)
     chisq_all_ct_vs_all_ctcomb_m[ct,] <- row
   }
-  write.table(chisq_all_ct_vs_all_ctcomb_m, paste('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/chi-squared/', tpcomb, '_20200710.tsv', sep = ''), sep = '\t', row.names=T)
+  write.table(chisq_all_ct_vs_all_ctcomb_m, paste('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/chi-squared/', tpcomb, '_20201209.tsv', sep = ''), sep = '\t', row.names=T)
 }
 
 # perform per-individual meta analysis
@@ -886,16 +886,16 @@ chisq_all_ct_vs_all_meta <- perform_meta_chisq(metadata) # this gives some warni
 #  chisq_all_ct_vs_all_meta_m[ct,] <- row
 #}
 chisq_all_ct_vs_all_meta_m <- chisq_meta_result_to_table(chisq_all_ct_vs_all_meta)
-write.table(chisq_all_ct_vs_all_meta_m, '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/chi-squared/all_meta_20200710.tsv', sep = '\t', row.names=T)
+write.table(chisq_all_ct_vs_all_meta_m, '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/chi-squared/all_meta_20201209.tsv', sep = '\t', row.names=T)
 chisq_baseline_t24h_ct_vs_all_meta <- perform_meta_chisq(metadata, conditions_to_test = c('Baseline', 't24h'))
 chisq_baseline_t24h_ct_vs_all_meta_m <- chisq_meta_result_to_table(chisq_baseline_t24h_ct_vs_all_meta)
-write.table(chisq_baseline_t24h_ct_vs_all_meta_m, '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/chi-squared/baseline_vs_t24h_meta_20200710.tsv', sep = '\t', row.names=T)
+write.table(chisq_baseline_t24h_ct_vs_all_meta_m, '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/chi-squared/baseline_vs_t24h_meta_20201209.tsv', sep = '\t', row.names=T)
 chisq_baseline_t8w_ct_vs_all_meta <- perform_meta_chisq(metadata, conditions_to_test = c('Baseline', 't8w'))
 chisq_baseline_t8w_ct_vs_all_meta_m <- chisq_meta_result_to_table(chisq_baseline_t8w_ct_vs_all_meta)
-write.table(chisq_baseline_t8w_ct_vs_all_meta_m, '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/chi-squared/baseline_vs_t8w_meta_20200710.tsv', sep = '\t', row.names=T)
+write.table(chisq_baseline_t8w_ct_vs_all_meta_m, '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/chi-squared/baseline_vs_t8w_meta_20201209.tsv', sep = '\t', row.names=T)
 chisq_t24h_t8w_ct_vs_all_meta <- perform_meta_chisq(metadata, conditions_to_test = c('t24h', 't8w'))
 chisq_t24h_t8w_ct_vs_all_meta_m <- chisq_meta_result_to_table(chisq_t24h_t8w_ct_vs_all_meta)
-write.table(chisq_t24h_t8w_ct_vs_all_meta_m, '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/chi-squared/t24h_vs_t8w_meta_20200710.tsv', sep = '\t', row.names=T)
+write.table(chisq_t24h_t8w_ct_vs_all_meta_m, '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/chi-squared/t24h_vs_t8w_meta_20201209.tsv', sep = '\t', row.names=T)
 
 # fisher exact as well
 fisher_all <- perform_fisher_exact(metadata)
@@ -919,9 +919,9 @@ w.rank.sum.cts.v2 <- perform_wilcoxon_rank_sum(metadata_v2)
 w.rank.sum.cts.v3 <- perform_wilcoxon_rank_sum(metadata_v3)
 # check the cell types
 for(ct in names(w.rank.sum.cts.all)){
-  write.table(w.rank.sum.cts.all[[ct]]$p.value, paste('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/wilcoxon_ranked_sum/all_', ct, '.tsv', sep = ''), sep = '\t', row.names = T)
-  write.table(w.rank.sum.cts.v2[[ct]]$p.value, paste('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/wilcoxon_ranked_sum/v2_', ct, '.tsv', sep = ''), sep = '\t', row.names = T)
-  write.table(w.rank.sum.cts.v3[[ct]]$p.value, paste('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/wilcoxon_ranked_sum/v3_', ct, '.tsv', sep = ''), sep = '\t', row.names = T)
+  write.table(w.rank.sum.cts.all[[ct]]$p.value, paste('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/wilcoxon_ranked_sum/all_', ct, '_20201209.tsv', sep = ''), sep = '\t', row.names = T)
+  write.table(w.rank.sum.cts.v2[[ct]]$p.value, paste('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/wilcoxon_ranked_sum/v2_', ct, '_20201209.tsv', sep = ''), sep = '\t', row.names = T)
+  write.table(w.rank.sum.cts.v3[[ct]]$p.value, paste('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/wilcoxon_ranked_sum/v3_', ct, '_20201209.tsv', sep = ''), sep = '\t', row.names = T)
 }
 
 
@@ -950,16 +950,16 @@ for(participant in sort(unique(metadata$assignment.final))){
 
 # view proportions
 barplotCI(res_scDC_noClust, conds)
-ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/all_fixed_20200705_barplot.png', dpi = 600, height = 10, width = 10)
+ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/all_fixed_20201209_barplot.png', dpi = 600, height = 10, width = 10)
 # view density
 densityCI(res_scDC_noClust, conds)
-ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/all_fixed_20200705_density.png', dpi = 600, height = 10, width = 10)
+ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/all_fixed_20201209_density.png', dpi = 600, height = 10, width = 10)
 # try fitting a GLM
 #plan(multiprocess)
 res_GLM <- fitGLM_mc(res_scDC_noClust, conds, pairwise = F, mc.cores = 12)
 # save the results
-write.table(summary(res_GLM$pool_res_fixed), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/all_fixed_20200705.tsv', row.names = F)
-write.table(summary(res_GLM$pool_res_random), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/all_random_20200705.tsv', row.names = F)
+write.table(summary(res_GLM$pool_res_fixed), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/all_fixed_20201209.tsv', row.names = F)
+write.table(summary(res_GLM$pool_res_random), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/all_random_20201209.tsv', row.names = F)
 
 # now for v2
 cardio.integrated.v2 <- subset(cardio.integrated, subset = chem == 'V2')
@@ -987,15 +987,15 @@ for(participant in sort(unique(metadata.v2$assignment.final))){
 
 # view proportions
 barplotCI(res_scDC_noClust.v2, conds.v2s)
-ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v2_fixed_20200705_barplot.png', dpi = 600, height = 10, width = 10)
+ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v2_fixed_20201209_barplot.png', dpi = 600, height = 10, width = 10)
 # view density
 densityCI(res_scDC_noClust.v2, conds.v2s)
-ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v2_fixed_20200705_density.png', dpi = 600, height = 10, width = 10)
+ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v2_fixed_20201209_density.png', dpi = 600, height = 10, width = 10)
 # try fitting a GLM
 res_GLM.v2 <- fitGLM_mc(res_scDC_noClust.v2, conds.v2s, pairwise = F, mc.cores = 12)
 # save the results
-write.table(summary(res_GLM.v2$pool_res_fixed), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v2_fixed_20200705.tsv', row.names = F)
-write.table(summary(res_GLM.v2$pool_res_random), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v2_random_20200705.tsv', row.names = F)
+write.table(summary(res_GLM.v2$pool_res_fixed), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v2_fixed_20201209.tsv', row.names = F)
+write.table(summary(res_GLM.v2$pool_res_random), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v2_random_20201209.tsv', row.names = F)
 
 # now for v3
 cardio.integrated.v3 <- subset(cardio.integrated, subset = chem == 'V3')
@@ -1023,12 +1023,12 @@ for(participant in sort(unique(metadata.v3$assignment.final))){
 
 # view proportions
 barplotCI(res_scDC_noClust.v3, conds.v3s)
-ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v3_fixed_20200705_barplot.png', dpi = 600, height = 10, width = 10)
+ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v3_fixed_20201209_barplot.png', dpi = 600, height = 10, width = 10)
 # view density
 densityCI(res_scDC_noClust.v3, conds.v3s)
-ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v3_fixed_20200705_density.png', dpi = 600, height = 10, width = 10)
+ggsave('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v3_fixed_20201209_density.png', dpi = 600, height = 10, width = 10)
 # try fitting a GLM
 res_GLM.v3 <- fitGLM_mc(res_scDC_noClust.v3, conds.v3s, pairwise = F, mc.cores = 12)
 # save the results
-write.table(summary(res_GLM.v3$pool_res_fixed), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v3_fixed_20200705.tsv', row.names = F)
-write.table(summary(res_GLM.v3$pool_res_random), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v3_random_20200705.tsv', row.names = F)
+write.table(summary(res_GLM.v3$pool_res_fixed), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v3_fixed_20201209.tsv', row.names = F)
+write.table(summary(res_GLM.v3$pool_res_random), '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/scdney/v3_random_20201209.tsv', row.names = F)

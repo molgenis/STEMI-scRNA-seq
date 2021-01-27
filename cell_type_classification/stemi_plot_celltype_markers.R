@@ -117,6 +117,29 @@ plot_celltype_markers_monique <- function(seurat_object, assay = "RNA", slot="da
   }
 }
 
+# plot celltype markers
+plot_celltype_markers_irene <- function(seurat_object, assay = "RNA", slot="data", plot_dir = "./"){
+  # set correct assay
+  DefaultAssay(seurat_object) <- assay
+  # these are the markers used for 
+  celltype_marker_genes_regular <- c("CCR7","S100A4","CD3E","CD4","CD8A","FCGR3A","NKG7","GNLY","GZMB","PRF1","KLRC1","CD79A","MS4A1","CD14","LYZ","S100A9","CSF3R","LYN","CSF1R","CD1C","ITGAX","CLEC4C","PF4","GP9","PPBP","ITGA2B","CD34")
+  celltype_marker_genes_irene <- c('FOXP3','CCR2','RORA','RORC','IL6','IL1','IL14','IL13','IL17A','SGP130','TREM2','VCAN ','CD16','CD16','IL-12','IL-23','IL-27','CXCL9','CXCL10','CXCL11','MMP1','TNFa','IL-10','CCL17')
+  celltype_marker_genes <- setdiff(celltype_marker_genes_irene, celltype_marker_genes_regular)
+  for(gene in celltype_marker_genes){
+    if(gene %in% rownames(seurat_object)){
+      p <- FeaturePlot(seurat_object, features = c(gene), slot=slot)
+      # replace RNA_snn_res.1  with whatever your cluster column is called in metadata
+      p$data$clusters <- seurat_object$seurat_clusters
+      LabelClusters(plot = p, id = "clusters")
+      ggsave(paste(plot_dir,gene,".png", sep=""), dpi=600, width=10, height=10)
+    }
+    else{
+      print(paste(gene,"not found", sep=" "))
+    }
+  }
+}
+
+
 # create violin plots
 plot_celltype_violins <- function(seurat_object, assay = "RNA", slot="data", plot_dir = "./"){
   # set correct assay
@@ -275,6 +298,39 @@ plot_celltype_violins_monique <- function(seurat_object, assay = "RNA", slot="da
   }
 }
 
+# create violin plots
+plot_celltype_violins_irene <- function(seurat_object, assay = "RNA", slot="data", plot_dir = "./"){
+  # set correct assay
+  DefaultAssay(seurat_object) <- assay
+  # these are the markers used for
+  celltype_marker_genes_regular <- c("CCR7","S100A4","CD3E","CD4","CD8A","FCGR3A","NKG7","GNLY","GZMB","PRF1","KLRC1","CD79A","MS4A1","CD14","LYZ","S100A9","CSF3R","LYN","CSF1R","CD1C","ITGAX","CLEC4C","PF4","GP9","PPBP","ITGA2B","CD34")
+  celltype_marker_genes_irene <- c('FOXP3','CCR2','RORA','RORC','IL6','IL1','IL14','IL13','IL17A','SGP130','TREM2','VCAN ','CD16','CD16','IL-12','IL-23','IL-27','CXCL9','CXCL10','CXCL11','MMP1','TNFa','IL-10','CCL17')
+  celltype_marker_genes <- setdiff(celltype_marker_genes_irene, celltype_marker_genes_regular)
+  # plot per gene
+  for(gene in celltype_marker_genes){
+    # only plot if the gene is present
+    if(gene %in% rownames(seurat_object)){
+      # plot the violins and save
+      VlnPlot(seurat_object, features = c(gene), group.by = "seurat_clusters", assay=assay, slot=slot)
+      ggsave(paste(plot_dir,gene,"_violin.png", sep=""), dpi=600, width=10, height=10)
+      VlnPlot(seurat_object, features = c(gene), group.by = "seurat_clusters", assay=assay, slot=slot, pt.size = 0)
+      ggsave(paste(plot_dir,gene,"_violin_nodot.png", sep=""), dpi=600, width=10, height=10)
+    }
+    else{
+      print(paste(gene,"not found", sep=" "))
+    }
+  }
+  # we don't want to error because of missing genes
+  genes_to_plot <- intersect(rownames(seurat_object), celltype_marker_genes)
+  # plot per cluster
+  for(ident in levels(seurat_object@meta.data$seurat_clusters)){
+    # plot the violins and save
+    VlnPlot(seurat_object, features = genes_to_plot, idents = c(ident), assay=assay, slot=slot)
+    ggsave(paste(plot_dir,ident,"_violin.png", sep=""), dpi=600, width=25, height=25)
+  }
+}
+
+
 #########################
 # main code             #
 #########################
@@ -282,9 +338,8 @@ plot_celltype_violins_monique <- function(seurat_object, assay = "RNA", slot="da
 # this is where our objects are on disk
 object_loc <- "/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/"
 # objects specifically
-cardio_15pcs_loc <- paste(object_loc, "cardio_integrated_15pcs.rds", sep = "")
-cardio_20pcs_loc <- paste(object_loc, "cardio_integrated_20pcs.rds", sep = "")
-cardio_25pcs_loc <- paste(object_loc, "cardio_integrated_25pcs.rds", sep = "")
+cardio_30pcs_loc <- paste(object_loc, "cardio.integrated.20201126_wazi.rds", sep = "")
+
 # plots dir
 plot_loc <- "/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/plots/"
 # more specific plot locs
@@ -292,46 +347,20 @@ features_plot_loc <- paste(plot_loc, "feature_plots/", sep = "")
 violins_plot_loc <- paste(plot_loc, "violin_plots/", sep = "")
 
 # do work for each object
-cardio_20pcs <- readRDS(cardio_20pcs_loc)
+cardio_30pcs <- readRDS(cardio_30pcs_loc)
 # set to RNA and normalize (usual workflow for feature plots)
-DefaultAssay(cardio_20pcs) <- "RNA"
-cardio_20pcs <- NormalizeData(cardio_20pcs)
+DefaultAssay(cardio_30pcs) <- "RNA"
+cardio_30pcs <- NormalizeData(cardio_30pcs)
 # plot various things
-plot_celltype_markers(seurat_object = cardio_20pcs, plot_dir = paste(features_plot_loc, "cardio_integrated_20pcs/", "regular/", sep = ""))
-plot_celltype_markers_gate(seurat_object = cardio_20pcs, plot_dir = paste(features_plot_loc, "cardio_integrated_20pcs/", "gate/", sep = ""))
-plot_celltype_markers_villani(seurat_object = cardio_20pcs, plot_dir = paste(features_plot_loc, "cardio_integrated_20pcs/", "villani/", sep = ""))
-plot_celltype_markers_gamez(seurat_object = cardio_20pcs, plot_dir = paste(features_plot_loc, "cardio_integrated_20pcs/", "gamez/", sep = ""))
-plot_celltype_violins(seurat_object = cardio_20pcs, plot_dir = paste(violins_plot_loc, "cardio_integrated_20pcs/", "regular/", sep = ""))
-plot_celltype_violins_gate(seurat_object = cardio_20pcs, plot_dir = paste(violins_plot_loc, "cardio_integrated_20pcs/", "gate/", sep = ""))
-plot_celltype_violins_villani(seurat_object = cardio_20pcs, plot_dir = paste(violins_plot_loc, "cardio_integrated_20pcs/", "villani/", sep = ""))
-plot_celltype_violins_gamez(seurat_object = cardio_20pcs, plot_dir = paste(violins_plot_loc, "cardio_integrated_20pcs/", "gamez/", sep = ""))
-rm(cardio_20pcs)
+plot_celltype_markers(seurat_object = cardio_30pcs, plot_dir = paste(features_plot_loc, "cardio_integrated_20201126_30pcs/", "regular/", sep = ""))
+plot_celltype_markers_gate(seurat_object = cardio_30pcs, plot_dir = paste(features_plot_loc, "cardio_integrated_20201126_30pcs/", "gate/", sep = ""))
+plot_celltype_markers_villani(seurat_object = cardio_30pcs, plot_dir = paste(features_plot_loc, "cardio_integrated_20201126_30pcs/", "villani/", sep = ""))
+plot_celltype_markers_irene(seurat_object = cardio_30pcs, plot_dir = paste(features_plot_loc, "cardio_integrated_20201126_30pcs/", "irene/", sep = ""))
 
-# do work for each object
-cardio_15pcs <- readRDS(cardio_15pcs_loc)
-# set to RNA and normalize (usual workflow for feature plots)
-DefaultAssay(cardio_15pcs) <- "RNA"
-cardio_15pcs <- NormalizeData(cardio_15pcs)
-# plot various things
-plot_celltype_markers(seurat_object = cardio_15pcs, plot_dir = paste(features_plot_loc, "cardio_integrated_15pcs/", "regular/", sep = ""))
-plot_celltype_markers_gate(seurat_object = cardio_15pcs, plot_dir = paste(features_plot_loc, "cardio_integrated_15pcs/", "gate/", sep = ""))
-plot_celltype_markers_villani(seurat_object = cardio_15pcs, plot_dir = paste(features_plot_loc, "cardio_integrated_15pcs/", "villani/", sep = ""))
-plot_celltype_violins(seurat_object = cardio_15pcs, plot_dir = paste(violins_plot_loc, "cardio_integrated_15pcs/", "regular/", sep = ""))
-plot_celltype_violins_gate(seurat_object = cardio_15pcs, plot_dir = paste(violins_plot_loc, "cardio_integrated_15pcs/", "gate/", sep = ""))
-plot_celltype_violins_villani(seurat_object = cardio_15pcs, plot_dir = paste(violins_plot_loc, "cardio_integrated_15pcs/", "villani/", sep = ""))
-rm(cardio_15pcs)
+plot_celltype_violins(seurat_object = cardio_30pcs, plot_dir = paste(violins_plot_loc, "cardio_integrated_20201126_30pcs/", "regular/", sep = ""))
+plot_celltype_violins_gate(seurat_object = cardio_30pcs, plot_dir = paste(violins_plot_loc, "cardio_integrated_20201126_30pcs/", "gate/", sep = ""))
+plot_celltype_violins_villani(seurat_object = cardio_30pcs, plot_dir = paste(violins_plot_loc, "cardio_integrated_20201126_30pcs/", "villani/", sep = ""))
+plot_celltype_violins_irene(seurat_object = cardio_30pcs, plot_dir = paste(violins_plot_loc, "cardio_integrated_20201126_30pcs/", "irene/", sep = ""))
 
-# do work for each object
-cardio_25pcs <- readRDS(cardio_25pcs_loc)
-# set to RNA and normalize (usual workflow for feature plots)
-DefaultAssay(cardio_25pcs) <- "RNA"
-cardio_25pcs <- NormalizeData(cardio_25pcs)
-# plot various things
-plot_celltype_markers(seurat_object = cardio_25pcs, plot_dir = paste(features_plot_loc, "cardio_integrated_25pcs/", "regular/", sep = ""))
-plot_celltype_markers_gate(seurat_object = cardio_25pcs, plot_dir = paste(features_plot_loc, "cardio_integrated_25pcs/", "gate/", sep = ""))
-plot_celltype_markers_villani(seurat_object = cardio_25pcs, plot_dir = paste(features_plot_loc, "cardio_integrated_25pcs/", "villani/", sep = ""))
-plot_celltype_violins(seurat_object = cardio_25pcs, plot_dir = paste(violins_plot_loc, "cardio_integrated_25pcs/", "regular/", sep = ""))
-plot_celltype_violins_gate(seurat_object = cardio_25pcs, plot_dir = paste(violins_plot_loc, "cardio_integrated_25pcs/", "gate/", sep = ""))
-plot_celltype_violins_villani(seurat_object = cardio_25pcs, plot_dir = paste(violins_plot_loc, "cardio_integrated_25pcs/", "villani/", sep = ""))
-rm(cardio_25pcs)
+rm(cardio_30pcs)
 

@@ -1,148 +1,123 @@
-# read the integrated object
-cardio.integrated <- readRDS('/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/cardio_integrated_20pcs.rds')
-# read stemi_v2
-stemi_v2 <- readRDS('/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/stemi_final_wdemuxcorrectedassignments.rds')
-# read stemi_v3
-stemi_v3 <- readRDS('/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/stemi_v3_35pcs.rds')
-# read the oneM eqtlgen object
-oneM <- readRDS('/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/1M_UT_eqtlgen.rds')
+####################
+# libraries        #
+####################
 
-# perform RNA normalization on cardio.integrated, we might need it later
-DefaultAssay(cardio.integrated) <- 'RNA'
-cardio.integrated <- NormalizeData(cardio.integrated)
-# harmonize the previous cell types
-cardio.integrated@meta.data[(is.na(cardio.integrated@meta.data$cell_type)),]$cell_type <- 'unclassified'
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == 'mDCs',]$cell_type <- 'mDC'
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == 'Megakaryocytes',]$cell_type <- 'megakaryocyte'
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == 'Memory_CD4T',]$cell_type <- 'memory CD4T'
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == 'Memory_CD8T',]$cell_type <- 'memory CD8T'
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == 'mono2',]$cell_type <- 'mono 2'
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == 'Naive_CD8T',]$cell_type <- 'naive CD8T'
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == 'Naive_CD4T',]$cell_type <- 'naive CD4T'
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == 'pDCs',]$cell_type <- 'pDC'
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == 'PlasmaB',]$cell_type <- 'plasma B'
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == 'cMonocytes',]$cell_type <- 'mono 1'
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == 'ncMonocytes',]$cell_type <- 'mono 2'
+library(Seurat)
+library(ggplot2)
 
-# now store this in a new column to make sure we don't lose it
-cardio.integrated@meta.data$cell_type_previous <- cardio.integrated@meta.data$cell_type
-# fix this little inconsistency
-levels(cardio.integrated@meta.data$orig.ident) <- c(levels(cardio.integrated@meta.data$orig.ident), 'stemi_v3')
-cardio.integrated@meta.data[cardio.integrated@meta.data$orig.ident == 'cardio_v3',]$orig.ident <- 'stemi_v3'
+####################
+# Functions        #
+####################
 
-# add the initial cell types
-initial_ct <-  c(
-  'mono 1',
-  'naive CD4T',
-  'memory CD8T',
-  'NKdim', 
-  'naive CD4T',
-  'memory CD8T', 
-  'memory CD4T',
-  'mono 1',
-  'memory CD4T',
-  'memory CD4T',
-  'naive CD4T',
-  'mono 2',
-  'NKdim',
-  'B',
-  'memory CD8T', 
-  'mono 1',
-  'memory CD4T',
-  'mDC',
-  'memory CD4T',
-  'megakaryocyte',
-  'pDC',
-  'memory CD4T',
-  'mono',
-  'NKbright',
-  'plasma B',
-  'hemapoietic stem',
-  'NKbright'
-)
-names(initial_ct) <- levels(cardio.integrated)
-cardio.integrated <-RenameIdents(cardio.integrated, initial_ct)
-# put it in a column as well
-cardio.integrated <- AddMetaData(cardio.integrated, cardio.integrated@active.ident, 'cell_type')
-cardio.integrated <- AddMetaData(cardio.integrated, cardio.integrated@active.ident, 'cell_type_initial')
-
-# now save the monocyte celltyping
-monocyte_split.integrated_15pcs = readRDS("/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/monocyte_split.integrated_15pcs.rds")
-# Normalising data
-DefaultAssay(monocyte_split.integrated_15pcs) <- "RNA"
-monocyte_split.integrated_15pcs <- NormalizeData(monocyte_split.integrated_15pcs)
-# Naming/specifying clusters
-monocyte_ct <- c("mono 1", "mono 1", "mono 1", "mono 1", "mono 1", "mono 2", "mono 1", "mono 1", "mono 1", "mono 3", "mono 1", "mono 1", "mono 1", "megakaryocyte", "mono 3", "mono 2", "mono 4", "mono 2", "mono 1", "mono 2")
-names(monocyte_ct) <- levels(monocyte_split.integrated_15pcs)
-monocyte_split.integrated_15pcs <- RenameIdents(monocyte_split.integrated_15pcs, monocyte_ct)
-monocyte_split.integrated_15pcs <- AddMetaData(monocyte_split.integrated_15pcs, monocyte_split.integrated_15pcs@active.ident, "cell_type")
-# already done -> saveRDS(monocyte_split.integrated_15pcs, "/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/monocyte_integrated_15pcs_ctd_RNA.rds")
-# grab the assignments from the object
-mono_specific_assignments <- monocyte_split.integrated_15pcs@meta.data['cell_type']
-
-# now save the T subtyping
-t_split.integrated_15pcs <- readRDS("/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/t_split.integrated_UMAP_15pcs.rds")
-# Normalising data
-DefaultAssay(t_split.integrated_15pcs) <- "RNA"
-t_split.integrated_15pcs <- NormalizeData(t_split.integrated_15pcs)
-# Naming/specifying clusters
-#t_ct <- c('th1 memory CD4T', 'naive CD4T', 'naive CD4T', 'memory CD8T', 'naive CD8T', 'th2 memory CD4T', 'memory CD8T', 'memory CD4T', 'naive CD4T transitioning to stim', 'reg CD4T', 'th1 memory CD4T', 'memory CD8T', 'th2 memory CD4T', 'memory CD8T', 'Tc17 (IL17+ CD8+)', 'naive CD4T', 'naive CD4T', 'memory CD8T', 'megakaryocyte', 'naive CD4T', 'cyto memory CD4T')
-t_ct <- c(
-  'memory CD4T',
-  'naive CD4T',
-  'naive CD4T',
-  'memory CD8T',
-  'naive CD8T',
-  'memory CD4T',
-  'memory CD8T',
-  'memory CD4T',
-  'naive CD4T',
-  'Treg', 
-  'memory CD4T', 
-  'memory CD8T', 
-  'memory CD4T', 
-  'memory CD8T',
-  'memory CD8T',
-  'naive CD4T',
-  'naive CD4T',
-  'memory CD8T', 
-  'megakaryocyte',
-  'naive CD4T', 
-  'memory CD4T'
-)
-names(t_ct) <- levels(t_split.integrated_15pcs)
-t_split.integrated_15pcs <- RenameIdents(t_split.integrated_15pcs, t_ct)
-t_split.integrated_15pcs <- AddMetaData(t_split.integrated_15pcs, t_split.integrated_15pcs@active.ident, "cell_type")
-# already done -> saveRDS(t_split.integrated_15pcs, "/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/t_integrated_15pcs_ctd_RNA.rds")
-# grab the assignments from the object
-t_specific_assignments <- t_split.integrated_15pcs@meta.data['cell_type']
+# add metadata that is based on existing incomplete metadata in the seurat object
+add_imputed_meta_data <- function(seurat_object, column_to_transform, column_to_reference, column_to_create){
+  # add the column
+  seurat_object@meta.data[column_to_create] <- NA
+  # go through the grouping we have for the entire object
+  for(group in unique(seurat_object@meta.data[[column_to_transform]])){
+    # subset to get only this group
+    seurat_group <- seurat_object[,seurat_object@meta.data[[column_to_transform]] == group]
+    best_group <- 'unknown'
+    best_number <- 0
+    # check against the reference column
+    for(reference in unique(seurat_group@meta.data[[column_to_reference]])){
+      # we don't care for the NA reference, if we had all data, we wouldn't need to do this anyway
+      if(is.na(reference) == F){
+        # grab the number of cells in this group, with this reference
+        number_of_reference_in_group <- nrow(seurat_group@meta.data[seurat_group@meta.data[[column_to_reference]] == reference & is.na(seurat_group@meta.data[[column_to_reference]]) == F,])
+        correctpercent <- number_of_reference_in_group/ncol(seurat_group)
+        print(paste(group,"matches",reference,correctpercent,sep=" "))
+        # update numbers if better match
+        if(number_of_reference_in_group > best_number){
+          best_number <- number_of_reference_in_group
+          best_group <- reference
+        }
+      }
+    }
+    print(paste("setting ident:",best_group,"for group", group, sep=" "))
+    # set this best identity
+    seurat_object@meta.data[seurat_object@meta.data[[column_to_transform]] == group,][column_to_create] <- best_group
+    # force cleanup
+    rm(seurat_group)
+  }
+  return(seurat_object)
+}
 
 
-# add the T and mono
-cardio.integrated <- AddMetaData(cardio.integrated, t_split.integrated_15pcs@meta.data['cell_type'], 'cell_type_t')
-rm(t.integrated_15pcs)
-cardio.integrated <- AddMetaData(cardio.integrated, monocyte_split.integrated_15pcs@meta.data['cell_type'], 'cell_type_mono')
-rm(monocyte_split.integrated_15pcs)
-levels(cardio.integrated@meta.data$cell_type) <- c(levels(cardio.integrated@meta.data$cell_type), levels(cardio.integrated@meta.data$cell_type_mono), levels(cardio.integrated@meta.data$cell_type_t))
-cardio.integrated@meta.data[!is.na(cardio.integrated@meta.data$cell_type_t),]$cell_type <- cardio.integrated@meta.data[!is.na(cardio.integrated@meta.data$cell_type_t),]$cell_type_t
-cardio.integrated@meta.data[!is.na(cardio.integrated@meta.data$cell_type_mono),]$cell_type <- cardio.integrated@meta.data[!is.na(cardio.integrated@meta.data$cell_type_mono),]$cell_type_mono
+####################
+# Main Code        #
+####################
 
-# add lower resolution cell types
-levels(cardio.integrated@meta.data$cell_type_lowerres) <- c(levels(cardio.integrated@meta.data$cell_type_lowerres), 'monocyte', 'DC', 'CD4T', 'CD8T', 'NK')
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'naive CD8T',]$cell_type_lowerres <- 'CD8T'
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'memory CD8T',]$cell_type_lowerres <- 'CD8T'
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'memory CD4T',]$cell_type_lowerres <- 'CD4T'
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'naive CD4T',]$cell_type_lowerres <- 'CD4T'
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'mono 1',]$cell_type_lowerres <- 'monocyte'
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'mono 2',]$cell_type_lowerres <- 'monocyte'
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'mono 3',]$cell_type_lowerres <- 'monocyte'
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'mono 4',]$cell_type_lowerres <- 'monocyte'
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'pDC',]$cell_type_lowerres <- 'DC'
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'mDC',]$cell_type_lowerres <- 'DC'
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'NKdim',]$cell_type_lowerres <- 'NK'
-cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type_lowerres == 'NKbright',]$cell_type_lowerres <- 'NK'
-cardio.integrated@meta.data$cell_type_lowerres <- droplevels(cardio.integrated@meta.data$cell_type_lowerres)
+# locations of objects
+object_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/'
+object_version <- 'cardio.integrated.20201126_wazi.rds'
+cardio.integrated_loc <- paste(object_loc, object_version, sep='')
 
-# save the object
-saveRDS(cardio.integrated, '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/cardio_integrated_20pcs_ctTmono_20200622.rds')
+# locations of the plots
+dimplot_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/plots/dimplots/'
+dimplot_ct_loc <- paste(dimplot_loc, 'cardio.integrated.20201209.cell_type.png', sep = '')
+dimplot_ctl_loc <- paste(dimplot_loc, 'cardio.integrated.20201209.cell_type_lowerres.png', sep = '')
+
+# read the object
+cardio.integrated <- readRDS(cardio.integrated_loc)
+# we will use the l2 predicted cell types (for the most part), so start by copying those
+cardio.integrated@meta.data$cell_type <- cardio.integrated@meta.data$predicted.celltype.l2
+# we'll convert it to a String, just to be sure that the next few steps are easier
+cardio.integrated@meta.data$cell_type <- as.character(cardio.integrated@meta.data$cell_type)
+# we'll rename some of the cell types so that they more closely follow our conventions
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == 'NK', ]$cell_type <- 'NKdim'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == 'NK_CD56bright', ]$cell_type <- 'NKbright'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == 'CD14 Mono', ]$cell_type <- 'cMono'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == 'CD16 Mono', ]$cell_type <- 'ncMono'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == 'Plasmablast', ]$cell_type <- 'plasmablast'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == 'Platelet', ]$cell_type <- 'platelet'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == 'Eryth', ]$cell_type <- 'eryth'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == 'Doublet', ]$cell_type <- 'doublet'
+# spaces in variables is inconvenient in a lot of places, so we'll replace these with underscores
+cardio.integrated@meta.data$cell_type <- gsub(' ', '_', cardio.integrated@meta.data$cell_type)
+
+# start with the overwriting of some of the things we classified, there are likely no doublets, based on markers these should be ncMono
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == 'doublet', ]$cell_type <- 'ncMono'
+# cluster 25 contains mostly erythrocytes, but based on expression, these are probably cMono, so overwriting those
+cardio.integrated@meta.data[cardio.integrated@meta.data$seurat_clusters == 25, ]$cell_type <- 'cMono'
+# for the rest of the erythrocytes, we will overwrite them with the greatest proportion cell type of the seurat cluster they are in, so first get that largest proportion
+cardio.integrated <- add_imputed_meta_data(cardio.integrated, 'seurat_clusters', 'cell_type', 'ct_clus_prop')
+# now overwrite for the erythrocytes
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == 'eryth', ]$cell_type <- cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type == 'eryth', ]$ct_clus_prop
+
+# we will define a lower resolution cell type as well, we need to create some groupings for this
+cd4t <- c('Treg', 'CD4_Naive', 'CD4_TCM', 'CD4_TEM', 'CD4_CTL', 'CD4_Proliferating')
+cd8t <- c('MAIT', 'CD8_Naive', 'CD8_TCM', 'CD8_TEM', 'CD8_Proliferating')
+t_other <- c('dnT', 'gdT', 'ILC')
+nk <- c('NKdim', 'NKbright', 'NK_Proliferating')
+monocyte <- c('cMono', 'ncMono')
+dc <- c('cDC1', 'cDC2', 'pDC')
+b <- c('B_naive', 'B_intermediate', 'B_memory')
+# add the new column by copying the higher res first, 
+cardio.integrated@meta.data$cell_type_lowerres <- cardio.integrated@meta.data$cell_type
+# in this new column, overwrite them to have the lower resolution
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type %in% cd4t, ]$cell_type_lowerres <- 'CD4T'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type %in% cd8t, ]$cell_type_lowerres <- 'CD8T'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type %in% t_other, ]$cell_type_lowerres <- 'T_other'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type %in% nk, ]$cell_type_lowerres <- 'NK'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type %in% monocyte, ]$cell_type_lowerres <- 'monocyte'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type %in% dc, ]$cell_type_lowerres <- 'DC'
+cardio.integrated@meta.data[cardio.integrated@meta.data$cell_type %in% b, ]$cell_type_lowerres <- 'B'
+
+# change these into factors for convenience
+cardio.integrated@meta.data$cell_type_lowerres <- as.factor(cardio.integrated@meta.data$cell_type_lowerres)
+cardio.integrated@meta.data$cell_type <- as.factor(cardio.integrated@meta.data$cell_type)
+
+# save this
+saveRDS(cardio.integrated, '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/cardio.integrated.20201209.rds')
+
+# see if this looks good
+DimPlot(cardio.integrated, group.by = 'cell_type')
+ggsave(dimplot_ct_loc, width=10, height=10)
+DimPlot(cardio.integrated, group.by = 'cell_type_lowerres')
+ggsave(dimplot_ctl_loc, width=10, height=10)
+DimPlot(cardio.integrated, group.by = 'cell_type', label=T, label.size = 3, repel = T) + NoLegend()
+ggsave('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/plots/dimplots/cardio.integrated.20201209.cell_type.nl.png', width=10, height=10)
+DimPlot(cardio.integrated, group.by = 'cell_type_lowerres', label=T, label.size = 3, repel = T) + NoLegend()
+ggsave('/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/plots/dimplots/cardio.integrated.20201209.cell_type_lowerres.nl.png', width=10, height=10)
 

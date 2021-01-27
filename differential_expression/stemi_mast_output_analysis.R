@@ -8,6 +8,9 @@ library(ggplot2)
 library(data.table)
 library(ggpubr)
 library(UpSetR)
+library(VennDiagram)
+library(familyR)
+library(visNetwork)
 
 ####################
 # Functions        #
@@ -242,6 +245,70 @@ get_pathway_table <- function(pathway_output_loc, sig_val_to_use = 'q.value.FDR.
   return(pathway_df)
 }
 
+
+get_de_genes <- function(mast_output_loc, pval_column='metap_bonferroni', sig_pval=0.05, max=NULL, max_by_pval=T, only_positive=F, only_negative=F, lfc_column='metafc', to_ens=F, symbols.to.ensg.mapping='genes.tsv', cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), stims=c('UT', 'Baseline', 't24h', 't8w')){
+  # set up per cell type
+  de_per_ct <- list()
+  # check each cell type
+  for(cell_type in cell_types){
+    # set up per stim combination
+    de_per_condition <- list()
+    # check each stim
+    for(stim in stims){
+      for(stim2 in stims){
+        try({
+          if(stim != stim2){
+            print(paste(cell_type, stim, stim2, sep = ' '))
+            # paste the filepath together
+            filepath <- paste(mast_output_loc, cell_type, stim,stim2, '.tsv', sep = '')
+            # read the file
+            # read the mast output
+            mast <- read.table(filepath, header=T)
+            # filter to only include the significant results
+            mast <- mast[mast[[pval_column]] <= 0.05, ]
+            # filter for only the positive lfc if required
+            if(only_positive){
+              mast <- mast[mast[[lfc_column]] < 0, ]
+            }
+            # filter for only the positive lfc if required
+            if(only_negative){
+              mast <- mast[mast[[lfc_column]] > 0, ]
+            }
+            # confine in some way if reporting a max number of genes
+            if(!is.null(max)){
+              # by p if required
+              if(max_by_pval){
+                mast <- mast[order(mast[[p_val_column]]), ]
+              }
+              # by lfc otherwise
+              else{
+                mast <- mast[order(mast[[lfc_column]], decreasing = T), ]
+              }
+              # subset to the number we requested if max was set
+              mast <- mast[1:max,]
+            }
+            # grab the genes from the column names
+            genes <- rownames(mast)
+            # convert the symbols to ensemble IDs
+            if (to_ens) {
+              mapping <- read.table(symbols.to.ensg.mapping, header = F, stringsAsFactors = F)
+              mapping$V2 <- gsub("_", "-", make.unique(mapping$V2))
+              genes <- mapping[match(genes, mapping$V2),"V1"]
+            }
+            # otherwise change the Seurat replacement back
+            else{
+              #genes <- gsub("-", "_", genes)
+            }
+            de_per_condition[[paste(stim, stim2, sep = '')]] <- genes
+          }
+        })
+      }
+    }
+    de_per_ct[[cell_type]] <- de_per_condition
+  }
+  return(de_per_ct)
+}
+
 get_top_pathways <- function(pathway_table, nr_of_top_genes, is_ranked=F){
   # init pathways list
   pathways <- c()
@@ -274,8 +341,8 @@ get_color_coding_dict <- function(){
   color_coding[["Bulk"]] <- "black"
   color_coding[["CD4T"]] <- "#153057"
   color_coding[["CD8T"]] <- "#009DDB"
-  color_coding[["monocyte"]] <- "#E64B50"
-  color_coding[["NK"]] <- "#EDBA1B"
+  color_coding[["monocyte"]] <- "#EDBA1B"
+  color_coding[["NK"]] <- "#E64B50"
   color_coding[["B"]] <- "#71BC4B"
   color_coding[["DC"]] <- "#965EC8"
   return(color_coding)
@@ -605,20 +672,20 @@ plot_DE_sharing_per_celltype <- function(condition_combination, mast_output_loc,
 #mast_output_prepend <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/differential_expression/MAST/results/stemi_v'
 mast_output_prepend <- '/data/cardiology/differential_expression/MAST/results/stemi_v'
 #mast_output_append <- '_paired_lores_20200707/rna/'
-mast_output_append <- '_paired_lores_lfc025minpct01ncountrna_20200707/rna/'
-mast_output_append_lfc01 <- '_paired_lores_lfc01minpct01ncountrna_20200707/rna/'
+mast_output_append <- '_paired_lores_lfc025minpct01ncountrna_20201209/rna/'
+mast_output_append_lfc01 <- '_paired_lores_lfc01minpct01ncountrna_20201209/rna/'
 # write the location of the combined output
 #mast_meta_output_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/differential_expression/MAST/results/stemi_meta_paired_lores_20200707/rna/'
 #mast_meta_output_loc <- '/data/cardiology/differential_expression/MAST/results/stemi_meta_paired_lores_20200707/rna/'
-mast_meta_output_loc <- '/data/cardiology/differential_expression/MAST/results/stemi_meta_paired_lores_lfc025minpct01ncountrna_20200707/rna/'
-mast_meta_output_loc_lfc01 <- '/data/cardiology/differential_expression/MAST/results/stemi_meta_paired_lores_lfc01minpct01ncountrna_20200707/rna/'
+#mast_meta_output_loc <- '/data/cardiology/differential_expression/MAST/results/stemi_meta_paired_lores_lfc025minpct01ncountrna_20200707/rna/'
+mast_meta_output_loc_lfc01 <- '/data/cardiology/differential_expression/MAST/results/stemi_meta_paired_lores_lfc01minpct01ncountrna_20201209/rna/'
 
 # write meta output
 write_meta_mast(mast_output_prepend, mast_output_append, mast_meta_output_loc)
 write_meta_mast(mast_output_prepend, mast_output_append_lfc01, mast_meta_output_loc_lfc01)
 
-# check the overlap between chemistries
-overlap_venn_loc <- '/data/cardiology/differential_expression/MAST/overlap/stemi_meta_paired_lores_lfc01minpct01ncountrna_20200707/rna/'
+ # check the overlap between chemistries
+overlap_venn_loc <- '/data/cardiology/differential_expression/MAST/overlap/stemi_meta_paired_lores_lfc01minpct01ncountrna_20201209/rna/'
 write_version_chemistry_overlap(mast_meta_output_loc_lfc01, overlap_venn_loc)
 
 # mapping of gene symbol to ensemble id
@@ -642,27 +709,35 @@ sig_down_output_loc_gs <- '/data/cardiology/differential_expression/sigs_neg/met
 get_significant_genes(mast_meta_output_loc, sig_down_output_loc, only_negative = T, to_ens = T, symbols.to.ensg.mapping = gene_to_ens_mapping)
 get_significant_genes(mast_meta_output_loc, sig_down_output_loc_gs, only_negative = T, to_ens = F, symbols.to.ensg.mapping = gene_to_ens_mapping)
 # for the lfc01 output as well
-sig_output_loc_lfc01 <- '/data/cardiology/differential_expression/sigs/meta_paired_lores_lfc01minpct01_20200707_ensid/rna/'
-sig_output_loc_gs_lfc01 <- '/data/cardiology/differential_expression/sigs/meta_paired_lores_lfc01minpct01_20200707/rna/'
+sig_output_loc_lfc01 <- '/data/cardiology/differential_expression/sigs/meta_paired_lores_lfc01minpct01_20201209_ensid/rna/'
+sig_output_loc_gs_lfc01 <- '/data/cardiology/differential_expression/sigs/meta_paired_lores_lfc01minpct01_20201209/rna/'
 # write the significant genes
 get_significant_genes(mast_meta_output_loc_lfc01, sig_output_loc_lfc01, to_ens = T, symbols.to.ensg.mapping = gene_to_ens_mapping)
 get_significant_genes(mast_meta_output_loc_lfc01, sig_output_loc_gs_lfc01, to_ens = F, symbols.to.ensg.mapping = gene_to_ens_mapping)
 # set the location for the significant genes that were upregulated
-sig_up_output_loc_lfc01 <- '/data/cardiology/differential_expression/sigs_pos/meta_paired_lores_lfc01minpct01_20200707_ensid/rna/'
-sig_up_output_loc_gs_lfc01 <- '/data/cardiology/differential_expression/sigs_pos/meta_paired_lores_lfc01minpct01_20200707/rna/'
+sig_up_output_loc_lfc01 <- '/data/cardiology/differential_expression/sigs_pos/meta_paired_lores_lfc01minpct01_20201209_ensid/rna/'
+sig_up_output_loc_gs_lfc01 <- '/data/cardiology/differential_expression/sigs_pos/meta_paired_lores_lfc01minpct01_20201209/rna/'
 # write the significantly upregulated genes
 get_significant_genes(mast_meta_output_loc_lfc01, sig_up_output_loc_lfc01, only_positive = T, to_ens = T, symbols.to.ensg.mapping = gene_to_ens_mapping)
 get_significant_genes(mast_meta_output_loc_lfc01, sig_up_output_loc_gs_lfc01, only_positive = T, to_ens = F, symbols.to.ensg.mapping = gene_to_ens_mapping)
 # set the location for the significant genes that were upregulated
-sig_down_output_loc_lfc01 <- '/data/cardiology/differential_expression/sigs_neg/meta_paired_lores_lfc01minpct01_20200707_ensid/rna/'
-sig_down_output_loc_gs_lfc01 <- '/data/cardiology/differential_expression/sigs_neg/meta_paired_lores_lfc01minpct01_20200707/rna/'
+sig_down_output_loc_lfc01 <- '/data/cardiology/differential_expression/sigs_neg/meta_paired_lores_lfc01minpct01_20201209_ensid/rna/'
+sig_down_output_loc_gs_lfc01 <- '/data/cardiology/differential_expression/sigs_neg/meta_paired_lores_lfc01minpct01_20201209/rna/'
 # write the significantly upregulated genes
 get_significant_genes(mast_meta_output_loc_lfc01, sig_down_output_loc_lfc01, only_negative = T, to_ens = T, symbols.to.ensg.mapping = gene_to_ens_mapping)
 get_significant_genes(mast_meta_output_loc_lfc01, sig_down_output_loc_gs_lfc01, only_negative = T, to_ens = F, symbols.to.ensg.mapping = gene_to_ens_mapping)
 
+# set the location for the significant genes that were upregulated
+sig_up_output_loc_lfc01_v2 <- '/data/cardiology/differential_expression/sigs_pos/v2_paired_lores_lfc01minpct01_20201209_ensid/rna/'
+sig_up_output_loc_gs_lfc01_v2 <- '/data/cardiology/differential_expression/sigs_pos/v2_paired_lores_lfc01minpct01_20201209/rna/'
+# write the significantly upregulated genes
+get_significant_genes(paste(mast_output_prepend, '2', mast_output_append_lfc01, sep = ''), sig_up_output_loc_lfc01_v2, only_positive = T, to_ens = T, symbols.to.ensg.mapping = gene_to_ens_mapping, pval_column='p_val_adj', lfc_column = 'avg_logFC')
+get_significant_genes(paste(mast_output_prepend, '2', mast_output_append_lfc01, sep = ''), sig_up_output_loc_gs_lfc01_v2, only_positive = T, to_ens = F, symbols.to.ensg.mapping = gene_to_ens_mapping, pval_column='p_val_adj', lfc_column = 'avg_logFC')
+
 
 # get the location of the pathways
-pathway_up_output_loc <- '/data/cardiology/pathways/sigs_pos/meta_paired_lores_lfc01minpct01_20200707_ensid/rna/'
+#pathway_up_output_loc <- '/data/cardiology/pathways/sigs_pos/meta_paired_lores_lfc01minpct01_20200707_ensid_all/rna/'
+pathway_up_output_loc <- '/data/cardiology/pathways/sigs_pos/meta_paired_lores_lfc01minpct01_20201209_ensid_all/rna/'
 # write the combined pathway file
 pathway_up_df <- get_pathway_table(pathway_up_output_loc, append = '_sig_up_pathways.txt')
 pathway_up_df[pathway_up_df==0] <- 350
@@ -677,30 +752,42 @@ colors_ct <- c(rep(cc[['B']], times=6),rep(cc[['CD4T']], times=6),rep(cc[['CD8T'
 colors_m <- cbind(colors_ct, colors_cond)
 colnames(colors_m) <- c('celltype',
                         'condition')
+#png('/data/cardiology/plots/pathways/meta_pathway_ensid_up_all.png', width = 1600, height = 1200)
+pdf('/data/cardiology/plots/pathways/meta_pathway_ensid_up_all.pdf', width = 16, height = 12)
 heatmap.3(t(as.matrix(pathway_up_df_top_3)),
           col=(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(15,10))
+dev.off()
 
 # get the location of the pathways
-v2_pathway_up_output_loc <- '/data/cardiology/pathways/sigs_pos/v2_paired_lores_lfc01minpct01_20200707_ensid/rna/'
+v2_pathway_up_output_loc <- '/data/cardiology/pathways/sigs_pos/v2_paired_lores_lfc01minpct01_20201209_ensid/rna/'
 # write the combined pathway file
-v2_pathway_up_df <- get_pathway_table(v2_pathway_up_output_loc, append = '_sigpos.txt')
+v2_pathway_up_df <- get_pathway_table(v2_pathway_up_output_loc, append = '_sig_up_pathways.txt')
 v2_pathway_up_df[v2_pathway_up_df==0] <- 350
 # get the df limited by top pathways of upregulated genes
 v2_pathway_up_df_top_3 <- get_top_pathways(v2_pathway_up_df, 3, T)
-
+#png('/data/cardiology/plots/pathways/v2pathway_ensid_up_all.png', width = 1200, height = 900)
+pdf('/data/cardiology/plots/pathways/v2pathway_ensid_up_all.pdf', width = 12, height = 9)
 heatmap.3(t(as.matrix(v2_pathway_up_df_top_3)),
           col=(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(15,10))
+dev.off()
 
 # get the location of the pathways
-pathway_down_output_loc <- '/data/cardiology/pathways/sigs_neg/meta_paired_lores_lfc01minpct01_20200707_ensid/rna/'
+pathway_down_output_loc <- '/data/cardiology/pathways/sigs_neg/meta_paired_lores_lfc01minpct01_20201209_ensid_all/rna/'
 # write the combined pathway file
-pathway_down_df <- get_pathway_table(pathway_down_output_loc, append = '_pathwayneg.txt')
-pathway_down_df[pathway_down_df==0] <- 400
+pathway_down_df <- get_pathway_table(pathway_down_output_loc, append = '_sig_down_pathways.txt')
+pathway_down_df[pathway_down_df==0] <- 500
 # get the df limited by top pathways of upregulated genes
 pathway_down_df_top_3 <- get_top_pathways(pathway_down_df, 3, T)
 
 heatmap.3(t(as.matrix(pathway_down_df_top_3)),
           col=(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(15,10))
+
+#png('/data/cardiology/plots/pathways/meta_pathway_ensid_down_all.png', width = 1200, height = 900)
+pdf('/data/cardiology/plots/pathways/meta_pathway_ensid_down_all.pdf', width = 12, height = 9)
+heatmap.3(t(as.matrix(pathway_up_df_top_3)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(colors_m), margins=c(15,10))
+dev.off()
+
 
 # get the location of the pathways
 v2_pathway_down_output_loc <- '/data/cardiology/pathways/sigs_neg/v2_paired_lores_lfc01minpct01_20200707_ensid/rna/'
@@ -722,13 +809,20 @@ t24h_vary_colors_ct <- c(rep(cc[['B']], times=1),rep(cc[['CD4T']], times=1),rep(
 t24h_vary_colors_m <- cbind(t24h_vary_colors_ct, t24h_vary_colors_cond)
 colnames(t24h_vary_colors_m) <- c('celltype',
                                   'condition')
+#png('/data/cardiology/plots/pathways/meta_pathway_ensid_up_all_baselinet24h_top_10.png', width = 1200, height = 900)
+pdf('/data/cardiology/plots/pathways/meta_pathway_ensid_up_all_baselinet24h_top_10.pdf', width = 12, height = 9)
 heatmap.3(t(as.matrix(pathway_up_df_baselinet24h_top_10)),
-          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24h_vary_colors_m), margins=c(11,11), main = 'upregulated pathways t0 vs t24h')
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24h_vary_colors_m), margins=c(29,11), main = 'upregulated pathways t0 vs t24h')
+dev.off()
+
 # now down
 pathway_down_df_baselinet24h <- pathway_down_df[, colnames(pathway_down_df)[grep('Baselinet24h', colnames(pathway_down_df))]]
 pathway_down_df_baselinet24h_top_10 <- get_top_pathways(pathway_down_df_baselinet24h, 10, T)
+#png('/data/cardiology/plots/pathways/meta_pathway_ensid_down_all_baselinet24h_top_10.png', width = 1200, height = 900)
+pdf('/data/cardiology/plots/pathways/meta_pathway_ensid_down_all_baselinet24h_top_10.pdf', width = 12, height = 9)
 heatmap.3(t(as.matrix(pathway_down_df_baselinet24h_top_10)),
-          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24h_vary_colors_m), margins=c(11,11), main = 'downregulated pathways t0 vs t24h')
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24h_vary_colors_m), margins=c(29,11), main = 'downregulated pathways t0 vs t24h')
+dev.off()
 # baseline vs t8w
 pathway_up_df_baselinet8w <- pathway_up_df[, colnames(pathway_up_df)[grep('Baselinet8w', colnames(pathway_up_df))]]
 pathway_up_df_baselinet8w_top_10 <- get_top_pathways(pathway_up_df_baselinet8w, 10, T)
@@ -737,13 +831,19 @@ baselinet8w_vary_colors_ct <- c(rep(cc[['B']], times=1),rep(cc[['CD4T']], times=
 baselinet8w_vary_colors_m <- cbind(baselinet8w_vary_colors_ct, baselinet8w_vary_colors_cond)
 colnames(baselinet8w_vary_colors_m) <- c('celltype',
                                   'condition')
+#png('/data/cardiology/plots/pathways/meta_pathway_ensid_up_all_baselinet8w_top_10.png', width = 1200, height = 900)
+pdf('/data/cardiology/plots/pathways/meta_pathway_ensid_up_all_baselinet8w_top_10.pdf', width = 12, height = 9)
 heatmap.3(t(as.matrix(pathway_up_df_baselinet8w_top_10)),
-          col=(brewer.pal(10,"RdBu")), RowSideColors = t(baselinet8w_vary_colors_m), margins=c(11,11), main = 'upregulated pathways t0 vs t8w')
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(baselinet8w_vary_colors_m), margins=c(29,11), main = 'upregulated pathways t0 vs t8w')
+dev.off()
 # now down
 pathway_down_df_baselinet8w <- pathway_down_df[, colnames(pathway_down_df)[grep('Baselinet8w', colnames(pathway_down_df))]]
 pathway_down_df_baselinet8w_top_10 <- get_top_pathways(pathway_down_df_baselinet8w, 10, T)
+#png('/data/cardiology/plots/pathways/meta_pathway_ensid_down_all_baselinet8w_top_10.png', width = 1200, height = 900)
+pdf('/data/cardiology/plots/pathways/meta_pathway_ensid_down_all_baselinet8w_top_10.pdf', width = 12, height = 9)
 heatmap.3(t(as.matrix(pathway_down_df_baselinet8w_top_10)),
-          col=(brewer.pal(10,"RdBu")), RowSideColors = t(baselinet8w_vary_colors_m), margins=c(11,11), main = 'downregulated pathways t0 vs t8w')
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(baselinet8w_vary_colors_m), margins=c(29,11), main = 'downregulated pathways t0 vs t8w')
+dev.off()
 # t24h vs t8w
 pathway_up_df_t24ht8w <- pathway_up_df[, colnames(pathway_up_df)[grep('t24ht8w', colnames(pathway_up_df))]]
 pathway_up_df_t24ht8w_top_10 <- get_top_pathways(pathway_up_df_t24ht8w, 10, T)
@@ -752,13 +852,19 @@ t24ht8w_vary_colors_ct <- c(rep(cc[['B']], times=1),rep(cc[['CD4T']], times=1),r
 t24ht8w_vary_colors_m <- cbind(t24ht8w_vary_colors_ct, t24ht8w_vary_colors_cond)
 colnames(t24ht8w_vary_colors_m) <- c('celltype',
                                   'condition')
+#png('/data/cardiology/plots/pathways/meta_pathway_ensid_up_all_t24ht8w_top_10.png', width = 1200, height = 900)
+pdf('/data/cardiology/plots/pathways/meta_pathway_ensid_up_all_t24ht8w_top_10.pdf', width = 12, height = 9)
 heatmap.3(t(as.matrix(pathway_up_df_t24ht8w_top_10)),
-          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24ht8w_vary_colors_m), margins=c(11,11), main = 'upregulated pathways t24h vs t8w')
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24ht8w_vary_colors_m), margins=c(29,11), main = 'upregulated pathways t24h vs t8w')
+dev.off()
 # now down
 pathway_down_df_t24ht8w <- pathway_down_df[, colnames(pathway_down_df)[grep('t24ht8w', colnames(pathway_down_df))]]
 pathway_down_df_t24ht8w_top_10 <- get_top_pathways(pathway_down_df_t24ht8w, 10, T)
+#png('/data/cardiology/plots/pathways/meta_pathway_ensid_down_all_t24ht8w_top_10.png', width = 1200, height = 900)
+pdf('/data/cardiology/plots/pathways/meta_pathway_ensid_down_all_t24ht8w_top_10.pdf', width = 12, height = 9)
 heatmap.3(t(as.matrix(pathway_down_df_t24ht8w_top_10)),
-          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24ht8w_vary_colors_m), margins=c(11,11), main = 'downregulated pathways t24h vs t8w')
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24ht8w_vary_colors_m), margins=c(29,11), main = 'downregulated pathways t24h vs t8w')
+dev.off()
 
 # UT vs t8w
 pathway_up_df_utt8w <- pathway_up_df[, colnames(pathway_up_df)[grep('UTt8w', colnames(pathway_up_df))]]
@@ -768,8 +874,11 @@ utt8w_vary_colors_ct <- c(rep(cc[['B']], times=1),rep(cc[['CD4T']], times=1),rep
 utt8w_vary_colors_m <- cbind(utt8w_vary_colors_ct, utt8w_vary_colors_cond)
 colnames(utt8w_vary_colors_m) <- c('celltype',
                                      'condition')
+#png('/data/cardiology/plots/pathways/meta_pathway_ensid_up_all_UTt8w_top_10.png', width = 1200, height = 900)
+pdf('/data/cardiology/plots/pathways/meta_pathway_ensid_up_all_UTt8w_top_10.pdf', width = 12, height = 9)
 heatmap.3(t(as.matrix(pathway_up_df_utt8w_top_10)),
-          col=(brewer.pal(10,"RdBu")), RowSideColors = t(utt8w_vary_colors_m), margins=c(11,11), main = 'upregulated pathways HC vs t8w')
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(utt8w_vary_colors_m), margins=c(29,11), main = 'upregulated pathways HC vs t8w')
+dev.off()
 
 # UT vs Baseline
 pathway_up_df_utbaseline <- pathway_up_df[, colnames(pathway_up_df)[grep('UTBaseline', colnames(pathway_up_df))]]
@@ -779,9 +888,105 @@ utbaseline_vary_colors_ct <- c(rep(cc[['B']], times=1),rep(cc[['CD4T']], times=1
 utbaseline_vary_colors_m <- cbind(utbaseline_vary_colors_ct, utbaseline_vary_colors_cond)
 colnames(utbaseline_vary_colors_m) <- c('celltype',
                                    'condition')
+#png('/data/cardiology/plots/pathways/meta_pathway_ensid_up_all_UTBaseline_top_10.png', width = 1200, height = 900)
+pdf('/data/cardiology/plots/pathways/meta_pathway_ensid_up_all_UTBaseline_top_10.pdf', width = 12, height = 9)
 heatmap.3(t(as.matrix(pathway_up_df_utbaseline_top_10)),
-          col=(brewer.pal(10,"RdBu")), RowSideColors = t(utbaseline_vary_colors_m), margins=c(11,11), main = 'upregulated pathways HC vs t0')
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(utbaseline_vary_colors_m), margins=c(29,11), main = 'upregulated pathways HC vs t0')
+dev.off()
 
+# UT vs t24h
+pathway_up_df_utt24h <- pathway_up_df[, colnames(pathway_up_df)[grep('UTt24h', colnames(pathway_up_df))]]
+pathway_up_df_utt24h_top_10 <- get_top_pathways(pathway_up_df_utt24h, 10, T)
+utt24h_vary_colors_cond <- rep(c(cc[['UTt24h']]), times = 6)
+utt24h_vary_colors_ct <- c(rep(cc[['B']], times=1),rep(cc[['CD4T']], times=1),rep(cc[['CD8T']], times=1),rep(cc[['DC']], times=1),rep(cc[['monocyte']], times=1),rep(cc[['NK']], times=1))
+utt24h_vary_colors_m <- cbind(utt24h_vary_colors_ct, utt24h_vary_colors_cond)
+colnames(utt24h_vary_colors_m) <- c('celltype',
+                                        'condition')
+#png('/data/cardiology/plots/pathways/meta_pathway_ensid_up_all_ut24h_top_10.png', width = 1200, height = 900)
+pdf('/data/cardiology/plots/pathways/meta_pathway_ensid_up_all_ut24h_top_10.pdf', width = 12, height = 9)
+heatmap.3(t(as.matrix(pathway_up_df_utt24h_top_10)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(utt24h_vary_colors_m), margins=c(29,11), main = 'upregulated pathways HC vs t24h')
+dev.off()
+
+# UT downs
+pathway_down_df_utt8w <- pathway_down_df[, colnames(pathway_down_df)[grep('UTt8w', colnames(pathway_down_df))]]
+max(pathway_down_df_utt8w)
+pathway_down_df_utt8w[pathway_down_df_utt8w == 0] <- 400
+pathway_down_df_utt8w_top_10 <- get_top_pathways(pathway_down_df_utt8w, 10, T)
+#png('/data/cardiology/plots/pathways/meta_pathway_ensid_down_all_utt8w_top_10.png', width = 1200, height = 900)
+pdf('/data/cardiology/plots/pathways/meta_pathway_ensid_down_all_utt8w_top_10.pdf', width = 12, height = 9)
+heatmap.3(t(as.matrix(pathway_down_df_utt8w_top_10)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(utt8w_vary_colors_m), margins=c(29,11), main = 'downregulated pathways HC vs t8w')
+dev.off()
+
+pathway_down_df_utt24h <- pathway_down_df[, colnames(pathway_down_df)[grep('UTt24h', colnames(pathway_down_df))]]
+max(pathway_down_df_utt24h)
+pathway_down_df_utt24h[pathway_down_df_utt24h == 0] <- 300
+pathway_down_df_utt24h_top_10 <- get_top_pathways(pathway_down_df_utt24h, 10, T)
+#png('/data/cardiology/plots/pathways/meta_pathway_ensid_down_all_ut24h_top_10.png', width = 1200, height = 900)
+pdf('/data/cardiology/plots/pathways/meta_pathway_ensid_down_all_ut24h_top_10.pdf', width = 12, height = 9)
+heatmap.3(t(as.matrix(pathway_down_df_utt24h_top_10)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(utt24h_vary_colors_m), margins=c(29,11), main = 'downregulated pathways HC vs t24h')
+dev.off()
+
+pathway_down_df_utbaseline <- pathway_down_df[, colnames(pathway_down_df)[grep('UTBaseline', colnames(pathway_down_df))]]
+max(pathway_down_df_utbaseline)
+pathway_down_df_utbaseline[pathway_down_df_utbaseline == 0] <- 400
+pathway_down_df_utbaseline_top_10 <- get_top_pathways(pathway_down_df_utbaseline, 10, T)
+#png('/data/cardiology/plots/pathways/meta_pathway_ensid_down_all_utbaseline_top_10.png', width = 1200, height = 900)
+pdf('/data/cardiology/plots/pathways/meta_pathway_ensid_down_all_utbaseline_top_10.pdf', width = 12, height = 9)
+heatmap.3(t(as.matrix(pathway_down_df_utbaseline_top_10)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(utbaseline_vary_colors_m), margins=c(29,11), main = 'downregulated pathways HC vs t0')
+dev.off()
+
+# v2 specific
+v2_pathway_up_df_baselinet24h <- v2_pathway_up_df[, colnames(v2_pathway_up_df)[grep('Baselinet24h', colnames(v2_pathway_up_df))]]
+v2_pathway_up_df_baselinet24h_top_10 <- get_top_pathways(v2_pathway_up_df_baselinet24h, 10, T)
+#png('/data/cardiology/plots/pathways/v2_pathway_ensid_up_all_baselinet24h_top_10.png', width = 1200, height = 900)
+pdf('/data/cardiology/plots/pathways/v2_pathway_ensid_up_all_baselinet24h_top_10.pdf', width = 12, height = 9)
+heatmap.3(t(as.matrix(v2_pathway_up_df_baselinet24h_top_10)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24h_vary_colors_m), margins=c(29,11), main = 'upregulated pathways t0 vs t24h')
+dev.off()
+# baseline vs t8w
+v2_pathway_up_df_baselinet8w <- v2_pathway_up_df[, colnames(v2_pathway_up_df)[grep('Baselinet8w', colnames(v2_pathway_up_df))]]
+v2_pathway_up_df_baselinet8w_top_10 <- get_top_pathways(v2_pathway_up_df_baselinet8w, 10, T)
+#png('/data/cardiology/plots/pathways/v2_pathway_ensid_up_all_baselinet8w_top_10.png', width = 1200, height = 900)
+pdf('/data/cardiology/plots/pathways/v2_pathway_ensid_up_all_baselinet8w_top_10.pdf', width = 12, height = 9)
+heatmap.3(t(as.matrix(v2_pathway_up_df_baselinet8w_top_10)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(baselinet8w_vary_colors_m), margins=c(29,11), main = 'upregulated pathways t0 vs t8w')
+dev.off()
+# t24h vs t8w
+v2_pathway_up_df_t24ht8w <- v2_pathway_up_df[, colnames(v2_pathway_up_df)[grep('t24ht8w', colnames(v2_pathway_up_df))]]
+v2_pathway_up_df_t24ht8w_top_10 <- get_top_pathways(v2_pathway_up_df_t24ht8w, 10, T)
+#png('/data/cardiology/plots/pathways/v2_pathway_ensid_up_all_t24ht8w_top_10.png', width = 1200, height = 900)
+pdf('/data/cardiology/plots/pathways/v2_pathway_ensid_up_all_t24ht8w_top_10.pdf', width = 12, height = 9)
+heatmap.3(t(as.matrix(v2_pathway_up_df_t24ht8w_top_10)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(t24ht8w_vary_colors_m), margins=c(29,11), main = 'upregulated pathways t24h vs t8w')
+dev.off()
+# UT vs t8w
+v2_pathway_up_df_utt8w <- v2_pathway_up_df[, colnames(v2_pathway_up_df)[grep('UTt8w', colnames(v2_pathway_up_df))]]
+v2_pathway_up_df_utt8w_top_10 <- get_top_pathways(v2_pathway_up_df_utt8w, 10, T)
+#png('/data/cardiology/plots/pathways/v2_pathway_ensid_up_all_UTt8w_top_10.png', width = 1200, height = 900)
+pdf('/data/cardiology/plots/pathways/v2_pathway_ensid_up_all_UTt8w_top_10.pdf', width = 12, height = 9)
+heatmap.3(t(as.matrix(v2_pathway_up_df_utt8w_top_10)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(utt8w_vary_colors_m), margins=c(29,11), main = 'upregulated pathways HC vs t8w')
+dev.off()
+# UT vs Baseline
+v2_pathway_up_df_utbaseline <- v2_pathway_up_df[, colnames(v2_pathway_up_df)[grep('UTBaseline', colnames(v2_pathway_up_df))]]
+v2_pathway_up_df_utbaseline_top_10 <- get_top_pathways(v2_pathway_up_df_utbaseline, 10, T)
+#png('/data/cardiology/plots/pathways/v2_pathway_ensid_up_all_UTBaseline_top_10.png', width = 1200, height = 900)
+pdf('/data/cardiology/plots/pathways/v2_pathway_ensid_up_all_UTBaseline_top_10.pdf', width = 12, height = 9)
+heatmap.3(t(as.matrix(v2_pathway_up_df_utbaseline_top_10)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(utbaseline_vary_colors_m), margins=c(29,11), main = 'upregulated pathways HC vs t0')
+dev.off()
+# UT vs t24h
+v2_pathway_up_df_utt24h <- v2_pathway_up_df[, colnames(v2_pathway_up_df)[grep('UTt24h', colnames(v2_pathway_up_df))]]
+v2_pathway_up_df_utt24h_top_10 <- get_top_pathways(v2_pathway_up_df_utt24h, 10, T)
+#png('/data/cardiology/plots/pathways/v2_pathway_ensid_up_all_ut24h_top_10.png', width = 1200, height = 900)
+pdf('/data/cardiology/plots/pathways/v2_pathway_ensid_up_all_ut24h_top_10.pdf', width=12, height=9)
+heatmap.3(t(as.matrix(v2_pathway_up_df_utt24h_top_10)),
+          col=(brewer.pal(10,"RdBu")), RowSideColors = t(utt24h_vary_colors_m), margins=c(29,11), main = 'upregulated pathways HC vs t24h')
+dev.off()
 
 
 # create heatmap of Baseline vs t24h
@@ -846,7 +1051,7 @@ heatmap.3(t(as.matrix(stemi_de_table_andut)),
 # this is the reactome ID for the immune system
 immune_system_reactome_id <- 'R-HSA-168256'
 # load the pathways
-pathways <- read.table('/data/scRNA/pathways/ReactomePathways.tsv', sep='\t')
+pathways <- read.table('/data/scRNA/pathways/ReactomePathways20210115.tsv', sep='\t', quote='')
 # subset to just human to speed up the search
 pathways <- pathways[pathways$V3 == 'Homo sapiens', ]
 # load the pathway mapping
@@ -888,3 +1093,223 @@ plot_DE_sharing_per_celltype('UTt8w', mast_meta_output_loc_lfc01, only_positive 
 plot_DE_sharing_per_celltype('Baselinet24h', mast_meta_output_loc_lfc01, only_positive = T)
 plot_DE_sharing_per_celltype('t24ht8w', mast_meta_output_loc_lfc01, only_positive = T)
 plot_DE_sharing_per_celltype('Baselinet8w', mast_meta_output_loc_lfc01, only_positive = T)
+
+
+mast_lfc01_de_genes <- get_de_genes(mast_output_loc = mast_meta_output_loc_lfc01)
+upset(fromList(mast_lfc01_de_genes[['monocyte']]), nsets = length(mast_lfc01_de_genes[['monocyte']]), order.by = 'freq')
+mast_lfc01_de_genes_up <- get_de_genes(mast_output_loc = mast_meta_output_loc_lfc01, only_positive = T)
+mast_lfc01_de_genes_down <- get_de_genes(mast_output_loc = mast_meta_output_loc_lfc01, only_negative = T)
+names(mast_lfc01_de_genes_up[['monocyte']]) <- paste(names(mast_lfc01_de_genes_up[['monocyte']]), '_up')
+names(mast_lfc01_de_genes_down[['monocyte']]) <- paste(names(mast_lfc01_de_genes_down[['monocyte']]), '_down')
+upset(fromList(append(mast_lfc01_de_genes_up[['monocyte']], mast_lfc01_de_genes_down[['monocyte']])), order.by = 'freq', length(append(mast_lfc01_de_genes_up[['monocyte']], mast_lfc01_de_genes_down[['monocyte']])))
+
+
+
+
+pathway_mapping_filtered_childless <- function(list_of_pathways_and_parents, pathway_mapping){
+  # full list of terms
+  all_terms <- c()
+  for(start in names(list_of_pathways_and_parents)){
+    # get all the terms
+    all_terms <- c(all_terms, start, list_of_pathways_and_parents[[start]])
+  }
+  # make the unique terms
+  all_terms <- unique(all_terms)
+  # iteratively remove parents with no children in our data
+  keep_going <- T
+  if(keep_going == T){
+    # get the childless entries
+    child_less_parents <- setdiff(pathway_mapping$V2, pathway_mapping$V1)
+    # check if any of those are not in our set
+    child_less_parents_filtered <- setdiff(child_less_parents, all_terms)
+    # if there are none left, stop working
+    if(length(child_less_parents_filtered) == 0){
+      keep_going <- F
+    }
+    else{
+      # remove these children without children that we don't care about
+      pathway_mapping <- pathway_mapping[!(pathway_mapping$V2 %in% child_less_parents_filtered), ]
+    }
+    
+  }
+  return(pathway_mapping)
+}
+
+# Function for getting mama and parents
+get_filtered_pathway_names <- function(relation_table, starting_id){
+  # get all of the parents of the starting ID
+  all_parents <- get_parents(relation_table, starting_id)
+  return(all_parents)
+}
+get_parents <- function(relation_table, starting_id){
+  # get all of the parents of the starting ID
+  parents <- as.character(relation_table[!is.na(relation_table$V2) & !is.na(relation_table$V1) & relation_table$V2 == starting_id, 'V1'])
+  # these parents are all family
+  family <- parents
+  # see if there were any parents
+  if(length(parents) > 0){
+    # if there were parents, we need to get their parents as well
+    for(parent in parents){
+      # get the grandparents and add these to the family
+      grand_parents <- get_parents(relation_table, parent)
+      family <- c(family, grand_parents)
+    }
+  }
+  return(family)
+}
+
+pathways_to_trees <- function(relation_table){
+  # first get the biggest parents, the terms which don't are not children
+  super_parents <- child_less_parents <- setdiff(as.character(relation_table$V1), as.character(relation_table$V2))
+  # we must do a tree per super parent
+  super_parent_tree_list <- list()
+  # put in the work for each super parent
+  for(super_parent in super_parents){
+    # fetch complete list with attribute
+    super_parent_node <- get_children_lists(relation_table, super_parent, 10)
+    # set attributes for super parent itself
+    class(super_parent_node) <- 'dendrogram'
+    # add to list of superparents
+    super_parent_tree_list[[super_parent]] <- super_parent_node
+  }
+  return(super_parent_tree_list)
+}
+
+get_children_lists <- function(relation_table, term, height){
+  # get the children of the term
+  child_rows <- relation_table[as.character(relation_table$V1) == as.character(term), ]
+  # set up the node
+  node <- list()
+  # if there are no children, this is a leaf
+  if(nrow(child_rows) == 0){
+    # set up as leaf
+    attributes(node) <- list(members=1, h=0, edgetext=term, label=term, leaf=T)
+  }
+  else{
+    children <- child_rows$V2
+    # put in a list the results
+    i <- 1
+    for(child in children){
+      # grab the child lists
+      child_node <- get_children_lists(relation_table, child, height-1)
+      # add this to the node
+      node[[i]] <- child_node
+      i <- i + 1
+    }
+    # add attributes to non-leaf node
+    attributes(node) <- list(members=length(children),height=height,edgetext=term)
+  }
+  return(node)
+}
+
+add_pathway_levels <- function(relation_table){
+  # first get the biggest parents, the terms which don't are not children
+  super_parents <- child_less_parents <- setdiff(as.character(relation_table$V1), as.character(relation_table$V2))
+  # we must do a tree per super parent
+  super_parent_tree_list <- list()
+  # put in the work for each super parent
+  for(super_parent in super_parents){
+    # fetch complete list with attribute
+    super_parent_node <- get_children_pathway_levels(relation_table, super_parent, 0)
+    # add to list of superparents
+    super_parent_tree_list[[super_parent]] <- super_parent_node
+  }
+  return(super_parent_tree_list)
+}
+
+get_children_pathway_levels <- function(relation_table, term, level){
+  # get the children of the term
+  child_rows <- relation_table[as.character(relation_table$V1) == as.character(term), ]
+  # set up the 
+  current_level <- data.frame(term=c(term), level=c(level))
+  # if there are no children, this is a leaf
+  if(nrow(child_rows) > 0){
+    children <- child_rows$V2
+    for(child in children){
+      # grab the child lists
+      child_node <- get_children_pathway_levels(relation_table, child, level+1)
+      # add to our level
+      current_level <- rbind(current_level, child_node)
+    }
+  }
+  return(current_level)
+}
+
+
+
+
+# Load table with pathway
+monoUTBase <- read.table('/data/cardiology/pathways/sigs_pos/meta_paired_lores_lfc01minpct01_20201209_ensid_all/rna/monocyteUTBaseline_sig_up_pathways.txt', sep = '\t', header = T, dec = ",")
+
+# Selecting for REACTOME pathways
+monoUTBase <- monoUTBase[monoUTBase$Source =='BioSystems: REACTOME', ] 
+
+# Making the variable as numeric
+monoUTBase$q.value.FDR.B.H = as.numeric(as.character(monoUTBase$q.value.FDR.B.H))
+# match the ID
+monoUTBase$matchID <- pathways[match(toupper(as.character(monoUTBase$Name)), toupper(as.character(pathways$V2))), ]$V1
+# subset to human pathways
+pathway_mappings <- pathway_mappings[startsWith(pathway_mappings$V1, 'R-HSA'), ]
+
+# Fetch MatchIDs
+all_mamas_per_starting_id <- list()
+for(starting_id in monoUTBase$matchID){
+  if(!is.na(starting_id)){
+    all_mamas <- get_filtered_pathway_names(pathway_mappings, starting_id)
+    all_mamas_per_starting_id[[starting_id]] <- all_mamas
+  }
+}
+
+# Fetch missing MatchIDs
+monoUTBase$matchID[3] <- "R-HSA-168898"
+monoUTBase$matchID[4] <- "R-HSA-166058"
+"Activated TLR4 signalling" 
+"MyD88-independent TLR3/TLR4 cascade"
+"TRIF-mediated TLR3/TLR4 signaling"
+"RIG-I/MDA5 mediated induction of IFN-alpha/beta pathways"
+monoUTBase$matchID[36] <- "R-HSA-6785807"
+
+# get the pathways that are in our dataset or have parents in our dataset
+filtered_pathways <- pathway_mapping_filtered_childless(all_mamas_per_starting_id, pathway_mappings)
+# filter further to only go from the starting id
+#filtered_pathways <- filtered_pathways[filtered_pathways$V1 %in% get_children(pathway_mappings, 'R-HSA-168256') | filtered_pathways$V2 %in% get_children(pathway_mappings, 'R-HSA-168256'), ]
+
+# turn these into treemaps
+super_trees <- pathways_to_trees(filtered_pathways)
+
+# find the super parents
+super_parent_pathways <- setdiff(as.character(filtered_pathways$V1), as.character(filtered_pathways$V2))
+
+# add for the super parents, another super parent
+filtered_pathways <- rbind(data.frame(V1=rep('pathways', times=length(super_parent_pathways)), V2=super_parent_pathways), filtered_pathways)
+
+# get pathway levels
+pathway_levels <- add_pathway_levels(filtered_pathways)
+
+# create datatable
+my_network <- data.table::data.table(from=as.character(filtered_pathways$V1), to=as.character(filtered_pathways$V2))
+#my_familytree <- get_familytree(my_network, "R-HSA-168256")
+my_familytree <- get_familytree(my_network, "pathways")
+# add the id as title
+my_familytree$nodes$title <- my_familytree$nodes$id
+# add the actual name as the title
+my_familytree$nodes$title <- pathways[match(as.character(my_familytree$nodes$id), as.character(pathways$V1)), ]$V2
+# replace NAs
+my_familytree$nodes[is.na(my_familytree$nodes$title), ]$title <- 'pathways'
+# set the size from the P value
+my_familytree$nodes$value <- monoUTBase[match(as.character(my_familytree$nodes$id), as.character(monoUTBase$matchID)), ]$q.value.FDR.B.H
+# turn into number
+my_familytree$nodes$value <- as.numeric(my_familytree$nodes$value)
+# set the empty Ps into '1'
+my_familytree$nodes[is.na(my_familytree$nodes$value), ]$value <- 1
+# add the P to the title
+my_familytree$nodes$title <- paste(my_familytree$nodes$title, ' p=', as.character(my_familytree$nodes$value), sep='')
+# reverse size, we want a smaller P to be a bigger value
+my_familytree$nodes$value <- 1 - my_familytree$nodes$value
+# add the color by group
+#my_familytree$nodes$group <- pathway_levels[['R-HSA-168256']][match(my_familytree$nodes$id, pathway_levels[['R-HSA-168256']]$term), ]$level
+my_familytree$nodes$group <- pathway_levels[['pathways']][match(my_familytree$nodes$id, pathway_levels[['pathways']]$term), ]$level
+
+
+visNetwork(my_familytree$nodes, my_familytree$edges) %>%
+  visEdges(arrows = "to")
