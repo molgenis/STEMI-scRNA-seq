@@ -6,7 +6,7 @@ library('Seurat')
 library(Matrix)
 library(Matrix.utils)
 
-dreamer <- function(seurat_object, output_loc, aggregates=c('assignment.final', 'timepoint.final')){
+dreamer <- function(seurat_object, output_loc, aggregates=c('assignment.final', 'timepoint.final'), meta=F, do_ut=F){
   # grab the countmatrix
   countMatrix <- seurat_object@assays$RNA@counts
   # get the metadata
@@ -40,6 +40,10 @@ dreamer <- function(seurat_object, output_loc, aggregates=c('assignment.final', 
   
   # The variable to be tested must be a fixed effect
   form <- ~ timepoint.final + (1|assignment.final) 
+  # do meta if requested
+  if(meta){
+    form <- ~ 0 + timepoint.final + chem + (1|assignment.final)
+  }
   
   # estimate weights using linear mixed model of dream
   vobjDream = voomWithDreamWeights( geneExpr, form, aggregate_metadata )
@@ -151,6 +155,21 @@ output_limma_base <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ong
 output_limma <- paste(output_limma_base, orig_ident, '_', cell_type, '_pseudobulked.rds', sep='')
 # call the method
 dreamer(ct_and_oi, output_limma)
+
+
+
+
+
+
+# try with a cofounder as well
+cardio.integrated <- readRDS('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/cardio.integrated.20201209.rds')
+# subset to the cell type and original identity
+ct_and_oi <- cardio.integrated[, (cardio.integrated@meta.data$cell_type_lowerres == cell_type & (cardio.integrated@meta.data$orig.ident == 'stemi_v2' | cardio.integrated@meta.data$orig.ident == 'stemi_v3'))]
+# the output location
+output_limma_base <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/differential_expression/limma/output/dream_contrast_chemcofounder_contrastall_'
+output_limma <- paste(output_limma_base, '_', cell_type, '_pseudobulked.rds', sep='')
+dreamer(ct_and_oi, output_limma, aggregates=c('assignment.final', 'timepoint.final', 'chem'), meta = T)
+
 
 
 # make a list of condition combinations to test 1 vs 1
