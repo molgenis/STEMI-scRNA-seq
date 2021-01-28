@@ -663,6 +663,352 @@ plot_DE_sharing_per_celltype <- function(condition_combination, mast_output_loc,
   #return(DE_genes_per_ct)
 }
 
+pathway_mapping_filtered_childless <- function(list_of_pathways_and_parents, pathway_mapping){
+  # full list of terms
+  all_terms <- c()
+  for(start in names(list_of_pathways_and_parents)){
+    # get all the terms
+    all_terms <- c(all_terms, start, list_of_pathways_and_parents[[start]])
+  }
+  # make the unique terms
+  all_terms <- unique(all_terms)
+  # iteratively remove parents with no children in our data
+  keep_going <- T
+  if(keep_going == T){
+    # get the childless entries
+    child_less_parents <- setdiff(pathway_mapping$V2, pathway_mapping$V1)
+    # check if any of those are not in our set
+    child_less_parents_filtered <- setdiff(child_less_parents, all_terms)
+    # if there are none left, stop working
+    if(length(child_less_parents_filtered) == 0){
+      keep_going <- F
+    }
+    else{
+      # remove these children without children that we don't care about
+      pathway_mapping <- pathway_mapping[!(pathway_mapping$V2 %in% child_less_parents_filtered), ]
+    }
+    
+  }
+  return(pathway_mapping)
+}
+
+# Function for getting mama and parents
+get_filtered_pathway_names <- function(relation_table, starting_id){
+  # get all of the parents of the starting ID
+  all_parents <- get_parents(relation_table, starting_id)
+  return(all_parents)
+}
+get_parents <- function(relation_table, starting_id){
+  # get all of the parents of the starting ID
+  parents <- as.character(relation_table[!is.na(relation_table$V2) & !is.na(relation_table$V1) & relation_table$V2 == starting_id, 'V1'])
+  # these parents are all family
+  family <- parents
+  # see if there were any parents
+  if(length(parents) > 0){
+    # if there were parents, we need to get their parents as well
+    for(parent in parents){
+      # get the grandparents and add these to the family
+      grand_parents <- get_parents(relation_table, parent)
+      family <- c(family, grand_parents)
+    }
+  }
+  return(family)
+}
+
+pathways_to_trees <- function(relation_table){
+  # first get the biggest parents, the terms which don't are not children
+  super_parents <- child_less_parents <- setdiff(as.character(relation_table$V1), as.character(relation_table$V2))
+  # we must do a tree per super parent
+  super_parent_tree_list <- list()
+  # put in the work for each super parent
+  for(super_parent in super_parents){
+    # fetch complete list with attribute
+    super_parent_node <- get_children_lists(relation_table, super_parent, 10)
+    # set attributes for super parent itself
+    class(super_parent_node) <- 'dendrogram'
+    # add to list of superparents
+    super_parent_tree_list[[super_parent]] <- super_parent_node
+  }
+  return(super_parent_tree_list)
+}
+
+get_children_lists <- function(relation_table, term, height){
+  # get the children of the term
+  child_rows <- relation_table[as.character(relation_table$V1) == as.character(term), ]
+  # set up the node
+  node <- list()
+  # if there are no children, this is a leaf
+  if(nrow(child_rows) == 0){
+    # set up as leaf
+    attributes(node) <- list(members=1, h=0, edgetext=term, label=term, leaf=T)
+  }
+  else{
+    children <- child_rows$V2
+    # put in a list the results
+    i <- 1
+    for(child in children){
+      # grab the child lists
+      child_node <- get_children_lists(relation_table, child, height-1)
+      # add this to the node
+      node[[i]] <- child_node
+      i <- i + 1
+    }
+    # add attributes to non-leaf node
+    attributes(node) <- list(members=length(children),height=height,edgetext=term)
+  }
+  return(node)
+}
+
+add_pathway_levels <- function(relation_table){
+  # first get the biggest parents, the terms which don't are not children
+  super_parents <- child_less_parents <- setdiff(as.character(relation_table$V1), as.character(relation_table$V2))
+  # we must do a tree per super parent
+  super_parent_tree_list <- list()
+  # put in the work for each super parent
+  for(super_parent in super_parents){
+    # fetch complete list with attribute
+    super_parent_node <- get_children_pathway_levels(relation_table, super_parent, 0)
+    # add to list of superparents
+    super_parent_tree_list[[super_parent]] <- super_parent_node
+  }
+  return(super_parent_tree_list)
+}
+
+get_children_pathway_levels <- function(relation_table, term, level){
+  # get the children of the term
+  child_rows <- relation_table[as.character(relation_table$V1) == as.character(term), ]
+  # set up the 
+  current_level <- data.frame(term=c(term), level=c(level))
+  # if there are no children, this is a leaf
+  if(nrow(child_rows) > 0){
+    children <- child_rows$V2
+    for(child in children){
+      # grab the child lists
+      child_node <- get_children_pathway_levels(relation_table, child, level+1)
+      # add to our level
+      current_level <- rbind(current_level, child_node)
+    }
+  }
+  return(current_level)
+}
+
+plot_de_gene_uniqueness_condition <- function(base_mast_output_path, marked_singles=T, condition_combinations=c('UTBaseline', 'UTt24h', 'UTt8w', 'Baselinet24h', 'Baselinet8w', 't24ht8w'), cell_types_to_use=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK"), pval_column='metap_bonferroni', sig_pval=0.05, max=NULL, max_by_pval=T, only_positive=F, only_negative=F, lfc_column='metafc', to_ens=F, symbols.to.ensg.mapping='genes.tsv'){
+  # we want to get all the DE and where they were significant
+  gene_conditions_df <- NULL
+  # so, check each condition
+  for(condition in condition_combinations){
+    # we'll store the genes
+    genes_condition <- c()
+    # then check each cell type
+    for(cell_type in cell_types_to_use){
+      # paste together the filename
+      full_mast_path <- paste(base_mast_output_path, cell_type, condition, '.tsv', sep = '')
+      # get the genes
+      genes_cell_type <- get_de_genes_from_mast_file(full_mast_path, pval_column=pval_column, sig_pval=sig_pval, max=max, max_by_pval=max_by_pval, only_positive=only_positive, only_negative=only_negative, lfc_column=lfc_column, to_ens=to_ens, symbols.to.ensg.mapping=symbols.to.ensg.mapping)
+      # add to the list of genes for this condition
+      genes_condition <- c(genes_condition, genes_cell_type)
+    }
+    # make the genes unique, as the cell types have overlap
+    genes_condition <- unique(genes_condition)
+    # set as a dataframe
+    condition_df <- data.frame(genes_condition, rep(T, times=length(genes_condition)), stringsAsFactors = F)
+    # set the condition as the column name
+    colnames(condition_df) <- c('gene', condition)
+    # merge with existing gene and conditions
+    if(is.null(gene_conditions_df)){
+      gene_conditions_df <- condition_df
+    }
+    else{
+      gene_conditions_df <- merge(gene_conditions_df, condition_df, by = 'gene', all = T)
+    }
+  }
+  # genes that were not found before merging, will be NA, those are not found and thus of course F
+  gene_conditions_df[is.na(gene_conditions_df)] <- F
+  # disregard the gene column (makes the applies easier)
+  gene_conditions_df <- gene_conditions_df[, condition_combinations]
+  # get for each genes how many conditions it was significant in
+  number_of_times_sig <- apply(gene_conditions_df, 1, sum)
+  # turn into plot df
+  plot_df <- NULL
+  # we need a bar for unique number that the DE genes were unique
+  for(number_sig in unique(number_of_times_sig)){
+    # get the number of times this was the case
+    number_times_this_sig <- sum(number_of_times_sig == number_sig)
+    # create appropriate row
+    row <- data.frame(number_sig=number_sig, number_times_this_sig=number_times_this_sig, stringsAsFactors = F)
+    # add or set
+    if(is.null(plot_df)){
+      plot_df <- row
+    }
+    else{
+      plot_df <- rbind(plot_df, row)
+    }
+  }
+  # set the condition of the numbers
+  plot_df$condition <- 'mixed'
+  # for the singles, so in one condition only, we might want to see the proportions
+  if(marked_singles){
+    # remove the singles, as we're overwriting those
+    plot_df <- plot_df[plot_df$number_sig != 1, ]
+    # subset to the singles
+    gene_conditions_df_singles <- gene_conditions_df[number_of_times_sig == 1, ]
+    # now that we have only the singles, we can sum over the columns, to get the number of genes unique to the condition
+    number_unique_per_condition <- apply(gene_conditions_df_singles, 2, sum)
+    # make that into a df
+    plot_df_uniques <- data.frame(number_sig=rep(1, times=length(condition_combinations)), number_times_this_sig=number_unique_per_condition, condition=condition_combinations)
+    # add to the current plot
+    plot_df <- rbind(plot_df, plot_df_uniques)
+  }
+  # set the order I like for the legend, but setting the factor order
+  plot_df$condition <- factor(plot_df$condition, levels=c('mixed', condition_combinations))
+  # grab the colours
+  cc <- get_color_coding_dict()
+  # add the 'mixed' condition
+  cc[['mixed']] <- 'gray'
+  fillScale <- scale_fill_manual(name = "condition",values = unlist(cc[c(condition_combinations, 'mixed')]))
+  # make the plot finally
+  p <- ggplot(plot_df, aes(fill=condition, y=number_times_this_sig, x=number_sig)) +
+    geom_bar(position='stack', stat='identity') +
+    labs(x='number of conditions a gene is differentially expressed in', y='Number of significant DE genes') +
+    ggtitle('overlap of DE genes in condition combinations') +
+    labs(fill = "Found in") +
+    fillScale
+
+  return(p)
+}
+
+plot_de_gene_uniqueness_celltype <- function(base_mast_output_path, marked_singles=T, condition_combinations=c('UTBaseline', 'UTt24h', 'UTt8w', 'Baselinet24h', 'Baselinet8w', 't24ht8w'), cell_types_to_use=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK"), pval_column='metap_bonferroni', sig_pval=0.05, max=NULL, max_by_pval=T, only_positive=F, only_negative=F, lfc_column='metafc', to_ens=F, symbols.to.ensg.mapping='genes.tsv'){
+  # we want to get all the DE and where they were significant
+  gene_cell_type_df <- NULL
+  # so, check each condition
+  for(cell_type in cell_types_to_use){
+    # we'll store the genes
+    genes_cell_type <- c()
+    # then check each cell type
+    for(condition in condition_combinations){
+      # paste together the filename
+      full_mast_path <- paste(base_mast_output_path, cell_type, condition, '.tsv', sep = '')
+      # get the genes
+      genes_condition <- get_de_genes_from_mast_file(full_mast_path, pval_column=pval_column, sig_pval=sig_pval, max=max, max_by_pval=max_by_pval, only_positive=only_positive, only_negative=only_negative, lfc_column=lfc_column, to_ens=to_ens, symbols.to.ensg.mapping=symbols.to.ensg.mapping)
+      # add to the list of genes for this condition
+      genes_cell_type <- c(genes_cell_type, genes_condition)
+    }
+    # make the genes unique, as the cell types have overlap
+    genes_cell_type <- unique(genes_cell_type)
+    # set as a dataframe
+    cell_type_df <- data.frame(genes_cell_type, rep(T, times=length(genes_cell_type)), stringsAsFactors = F)
+    # set the condition as the column name
+    colnames(cell_type_df) <- c('gene', cell_type)
+    # merge with existing gene and conditions
+    if(is.null(gene_cell_type_df)){
+      gene_cell_type_df <- cell_type_df
+    }
+    else{
+      gene_cell_type_df <- merge(gene_cell_type_df, cell_type_df, by = 'gene', all = T)
+    }
+  }
+  # genes that were not found before merging, will be NA, those are not found and thus of course F
+  gene_cell_type_df[is.na(gene_cell_type_df)] <- F
+  # disregard the gene column (makes the applies easier)
+  gene_cell_type_df <- gene_cell_type_df[, cell_types_to_use]
+  # get for each genes how many conditions it was significant in
+  number_of_times_sig <- apply(gene_cell_type_df, 1, sum)
+  # turn into plot df
+  plot_df <- NULL
+  # we need a bar for unique number that the DE genes were unique
+  for(number_sig in unique(number_of_times_sig)){
+    # get the number of times this was the case
+    number_times_this_sig <- sum(number_of_times_sig == number_sig)
+    # create appropriate row
+    row <- data.frame(number_sig=number_sig, number_times_this_sig=number_times_this_sig, stringsAsFactors = F)
+    # add or set
+    if(is.null(plot_df)){
+      plot_df <- row
+    }
+    else{
+      plot_df <- rbind(plot_df, row)
+    }
+  }
+  # set the condition of the numbers
+  plot_df$cell_type <- 'mixed'
+  # for the singles, so in one condition only, we might want to see the proportions
+  if(marked_singles){
+    # remove the singles, as we're overwriting those
+    plot_df <- plot_df[plot_df$number_sig != 1, ]
+    # subset to the singles
+    gene_cell_type_df_singles <- gene_cell_type_df[number_of_times_sig == 1, ]
+    # now that we have only the singles, we can sum over the columns, to get the number of genes unique to the condition
+    number_unique_per_cell_type <- apply(gene_cell_type_df_singles, 2, sum)
+    # make that into a df
+    plot_df_uniques <- data.frame(number_sig=rep(1, times=length(cell_types_to_use)), number_times_this_sig=number_unique_per_cell_type, cell_type=cell_types_to_use)
+    # add to the current plot
+    plot_df <- rbind(plot_df, plot_df_uniques)
+  }
+  # set the order I like for the legend, but setting the factor order
+  plot_df$cell_type <- factor(plot_df$cell_type, levels=c('mixed', cell_types_to_use))
+  # grab the colours
+  cc <- get_color_coding_dict()
+  # add the 'mixed' condition
+  cc[['mixed']] <- 'gray'
+  fillScale <- scale_fill_manual(name = "cell_type",values = unlist(cc[c(cell_types_to_use, 'mixed')]))
+  # make the plot finally
+  p <- ggplot(plot_df, aes(fill=cell_type, y=number_times_this_sig, x=number_sig)) +
+    geom_bar(position='stack', stat='identity') +
+    labs(x='number of cell types a gene is differentially expressed in', y='Number of significant DE genes') +
+    ggtitle('overlap of DE genes in cell types') +
+    labs(fill = "Found in") +
+    fillScale
+  
+  return(p)
+}
+
+
+get_de_genes_from_mast_file <- function(mast_full_file_path, pval_column='metap_bonferroni', sig_pval=0.05, max=NULL, max_by_pval=T, only_positive=F, only_negative=F, lfc_column='metafc', to_ens=F, symbols.to.ensg.mapping='genes.tsv'){
+  significant_genes <- c()
+  try({
+    # read the mast output
+    mast <- read.table(mast_full_file_path, header=T, row.names = 1)
+    # filter to only include the significant results
+    mast <- mast[mast[[pval_column]] <= 0.05, ]
+    # filter for only the positive lfc if required
+    if(only_positive){
+      mast <- mast[mast[[lfc_column]] < 0, ]
+    }
+    # filter for only the positive lfc if required
+    if(only_negative){
+      mast <- mast[mast[[lfc_column]] > 0, ]
+    }
+    # confine in some way if reporting a max number of genes
+    if(!is.null(max)){
+      # by p if required
+      if(max_by_pval){
+        mast <- mast[order(mast[[p_val_column]]), ]
+      }
+      # by lfc otherwise
+      else{
+        mast <- mast[order(mast[[lfc_column]], decreasing = T), ]
+      }
+      # subset to the number we requested if max was set
+      mast <- mast[1:max,]
+    }
+    # grab the genes from the column names
+    genes <- rownames(mast)
+    # convert the symbols to ensemble IDs
+    if (to_ens) {
+      mapping <- read.table(symbols.to.ensg.mapping, header = F, stringsAsFactors = F)
+      mapping$V2 <- gsub("_", "-", make.unique(mapping$V2))
+      genes <- mapping[match(genes, mapping$V2),"V1"]
+    }
+    # otherwise change the Seurat replacement back
+    else{
+      #genes <- gsub("-", "_", genes)
+    }
+    significant_genes <- genes
+  })
+  return(significant_genes)
+}
+
+
 
 ####################
 # Main Code        #
@@ -1103,141 +1449,6 @@ names(mast_lfc01_de_genes_up[['monocyte']]) <- paste(names(mast_lfc01_de_genes_u
 names(mast_lfc01_de_genes_down[['monocyte']]) <- paste(names(mast_lfc01_de_genes_down[['monocyte']]), '_down')
 upset(fromList(append(mast_lfc01_de_genes_up[['monocyte']], mast_lfc01_de_genes_down[['monocyte']])), order.by = 'freq', length(append(mast_lfc01_de_genes_up[['monocyte']], mast_lfc01_de_genes_down[['monocyte']])))
 
-
-
-
-pathway_mapping_filtered_childless <- function(list_of_pathways_and_parents, pathway_mapping){
-  # full list of terms
-  all_terms <- c()
-  for(start in names(list_of_pathways_and_parents)){
-    # get all the terms
-    all_terms <- c(all_terms, start, list_of_pathways_and_parents[[start]])
-  }
-  # make the unique terms
-  all_terms <- unique(all_terms)
-  # iteratively remove parents with no children in our data
-  keep_going <- T
-  if(keep_going == T){
-    # get the childless entries
-    child_less_parents <- setdiff(pathway_mapping$V2, pathway_mapping$V1)
-    # check if any of those are not in our set
-    child_less_parents_filtered <- setdiff(child_less_parents, all_terms)
-    # if there are none left, stop working
-    if(length(child_less_parents_filtered) == 0){
-      keep_going <- F
-    }
-    else{
-      # remove these children without children that we don't care about
-      pathway_mapping <- pathway_mapping[!(pathway_mapping$V2 %in% child_less_parents_filtered), ]
-    }
-    
-  }
-  return(pathway_mapping)
-}
-
-# Function for getting mama and parents
-get_filtered_pathway_names <- function(relation_table, starting_id){
-  # get all of the parents of the starting ID
-  all_parents <- get_parents(relation_table, starting_id)
-  return(all_parents)
-}
-get_parents <- function(relation_table, starting_id){
-  # get all of the parents of the starting ID
-  parents <- as.character(relation_table[!is.na(relation_table$V2) & !is.na(relation_table$V1) & relation_table$V2 == starting_id, 'V1'])
-  # these parents are all family
-  family <- parents
-  # see if there were any parents
-  if(length(parents) > 0){
-    # if there were parents, we need to get their parents as well
-    for(parent in parents){
-      # get the grandparents and add these to the family
-      grand_parents <- get_parents(relation_table, parent)
-      family <- c(family, grand_parents)
-    }
-  }
-  return(family)
-}
-
-pathways_to_trees <- function(relation_table){
-  # first get the biggest parents, the terms which don't are not children
-  super_parents <- child_less_parents <- setdiff(as.character(relation_table$V1), as.character(relation_table$V2))
-  # we must do a tree per super parent
-  super_parent_tree_list <- list()
-  # put in the work for each super parent
-  for(super_parent in super_parents){
-    # fetch complete list with attribute
-    super_parent_node <- get_children_lists(relation_table, super_parent, 10)
-    # set attributes for super parent itself
-    class(super_parent_node) <- 'dendrogram'
-    # add to list of superparents
-    super_parent_tree_list[[super_parent]] <- super_parent_node
-  }
-  return(super_parent_tree_list)
-}
-
-get_children_lists <- function(relation_table, term, height){
-  # get the children of the term
-  child_rows <- relation_table[as.character(relation_table$V1) == as.character(term), ]
-  # set up the node
-  node <- list()
-  # if there are no children, this is a leaf
-  if(nrow(child_rows) == 0){
-    # set up as leaf
-    attributes(node) <- list(members=1, h=0, edgetext=term, label=term, leaf=T)
-  }
-  else{
-    children <- child_rows$V2
-    # put in a list the results
-    i <- 1
-    for(child in children){
-      # grab the child lists
-      child_node <- get_children_lists(relation_table, child, height-1)
-      # add this to the node
-      node[[i]] <- child_node
-      i <- i + 1
-    }
-    # add attributes to non-leaf node
-    attributes(node) <- list(members=length(children),height=height,edgetext=term)
-  }
-  return(node)
-}
-
-add_pathway_levels <- function(relation_table){
-  # first get the biggest parents, the terms which don't are not children
-  super_parents <- child_less_parents <- setdiff(as.character(relation_table$V1), as.character(relation_table$V2))
-  # we must do a tree per super parent
-  super_parent_tree_list <- list()
-  # put in the work for each super parent
-  for(super_parent in super_parents){
-    # fetch complete list with attribute
-    super_parent_node <- get_children_pathway_levels(relation_table, super_parent, 0)
-    # add to list of superparents
-    super_parent_tree_list[[super_parent]] <- super_parent_node
-  }
-  return(super_parent_tree_list)
-}
-
-get_children_pathway_levels <- function(relation_table, term, level){
-  # get the children of the term
-  child_rows <- relation_table[as.character(relation_table$V1) == as.character(term), ]
-  # set up the 
-  current_level <- data.frame(term=c(term), level=c(level))
-  # if there are no children, this is a leaf
-  if(nrow(child_rows) > 0){
-    children <- child_rows$V2
-    for(child in children){
-      # grab the child lists
-      child_node <- get_children_pathway_levels(relation_table, child, level+1)
-      # add to our level
-      current_level <- rbind(current_level, child_node)
-    }
-  }
-  return(current_level)
-}
-
-
-
-
 # Load table with pathway
 monoUTBase <- read.table('/data/cardiology/pathways/sigs_pos/meta_paired_lores_lfc01minpct01_20201209_ensid_all/rna/monocyteUTBaseline_sig_up_pathways.txt', sep = '\t', header = T, dec = ",")
 
@@ -1310,6 +1521,8 @@ my_familytree$nodes$value <- 1 - my_familytree$nodes$value
 #my_familytree$nodes$group <- pathway_levels[['R-HSA-168256']][match(my_familytree$nodes$id, pathway_levels[['R-HSA-168256']]$term), ]$level
 my_familytree$nodes$group <- pathway_levels[['pathways']][match(my_familytree$nodes$id, pathway_levels[['pathways']]$term), ]$level
 
-
+# visualize the network
 visNetwork(my_familytree$nodes, my_familytree$edges) %>%
   visEdges(arrows = "to")
+
+
