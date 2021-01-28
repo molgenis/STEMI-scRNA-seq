@@ -17,8 +17,14 @@ dreamer <- function(seurat_object, output_loc, aggregates=c('assignment.final', 
   aggregate_countMatrix <- t(aggregate.Matrix(t(countMatrix), groupings = groups, fun = 'sum'))
   # create aggregated metadata
   aggregate_metadata <- unique(metadata[, aggregates])
-  # set the rownames to be the same as the countsMatrix aggregate colnames, should go correctly if data is valid
-  rownames(aggregate_metadata) <- colnames(aggregate_countMatrix)
+  # set the rownames of the aggregate metadata
+  rownames_to_set_agg_metadata <- aggregate_metadata[[aggregates[1]]]
+  for(i in 2:length(aggregates)){
+    rownames_to_set_agg_metadata <- paste(rownames_to_set_agg_metadata, aggregate_metadata[[aggregates[i]]], sep='_')
+  }
+  rownames(aggregate_metadata) <- rownames_to_set_agg_metadata
+  # set in the same order as the count matrix
+  aggregate_metadata <- aggregate_metadata[colnames(aggregate_countMatrix), ]
   
   # filter genes by number of counts
   isexpr = rowSums(cpm(aggregate_countMatrix)>0.1) >= 5
@@ -50,7 +56,7 @@ dreamer <- function(seurat_object, output_loc, aggregates=c('assignment.final', 
   L = cbind(L1, L2, L3)     
   
   # fit both contrasts
-  fit = dream( vobjDream, form, metadata_metadata, L)
+  fit = dream( vobjDream, form, aggregate_metadata, L)
   
   # create list of variables
   vars <- list()
@@ -62,7 +68,7 @@ dreamer <- function(seurat_object, output_loc, aggregates=c('assignment.final', 
   saveRDS(vars, output_loc)
 }
 
-dream_pairwise <- function(seurat_object, output_loc, condition_combinations, aggregates=c('assignment.final', 'timepoint.final')){
+dream_pairwise <- function(seurat_object, output_loc, condition_combinations, aggregates=c('assignment.final', 'timepoint.final'), meta=F){
     # grab the countmatrix
     countMatrix <- seurat_object@assays$RNA@counts
     # get the metadata
@@ -73,9 +79,14 @@ dream_pairwise <- function(seurat_object, output_loc, condition_combinations, ag
     aggregate_countMatrix <- t(aggregate.Matrix(t(countMatrix), groupings = groups, fun = 'sum'))
     # create aggregated metadata
     aggregate_metadata <- unique(metadata[, aggregates])
-    # set the rownames to be the same as the countsMatrix aggregate colnames, should go correctly if data is valid
-    rownames(aggregate_metadata) <- colnames(aggregate_countMatrix)
-    
+    # set the rownames of the aggregate metadata
+    rownames_to_set_agg_metadata <- aggregate_metadata[[aggregates[1]]]
+    for(i in 2:length(aggregates)){
+      rownames_to_set_agg_metadata <- paste(rownames_to_set_agg_metadata, aggregate_metadata[[aggregates[i]]], sep='_')
+    }
+    rownames(aggregate_metadata) <- rownames_to_set_agg_metadata
+    # set in the same order as the count matrix
+    aggregate_metadata <- aggregate_metadata[colnames(aggregate_countMatrix), ]
     # filter genes by number of counts
     isexpr = rowSums(cpm(aggregate_countMatrix)>0.1) >= 5
     
@@ -88,8 +99,14 @@ dream_pairwise <- function(seurat_object, output_loc, condition_combinations, ag
     param = SnowParam(4, "SOCK", progressbar=TRUE)
     register(param)
     
+    print(head(aggregate_metadata))
+    
     # The variable to be tested must be a fixed effect
     form <- ~ 0 + timepoint.final + (1|assignment.final) 
+    # do meta if requested
+    if(meta){
+      form <- ~ 0 + timepoint.final + chem + (1|assignment.final)
+    }
     
     # estimate weights using linear mixed model of dream
     vobjDream = voomWithDreamWeights( geneExpr, form, aggregate_metadata )
@@ -100,10 +117,10 @@ dream_pairwise <- function(seurat_object, output_loc, condition_combinations, ag
       combination <- condition_combinations[[combination_name]]
       
       # define and then cbind contrasts
-      L = getContrast( vobjDream, form, aggregate_metadata, c(combination[1], combination[2]))
+      L = getContrast( vobjDream, form, aggregate_metadata, c(paste('timepoint.final', combination[1], sep=''), paste('timepoint.final', combination[2], sep='')))
       
       # fit contrast
-      fit = dream( vobjDream, form, metadata_metadata, L)
+      fit = dream( vobjDream, form, aggregate_metadata, L)
       
       # grab the exact fit
       limma_result <- topTable(fit, coef=c('L1'), number=length(fit$F.p.value))
