@@ -58,6 +58,13 @@ dreamer <- function(seurat_object, output_loc, aggregates=c('assignment.final', 
   L2 = getContrast( vobjDream, form, aggregate_metadata, c("timepoint.finalt24h", "timepoint.finalBaseline"))
   L3 = getContrast( vobjDream, form, aggregate_metadata, c("timepoint.finalBaseline", "timepoint.finalt8w"))
   L = cbind(L1, L2, L3)     
+  # add UT if requested
+  if(do_ut){
+    L4 = getContrast( vobjDream, form, aggregate_metadata, c("timepoint.UT", "timepoint.Baseline"))
+    L5 = getContrast( vobjDream, form, aggregate_metadata, c("timepoint.UT", "timepoint.t24h"))
+    L6 = getContrast( vobjDream, form, aggregate_metadata, c("timepoint.UT", "timepoint.finalt8w"))
+    L = cbind(L1, L2, L3, L4, L5, L6)
+  }
   
   # fit both contrasts
   fit = dream( vobjDream, form, aggregate_metadata, L)

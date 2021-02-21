@@ -309,6 +309,93 @@ get_de_genes <- function(mast_output_loc, pval_column='metap_bonferroni', sig_pv
   return(de_per_ct)
 }
 
+
+de_genes_number_to_table <- function(mast_output_loc, pval_column='metap_bonferroni', sig_pval=0.05, max=NULL, max_by_pval=T, only_positive=F, only_negative=F, lfc_column='metafc', to_ens=F, symbols.to.ensg.mapping='genes.tsv', cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), stims=c('UT', 'Baseline', 't24h', 't8w'), remove_na_cols=T){
+  # get the DE genes
+  de_genes_per_ct <- get_de_genes(mast_output_loc, pval_column=pval_column, sig_pval=sig_pval, max=max, max_by_pval=max_by_pval, only_positive=only_positive, only_negative=only_negative, lfc_column=lfc_column, to_ens=to_ens, symbols.to.ensg.mapping=symbols.to.ensg.mapping, cell_types=cell_types, stims=stims)
+  # make all possible combinations of stims
+  combs <- paste(rep(stims, each = length(stims)), stims, sep = '')
+  # create matrix to store results
+  number_table <- matrix(, ncol=length(combs), nrow=length(cell_types), dimnames = list(cell_types, combs))
+  # check each cell type
+  for(cell_type in intersect(cell_types, names(de_genes_per_ct))){
+    # get for specific cell type
+    de_genes_per_conditin <- de_genes_per_ct[[cell_type]]
+    # check each condition combination
+    for(comb in intersect(combs, names(de_genes_per_conditin))){
+      # get the number of genes
+      nr_of_de_genes <- length(de_genes_per_conditin[[comb]])
+      # add to matrix
+      number_table[cell_type, comb] <- nr_of_de_genes
+    }
+  }
+  # remove na column
+  if(remove_na_cols){
+    number_table <- number_table[, colSums(is.na(number_table)) < nrow(number_table)]
+  }
+  # i like dataframes
+  number_table <- data.frame(number_table)
+  return(number_table)
+}
+
+numbers_table_to_plot <- function(numbers_table, cols_include=NULL, use_label_dict=T, use_groups_dict=T){
+  numbers_table_to_do <- numbers_table
+  if(!is.null(cols_include)){
+    numbers_table_to_do <- numbers_table_to_do[, cols_include]
+  }
+  plot_data <- NULL
+  for(cell_type in rownames(numbers_table_to_do)){
+    for(condition_comb in colnames(numbers_table_to_do)){
+      val <- numbers_table_to_do[cell_type, condition_comb]
+      if(is.na(val)){
+        val <- 0
+      }
+      conditions_label <- condition_comb
+      if(use_label_dict){
+        conditions_label <- split_label_dict()[[conditions_label]]
+      }
+      row_plot_data <- data.frame(de_genes=val, cell_type=cell_type, conditions=conditions_label)
+      if(use_groups_dict){
+        row_plot_data$comparison <- groups_dict()[[condition_comb]]
+      }
+      if(is.null(plot_data)){
+        plot_data <- row_plot_data
+      }
+      else{
+        plot_data <- rbind(plot_data, row_plot_data)
+      }
+    }
+  }
+  if(use_groups_dict){
+    ggplot(data=plot_data, aes(x=comparison, y=de_genes)) + geom_point(aes(color=conditions), size=6) + facet_grid(. ~ cell_type) + scale_color_manual(name = 'condition\ncombination', values = unlist(get_color_coding_dict()[unique(plot_data$conditions)]))
+  }
+  else{
+    ggplot(data=plot_data, aes(x=conditions, y=de_genes)) + geom_point(aes(color=conditions), size=6) + facet_grid(. ~ cell_type)  + scale_color_manual(name = 'condition\ncombination', values = unlist(get_color_coding_dict()[unique(plot_data$conditions)])) + theme(legend.position = 'none')
+  }
+}
+
+split_label_dict <- function(){
+  label_dict <- list()
+  label_dict[['UTBaseline']] <- 'UT\nBaseline'
+  label_dict[['UTt24h']] <- 'UT\nt24h'
+  label_dict[['UTt8w']] <- 'UT\nt8w'
+  label_dict[['Baselinet24h']] <- 'Baseline\nt24h'
+  label_dict[['Baselinet8w']] <- 'Baseline\nt8w'
+  label_dict[['t24ht8w']] <- 't24h\nt8w'
+  return(label_dict)
+}
+
+groups_dict <- function(){
+  groups_dict <- list()
+  groups_dict[['UTBaseline']] <- 'UT'
+  groups_dict[['UTt24h']] <- 'UT'
+  groups_dict[['UTt8w']] <- 'UT'
+  groups_dict[['Baselinet24h']] <- 'STEMI'
+  groups_dict[['Baselinet8w']] <- 'STEMI'
+  groups_dict[['t24ht8w']] <- 'STEMI'
+  return(groups_dict)
+}
+
 get_top_pathways <- function(pathway_table, nr_of_top_genes, is_ranked=F){
   # init pathways list
   pathways <- c()
@@ -337,6 +424,12 @@ get_color_coding_dict <- function(){
   color_coding[["Baselinet24h"]] <- "paleturquoise3"
   color_coding[["Baselinet8w"]] <- "rosybrown1"
   color_coding[["t24ht8w"]] <- "rosybrown3"
+  color_coding[["UT\nBaseline"]] <- "khaki2"
+  color_coding[["UT\nt24h"]] <- "khaki4"
+  color_coding[["UT\nt8w"]] <- "paleturquoise1"
+  color_coding[["Baseline\nt24h"]] <- "paleturquoise3"
+  color_coding[["Baseline\nt8w"]] <- "rosybrown1"
+  color_coding[["t24h\nt8w"]] <- "rosybrown3"
   # set the cell type colors
   color_coding[["Bulk"]] <- "black"
   color_coding[["CD4T"]] <- "#153057"
