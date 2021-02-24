@@ -245,6 +245,67 @@ get_pathway_table <- function(pathway_output_loc, sig_val_to_use = 'q.value.FDR.
   return(pathway_df)
 }
 
+get_pathways <- function(pathway_output_loc, append='_sig_pathways.txt', sig_val_to_use = 'q.value.FDR.B.H', sig_pval=0.05, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), stims=c('UT', 'Baseline', 't24h', 't8w')){
+  # set up per cell type
+  pathways_per_ct <- list()
+  # check each cell type
+  for(cell_type in cell_types){
+    # set up per stim combination
+    pathways_per_condition_combination <- list()
+    # check each stim
+    for(stim in stims){
+      for(stim2 in stims){
+        try({
+          if(stim != stim2){
+            print(paste(cell_type, stim, stim2, sep = ' '))
+            # paste the filepath together
+            filepath <- paste(pathway_output_loc, cell_type, stim,stim2, append, sep = '')
+            # read the file
+            pathways <- read.table(filepath, sep = '\t', header = T, quote="", fill = F, comment.char = "", colClasses = c('character', 'character', 'character', 'character', 'double', 'double', 'double', 'double', 'integer', 'integer', 'character'))
+            # filter to only the significant rows
+            pathways <- pathways[pathways[[sig_val_to_use]] < sig_pval, ]
+            # grab the combined names
+            pathway_names <- paste(pathways$ID, pathways$Name, sep = '_')
+            # put in the list
+            pathways_per_condition_combination[[paste(stim, stim2, sep='')]] <- pathway_names
+          }
+        })
+      }
+    }
+    # put in the list per cell type
+    pathways_per_ct[[cell_type]] <- pathways_per_condition_combination
+  }
+  return(pathways_per_ct)
+}
+
+
+pathway_numbers_to_table <- function(pathway_output_loc, append='_sig_pathways.txt', sig_val_to_use = 'q.value.FDR.B.H', sig_pval=0.05, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), stims=c('UT', 'Baseline', 't24h', 't8w'), remove_na_cols=T){
+  # get the DE genes
+  pathways_per_ct <- get_pathways(pathway_output_loc=pathway_output_loc, append=append, sig_val_to_use=sig_val_to_use, sig_pval=sig_pval, cell_types=cell_types, stims=stims)
+  # make all possible combinations of stims
+  combs <- paste(rep(stims, each = length(stims)), stims, sep = '')
+  # create matrix to store results
+  number_table <- matrix(, ncol=length(combs), nrow=length(cell_types), dimnames = list(cell_types, combs))
+  # check each cell type
+  for(cell_type in intersect(cell_types, names(pathways_per_ct))){
+    # get for specific cell type
+    pathways_per_conditin <- pathways_per_ct[[cell_type]]
+    # check each condition combination
+    for(comb in intersect(combs, names(pathways_per_conditin))){
+      # get the number of genes
+      nr_of_pathways <- length(pathways_per_conditin[[comb]])
+      # add to matrix
+      number_table[cell_type, comb] <- nr_of_pathways
+    }
+  }
+  # remove na column
+  if(remove_na_cols){
+    number_table <- number_table[, colSums(is.na(number_table)) < nrow(number_table)]
+  }
+  # i like dataframes
+  number_table <- data.frame(number_table)
+  return(number_table)
+}
 
 get_de_genes <- function(mast_output_loc, pval_column='metap_bonferroni', sig_pval=0.05, max=NULL, max_by_pval=T, only_positive=F, only_negative=F, lfc_column='metafc', to_ens=F, symbols.to.ensg.mapping='genes.tsv', cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), stims=c('UT', 'Baseline', 't24h', 't8w')){
   # set up per cell type
@@ -370,18 +431,31 @@ numbers_table_to_plot <- function(numbers_table, cols_include=NULL, use_label_di
     ggplot(data=plot_data, aes(x=comparison, y=de_genes)) + geom_point(aes(color=conditions), size=6) + facet_grid(. ~ cell_type) + scale_color_manual(name = 'condition\ncombination', values = unlist(get_color_coding_dict()[unique(plot_data$conditions)]))
   }
   else{
-    ggplot(data=plot_data, aes(x=conditions, y=de_genes)) + geom_point(aes(color=conditions), size=6) + facet_grid(. ~ cell_type)  + scale_color_manual(name = 'condition\ncombination', values = unlist(get_color_coding_dict()[unique(plot_data$conditions)])) + theme(legend.position = 'none')
+    ggplot(data=plot_data, aes(x=conditions, y=de_genes)) + geom_point(aes(color=conditions), size=6) + facet_grid(. ~ cell_type)  + scale_color_manual(name = 'condition\ncombination', values = unlist(get_color_coding_dict()[unique(plot_data$conditions)])) + theme(legend.position = 'none') +
+    #ggplot(data=plot_data, aes(x=conditions, y=de_genes)) + geom_point(aes(color=conditions), size=6) + facet_grid(. ~ cell_type)  + scale_color_manual(name = 'condition\ncombination', values = unlist(get_color_coding_dict()[unique(plot_data$conditions)])) +
+      xlab('condition combination') + 
+      ylab('number of DE genes')
+      #theme(axis.text.x=element_blank())
   }
 }
 
 split_label_dict <- function(){
   label_dict <- list()
-  label_dict[['UTBaseline']] <- 'UT\nBaseline'
-  label_dict[['UTt24h']] <- 'UT\nt24h'
-  label_dict[['UTt8w']] <- 'UT\nt8w'
-  label_dict[['Baselinet24h']] <- 'Baseline\nt24h'
-  label_dict[['Baselinet8w']] <- 'Baseline\nt8w'
-  label_dict[['t24ht8w']] <- 't24h\nt8w'
+  #label_dict[['UTBaseline']] <- 'UT\nBaseline'
+  #label_dict[['UTt24h']] <- 'UT\nt24h'
+  #label_dict[['UTt8w']] <- 'UT\nt8w'
+  #label_dict[['Baselinet24h']] <- 'Baseline\nt24h'
+  #label_dict[['Baselinet8w']] <- 'Baseline\nt8w'
+  #label_dict[['t24ht8w']] <- 't24h\nt8w'
+  label_dict[['UTBaseline']] <- 'UT-Baseline'
+  label_dict[['UTt24h']] <- 'UT-t24h'
+  label_dict[['UTt8w']] <- 'UT-t8w'
+  label_dict[['Baselinet24h']] <- 'Baseline-t24h'
+  label_dict[['Baselinet8w']] <- 'Baseline-t8w'
+  label_dict[['t24ht8w']] <- 't24h-t8w'
+  label_dict[['UTBaseline']] <- 'UT-t0'
+  label_dict[['Baselinet24h']] <- 't0-t24h'
+  label_dict[['Baselinet8w']] <- 't0-t8w'
   return(label_dict)
 }
 
@@ -430,6 +504,18 @@ get_color_coding_dict <- function(){
   color_coding[["Baseline\nt24h"]] <- "paleturquoise3"
   color_coding[["Baseline\nt8w"]] <- "rosybrown1"
   color_coding[["t24h\nt8w"]] <- "rosybrown3"
+  color_coding[["UT-Baseline"]] <- "khaki2"
+  color_coding[["UT-t24h"]] <- "khaki4"
+  color_coding[["UT-t8w"]] <- "paleturquoise1"
+  color_coding[["Baseline-t24h"]] <- "paleturquoise3"
+  color_coding[["Baseline-t8w"]] <- "rosybrown1"
+  color_coding[["t24h-t8w"]] <- "rosybrown3"
+  color_coding[["UT-t0"]] <- "khaki2"
+  color_coding[["UT-t24h"]] <- "khaki4"
+  color_coding[["UT-t8w"]] <- "paleturquoise1"
+  color_coding[["t0-t24h"]] <- "paleturquoise3"
+  color_coding[["t0-t8w"]] <- "rosybrown1"
+  color_coding[["t24h-t8w"]] <- "rosybrown3"
   # set the cell type colors
   color_coding[["Bulk"]] <- "black"
   color_coding[["CD4T"]] <- "#153057"
@@ -547,7 +633,7 @@ get_combined_meta_de_table <- function(meta_output_loc, must_be_positive_once=F,
 }
 
 
-plot_de_vs_cell_type_numbers <- function(mast_output_loc, metadata, timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', "Baselinet24h", "Baselinet8w", "t24ht8w"), cell_types_to_use=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK"), pval_column='metap_bonferroni', sig_pval=0.05, plot_separately=T, proportion=F){
+plot_de_vs_cell_type_numbers <- function(mast_output_loc, metadata, timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', 'Baselinet24h', 'Baselinet8w', 't24ht8w'), cell_types_to_use=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK"), pval_column='metap_bonferroni', sig_pval=0.05, plot_separately=T, proportion=F, use_label_dict=T){
   # init table
   table <- NULL
   for(timepoint in timepoints){
@@ -585,9 +671,11 @@ plot_de_vs_cell_type_numbers <- function(mast_output_loc, metadata, timepoints=c
         table <- rbind(table, c(timepoint, cell_type, nr_of_cells, sig_gene_number))
       }
     }
+    
     if(plot_separately){
       ggplot(table[table$timepoint==timepoint, ], aes(x=nr_of_cells, y=sig_gene_number, shape=timepoint, color=cell_type)) +
-        geom_point()
+        geom_point() +
+        labs(x = xlab, y = 'nr of DE genes', title = 'cells vs nr of DE genes', shape='condition combination', color='cell type')
     }
   }
   print(table)
@@ -597,13 +685,18 @@ plot_de_vs_cell_type_numbers <- function(mast_output_loc, metadata, timepoints=c
     if(proportion){
       xlab <- 'proportion of cells'
     }
+    if(use_label_dict){
+      label_dict <- split_label_dict()
+      table$timepoint <- as.vector(unlist(label_dict[table$timepoint]))
+    }
+    # get color coding
     cc <- get_color_coding_dict()
-    colScale <- scale_colour_manual(name = "cell_type",values = unlist(cc[cell_types_to_use]))
+    colScale <- scale_colour_manual(name = "cell type",values = unlist(cc[cell_types_to_use]))
     ggplot(table, aes(x=as.numeric(nr_of_cells), y=as.numeric(sig_gene_number), shape=timepoint, color=cell_type)) +
       #scale_x_discrete(breaks = seq(0, 1, by = 0.1)) +
       #scale_y_discrete(breaks = seq(0, 1000, by = 100)) +
       geom_point(size=3) +
-      labs(x = xlab, y = 'nr of DE genes', title = 'cells vs nr of DE genes') +
+      labs(x = xlab, y = 'nr of DE genes', title = 'cells vs nr of DE genes', shape='condition combination') +
       colScale
   }
 }
@@ -1507,7 +1600,7 @@ heatmap.3(t(as.matrix(pathway_up_df_filtered)),
 
 
 # grab the metadata
-meta.data <- read.table('/data/cardiology/metadata/cardio.integrated_meta.data.tsv', sep='\t', header=T, row.names=1)
+meta.data <- read.table('/data/cardiology/metadata/cardio.integrated.20201209.metadata.tsv', sep='\t', header=T, row.names=1)
 plot_de_vs_cell_type_numbers(mast_meta_output_loc_lfc01, meta.data, plot_separately = F, proportion = T)
 plot_de_vs_cell_type_numbers(mast_meta_output_loc_lfc01, meta.data, plot_separately = F, proportion = F)
 plot_de_vs_cell_type_numbers(mast_meta_output_loc_lfc01, meta.data, plot_separately = F, proportion = F, cell_types_to_use = c('monocyte'))
