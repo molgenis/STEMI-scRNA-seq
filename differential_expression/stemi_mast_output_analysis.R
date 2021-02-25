@@ -431,11 +431,18 @@ numbers_table_to_plot <- function(numbers_table, cols_include=NULL, use_label_di
     ggplot(data=plot_data, aes(x=comparison, y=de_genes)) + geom_point(aes(color=conditions), size=6) + facet_grid(. ~ cell_type) + scale_color_manual(name = 'condition\ncombination', values = unlist(get_color_coding_dict()[unique(plot_data$conditions)]))
   }
   else{
-    ggplot(data=plot_data, aes(x=conditions, y=de_genes)) + geom_point(aes(color=conditions), size=6) + facet_grid(. ~ cell_type)  + scale_color_manual(name = 'condition\ncombination', values = unlist(get_color_coding_dict()[unique(plot_data$conditions)])) + theme(legend.position = 'none') +
-    #ggplot(data=plot_data, aes(x=conditions, y=de_genes)) + geom_point(aes(color=conditions), size=6) + facet_grid(. ~ cell_type)  + scale_color_manual(name = 'condition\ncombination', values = unlist(get_color_coding_dict()[unique(plot_data$conditions)])) +
+    #ggplot(data=plot_data, aes(x=conditions, y=de_genes)) + geom_point(aes(color=conditions), size=6) + facet_grid(. ~ cell_type)  + scale_color_manual(name = 'condition\ncombination', values = unlist(get_color_coding_dict()[unique(plot_data$conditions)])) + theme(legend.position = 'none') +
+    ggplot(data=plot_data, aes(x=conditions, y=de_genes)) + geom_point(aes(color=conditions), size=6) + facet_grid(. ~ cell_type)  + scale_color_manual(name = 'condition\ncombination', values = unlist(get_color_coding_dict()[unique(plot_data$conditions)])) +
       xlab('condition combination') + 
-      ylab('number of DE genes')
-      #theme(axis.text.x=element_blank())
+      ylab('number of DE genes') +
+      theme(axis.text.x=element_blank(), 
+            axis.ticks = element_blank(), 
+            legend.title = element_text(size=14), 
+            legend.text = element_text(size=12),
+            axis.title.x = element_text(size=14),
+            axis.title.y = element_text(size=14),
+            axis.text.y = element_text(size=12),
+            strip.text.x = element_text(size=12))
   }
 }
 
@@ -453,7 +460,9 @@ split_label_dict <- function(){
   label_dict[['Baselinet24h']] <- 'Baseline-t24h'
   label_dict[['Baselinet8w']] <- 'Baseline-t8w'
   label_dict[['t24ht8w']] <- 't24h-t8w'
-  label_dict[['UTBaseline']] <- 'UT-t0'
+  label_dict[['UTBaseline']] <- 'HC-t0'
+  label_dict[['UTt24h']] <- 'HC-t24h'
+  label_dict[['UTt8w']] <- 'HC-t8w'
   label_dict[['Baselinet24h']] <- 't0-t24h'
   label_dict[['Baselinet8w']] <- 't0-t8w'
   return(label_dict)
@@ -461,9 +470,9 @@ split_label_dict <- function(){
 
 groups_dict <- function(){
   groups_dict <- list()
-  groups_dict[['UTBaseline']] <- 'UT'
-  groups_dict[['UTt24h']] <- 'UT'
-  groups_dict[['UTt8w']] <- 'UT'
+  groups_dict[['UTBaseline']] <- 'HC'
+  groups_dict[['UTt24h']] <- 'HC'
+  groups_dict[['UTt8w']] <- 'HC'
   groups_dict[['Baselinet24h']] <- 'STEMI'
   groups_dict[['Baselinet8w']] <- 'STEMI'
   groups_dict[['t24ht8w']] <- 'STEMI'
@@ -513,6 +522,9 @@ get_color_coding_dict <- function(){
   color_coding[["UT-t0"]] <- "khaki2"
   color_coding[["UT-t24h"]] <- "khaki4"
   color_coding[["UT-t8w"]] <- "paleturquoise1"
+  color_coding[["HC-t0"]] <- "khaki2"
+  color_coding[["HC-t24h"]] <- "khaki4"
+  color_coding[["HC-t8w"]] <- "paleturquoise1"
   color_coding[["t0-t24h"]] <- "paleturquoise3"
   color_coding[["t0-t8w"]] <- "rosybrown1"
   color_coding[["t24h-t8w"]] <- "rosybrown3"
@@ -524,8 +536,54 @@ get_color_coding_dict <- function(){
   color_coding[["NK"]] <- "#E64B50"
   color_coding[["B"]] <- "#71BC4B"
   color_coding[["DC"]] <- "#965EC8"
+  color_coding[["CD4+ T"]] <- "#153057"
+  color_coding[["CD8+ T"]] <- "#009DDB"
   return(color_coding)
 }
+
+
+get_top_de_genes_per_cond_and_ct <- function(mast_output_loc, pval_column='metap_bonferroni', sig_pval=0.05, max=5, max_by_pval=T, lfc_column='metafc', to_ens=F, symbols.to.ensg.mapping='genes.tsv', cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), stims=c('UT', 'Baseline', 't24h', 't8w')){
+  # create dataframe for cell type
+  df_top_genes <- NULL
+  # make all possible combinations of stims
+  combs <- paste(rep(stims, each = length(stims)), stims, sep = '')
+  # check each cell type
+  for(cell_type in cell_types){
+    # check each combination
+    for(comb in combs){
+      # paste the output location together
+      output_loc_full <- paste(mast_output_loc, cell_type, comb, '.tsv', sep = '')
+      # get the up genes
+      up_de_genes <- get_de_genes_from_mast_file(mast_full_file_path = output_loc_full, pval_column = pval_column, sig_pval = sig_pval, max = max, max_by_pval = max_by_pval, lfc_column = lfc_column, to_ens = to_ens, symbols.to.ensg.mapping = symbols.to.ensg.mapping, only_positive = T)
+      down_de_genes <- get_de_genes_from_mast_file(mast_full_file_path = output_loc_full, pval_column = pval_column, sig_pval = sig_pval, max = max, max_by_pval = max_by_pval, lfc_column = lfc_column, to_ens = to_ens, symbols.to.ensg.mapping = symbols.to.ensg.mapping, only_negative = T)
+      # add to top genes if possible
+      if(!is.null(up_de_genes)){
+        # turn into df
+        up_de_genes_df <- data.frame(a = up_de_genes)
+        colnames(up_de_genes_df) <- paste(cell_type, comb, 'up', sep='_')
+        if(is.null(df_top_genes)){
+          df_top_genes <- up_de_genes_df
+        }
+        else{
+          df_top_genes <- cbind(df_top_genes, up_de_genes_df)
+        }
+      }
+      if(!is.null(down_de_genes)){
+        # turn into df
+        down_de_genes_df <- data.frame(a = down_de_genes)
+        colnames(down_de_genes_df) <- paste(cell_type, comb, 'down', sep='_')
+        if(is.null(df_top_genes)){
+          df_top_genes <- down_de_genes_df
+        }
+        else{
+          df_top_genes <- cbind(df_top_genes, down_de_genes_df)
+        }
+      }
+    }
+  }
+  return(df_top_genes)
+}
+
 
 get_top_vary_genes <- function(de_table, use_tp=T, use_ct=T, sd_cutoff=0.5, use_dynamic_sd=F, top_so_many=10, must_be_positive_once=F, timepoints=c("Baselinet24h", "Baselinet8w", "t24ht8w"), cell_types=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK")){
   top_vary_de <- c()
@@ -633,7 +691,7 @@ get_combined_meta_de_table <- function(meta_output_loc, must_be_positive_once=F,
 }
 
 
-plot_de_vs_cell_type_numbers <- function(mast_output_loc, metadata, timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', 'Baselinet24h', 'Baselinet8w', 't24ht8w'), cell_types_to_use=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK"), pval_column='metap_bonferroni', sig_pval=0.05, plot_separately=T, proportion=F, use_label_dict=T){
+plot_de_vs_cell_type_numbers <- function(mast_output_loc, metadata, timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', 'Baselinet24h', 'Baselinet8w', 't24ht8w'), cell_types_to_use=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK"), pval_column='metap_bonferroni', sig_pval=0.05, plot_separately=F, proportion=F, use_label_dict=T){
   # init table
   table <- NULL
   for(timepoint in timepoints){
@@ -1168,11 +1226,15 @@ get_de_genes_from_mast_file <- function(mast_full_file_path, pval_column='metap_
     if(!is.null(max)){
       # by p if required
       if(max_by_pval){
-        mast <- mast[order(mast[[p_val_column]]), ]
+        mast <- mast[order(mast[[pval_column]]), ]
       }
       # by lfc otherwise
       else{
         mast <- mast[order(mast[[lfc_column]], decreasing = T), ]
+        # if we only have the upregulated genes, order the other way around
+        if(only_positive){
+          mast <- mast[order(mast[[lfc_column]], decreasing = F), ]
+        }
       }
       # subset to the number we requested if max was set
       mast <- mast[1:max,]
@@ -1194,7 +1256,67 @@ get_de_genes_from_mast_file <- function(mast_full_file_path, pval_column='metap_
   return(significant_genes)
 }
 
+get_average_gene_expression_per_ct_and_tp <- function(seurat_object, condition.column = 'timepoint.final', cell.type.column = 'cell_type_lowerres', cell_types_to_use=c("CD4T", "CD8T", "monocyte", "NK", "B", "DC"), conditions=c('UT', 'Baseline', 't24h', 't8w'), assay='RNA'){
+  exp_df <- NULL
+  # calculate for each condition
+  for(condition in conditions){
+    # subset to just the cells of this condition
+    seurat_object_condition <- seurat_object[,seurat_object@meta.data[condition.column] == condition]
+    # calculate for each cell_type
+    for(cell_type in cell_types_to_use){
+      # subset to just the cells of the cell type
+      seurat_object_cell_type <- seurat_object_condition[,seurat_object_condition@meta.data[cell.type.column] == cell_type]
+      # calculate the relevant matrix from the relevant assay
+      exp_df_ct_cond <- NULL
+      if(assay == 'RNA'){
+        DefaultAssay(seurat_object_cell_type) <- 'RNA'
+        averages <- apply(seurat_object_cell_type$RNA@data, 1, mean)
+        exp_df_ct_cond <- data.frame(condition=rep(condition, times = length(averages)), cell_type=rep(cell_type, times = length(averages)), gene=rownames(seurat_object_cell_type$RNA@data), average=averages)
+      }
+      else if(assay == 'SCT'){
+        DefaultAssay(seurat_object_cell_type) <- 'SCT'
+        averages <- apply(seurat_object_cell_type$SCT@counts, 1, mean)
+        exp_df_ct_cond <- data.frame(condition=rep(condition, times = length(averages)), cell_type=rep(cell_type, times = length(averages)), gene=rownames(seurat_object_cell_type$SCT@counts), average=averages)
+      }
+      # paste to the overall df
+      if(is.null(exp_df)){
+        exp_df <- exp_df_ct_cond
+      }
+      else{
+        exp_df <- rbind(exp_df, exp_df_ct_cond)
+      }
+    }
+  }
+  return(exp_df)
+}
 
+avg_exp_table_to_hm_table <- function(expression_table){
+  # initialise table
+  hm_table <- NULL
+  # go through the conditions
+  for(condition in unique(expression_table$condition)){
+    # get the expression for that table
+    expression_table_cond <- expression_table[expression_table$condition == condition, c('gene', 'average')]
+    # set colnames so that we can merge these later
+    colnames(expression_table_cond) <- c('gene', condition)
+    # convert to data.table for efficient merging
+    expression_table_cond <- data.table(expression_table_cond)
+    # try to merge if necessary
+    if(is.null(hm_table)){
+      hm_table <- expression_table_cond
+    }
+    else{
+      hm_table <- merge(hm_table, expression_table_cond, by='gene')
+    }
+  }
+  # convert back to regular dataframe
+  hm_table <- data.frame(hm_table)
+  # set rownames
+  rownames(hm_table) <- hm_table$gene
+  # remove the old gene column
+  hm_table$gene <- NULL
+  return(hm_table)
+}
 
 ####################
 # Main Code        #
@@ -1605,11 +1727,53 @@ plot_de_vs_cell_type_numbers(mast_meta_output_loc_lfc01, meta.data, plot_separat
 plot_de_vs_cell_type_numbers(mast_meta_output_loc_lfc01, meta.data, plot_separately = F, proportion = F)
 plot_de_vs_cell_type_numbers(mast_meta_output_loc_lfc01, meta.data, plot_separately = F, proportion = F, cell_types_to_use = c('monocyte'))
 
+# get a table of the number of DE genes
+de_numbers_table <- de_genes_number_to_table(mast_meta_output_loc_lfc01)
+de_numbers_table_up <- de_genes_number_to_table(mast_meta_output_loc_lfc01, only_positive = T)
+de_numbers_table_down <- de_genes_number_to_table(mast_meta_output_loc_lfc01, only_negative = T)
+# plot the number of DE genes
+numbers_table_to_plot(de_numbers_table)
+numbers_table_to_plot(de_numbers_table, use_groups_dict = F, cols_include = c('UTBaseline', 'UTt24h', 'UTt8w'))
+numbers_table_to_plot(de_numbers_table, use_groups_dict = F, cols_include = c('Baselinet24h', 'Baselinet8w', 't24ht8w'))
 
 # specifically for monocytes, check the number of DE genes and the fractional differences of their sub-celltype populations
-plot_de_number_vs_subcell_population(mast_meta_output_loc_lfc01, 'monocyte', 'mono 1', meta.data, timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', "Baselinet24h", "Baselinet8w", "t24ht8w"), cell_type_column_higherres='cell_type', cell_type_column_lowerres='cell_type_lowerres', make_absolute=F)
-plot_de_number_vs_subcell_population(mast_meta_output_loc_lfc01, 'monocyte', 'mono 1', meta.data[meta.data$chem=='V2',], timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', "Baselinet24h", "Baselinet8w", "t24ht8w"), cell_type_column_higherres='cell_type', cell_type_column_lowerres='cell_type_lowerres', make_absolute=F)
-plot_de_number_vs_subcell_population(mast_meta_output_loc_lfc01, 'monocyte', 'mono 1', meta.data[meta.data$chem=='V3',], timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', "Baselinet24h", "Baselinet8w", "t24ht8w"), cell_type_column_higherres='cell_type', cell_type_column_lowerres='cell_type_lowerres', make_absolute=F)
+plot_de_number_vs_subcell_population(mast_meta_output_loc_lfc01, 'monocyte', 'cMono', meta.data, timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', "Baselinet24h", "Baselinet8w", "t24ht8w"), cell_type_column_higherres='cell_type', cell_type_column_lowerres='cell_type_lowerres', make_absolute=F)
+plot_de_number_vs_subcell_population(mast_meta_output_loc_lfc01, 'monocyte', 'cMono', meta.data[meta.data$chem=='V2',], timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', "Baselinet24h", "Baselinet8w", "t24ht8w"), cell_type_column_higherres='cell_type', cell_type_column_lowerres='cell_type_lowerres', make_absolute=F)
+plot_de_number_vs_subcell_population(mast_meta_output_loc_lfc01, 'monocyte', 'cMono', meta.data[meta.data$chem=='V3',], timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', "Baselinet24h", "Baselinet8w", "t24ht8w"), cell_type_column_higherres='cell_type', cell_type_column_lowerres='cell_type_lowerres', make_absolute=F)
+
+# get the top five for each cell type and cell type and condition in terms of up/down regulated genes
+top_fives_de_genes <- get_top_de_genes_per_cond_and_ct(mast_meta_output_loc_lfc01, max_by_pval = F, stims = c('Baseline', 't24h', 't8w'))
+# get the monocyte genes
+mono_up_or_down_genes <- as.vector(unlist(top_fives_de_genes[, colnames(top_fives_de_genes)[grep('monocyte', colnames(top_fives_de_genes))]]))
+# plotting the expression instead of the LFC
+v2_exp_loc <- '/data/cardiology/differential_expression/cardio.integrated.v2.20201209.avg.exp.tsv'
+v3_exp_loc <- '/data/cardiology/differential_expression/cardio.integrated.v3.20201209.avg.exp.tsv'
+# get expression
+v2_exp <- read.table(v2_exp_loc, sep = '\t', header = T)
+v3_exp <- read.table(v3_exp_loc, sep = '\t', header = T)
+# confine to DE genes selected
+v2_exp_de <- v2_exp[v2_exp$gene %in% mono_up_or_down_genes,]
+v3_exp_de <- v3_exp[v3_exp$gene %in% mono_up_or_down_genes,]
+# grab only the monocytes
+cell_types_to_use <- c('monocyte')
+conditions_to_use <- c('Baseline', 't24h', 't8w')
+v2_exp_de <- v2_exp_de[v2_exp_de$cell_type %in% cell_types_to_use, ]
+v3_exp_de <- v3_exp_de[v3_exp_de$cell_type %in% cell_types_to_use, ]
+v2_exp_de <- v2_exp_de[v2_exp_de$condition %in% conditions_to_use, ]
+v3_exp_de <- v3_exp_de[v3_exp_de$condition %in% conditions_to_use, ]
+# turn into hm
+v2_exp_hm_format <- avg_exp_table_to_hm_table(v2_exp_de)
+v3_exp_hm_format <- avg_exp_table_to_hm_table(v3_exp_de)
+# replace Baseline with t0
+colnames(v2_exp_hm_format) <- gsub('Baseline', 't0', colnames(v2_exp_hm_format))
+colnames(v3_exp_hm_format) <- gsub('Baseline', 't0', colnames(v3_exp_hm_format))
+
+# plot
+heatmap.3((as.matrix(v2_exp_hm_format)),
+          col=rev(brewer.pal(10,"RdBu")), margins=c(6,10), dendrogram = 'none')
+heatmap.3((as.matrix(v3_exp_hm_format)),
+          col=rev(brewer.pal(10,"RdBu")), margins=c(6,10), dendrogram = 'none')
+
 
 # plot the sharing of DE genes
 plot_DE_sharing_per_celltype('UTBaseline', mast_meta_output_loc_lfc01)
