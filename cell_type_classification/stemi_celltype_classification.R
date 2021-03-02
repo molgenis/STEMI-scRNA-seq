@@ -91,7 +91,7 @@ cd8t <- c('MAIT', 'CD8_Naive', 'CD8_TCM', 'CD8_TEM', 'CD8_Proliferating')
 t_other <- c('dnT', 'gdT', 'ILC')
 nk <- c('NKdim', 'NKbright', 'NK_Proliferating')
 monocyte <- c('cMono', 'ncMono')
-dc <- c('cDC1', 'cDC2', 'pDC')
+dc <- c('cDC1', 'cDC2', 'pDC', 'ASDC')
 b <- c('B_naive', 'B_intermediate', 'B_memory')
 # add the new column by copying the higher res first, 
 cardio.integrated@meta.data$cell_type_lowerres <- cardio.integrated@meta.data$cell_type
