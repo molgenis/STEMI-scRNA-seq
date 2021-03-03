@@ -3,8 +3,7 @@
 ####################
 
 library(ggplot2)
-library(reshape2)
-library(dplyr)
+library(GGally)
 
 ####################
 # Functions        #
@@ -153,6 +152,64 @@ metadata_to_ggally_table <- function(metadata, cell_type_column='cell_type_lower
   return(number_matrix)
 }
 
+get_cell_types_per_condition <- function(numbers_table){
+  aggregate_df <- NULL
+  # check per condition
+  for(condition in unique(numbers_table$condition)){
+    # subset to condition
+    numbers_condition <- numbers_table[numbers_table$condition == condition, ]
+    # count total number of cells in condition
+    nr_condition <- sum(numbers_condition$number)
+    # check cell types
+    for(cell_type in unique(numbers_condition$cell_type)){
+      # subset to cell type
+      numbers_condition_cell_type <- numbers_condition[numbers_condition$cell_type == cell_type, ]
+      # count total number of cells of cell type in condition
+      nr_condition_cell_type <- sum(numbers_condition_cell_type$number)
+      # calculate the fraction
+      fraction <- nr_condition_cell_type / nr_condition
+      # add to dataframe
+      aggregate_row <- data.frame(condition=c(condition), cell_type=c(cell_type), number=c(nr_condition_cell_type), fraction=c(fraction))
+      if(is.null(aggregate_df)){
+        aggregate_df <- aggregate_row
+      }
+      else{
+        aggregate_df <- rbind(aggregate_df, aggregate_row)
+      }
+    }
+  }
+  return(aggregate_df)
+}
+
+plot_cell_type_per_condition_bars <- function(numbers_per_cond, to_fraction=T, use_label_dict=T, split_chem=F){
+  # get prettier labels if requested
+  if(use_label_dict){
+    numbers_per_cond$condition <- as.vector(unlist(label_dict()[numbers_per_cond$condition]))
+    numbers_per_cond$cell_type <- as.vector(unlist(label_dict()[numbers_per_cond$cell_type]))
+  }
+  # init plot
+  p <- NULL
+  # use either the absolute or relative numbers
+  if(to_fraction){
+    p <- ggplot(numbers_per_cond, aes(x=condition, y=fraction, fill=cell_type))
+  }
+  else{
+    p <- ggplot(numbers_per_cond, aes(x=condition, y=number, fill=cell_type))
+  }
+  # set colors based on condition
+  cc <- get_color_coding_dict()
+  colScale <- scale_fill_manual(name = 'cell type',values = unlist(cc[numbers_per_cond$cell_type]))
+  # create plot
+  p <- p + geom_bar(position='stack', stat='identity') +
+    colScale
+  # split by chem if possible
+  if(split_chem){
+    p <- p + facet_grid(. ~ chem)
+  }
+  return(p)
+}
+
+
 get_color_coding_dict <- function(){
   # set the condition colors
   color_coding <- list()
@@ -198,11 +255,17 @@ get_color_coding_dict <- function(){
   color_coding[["DC"]] <- "#965EC8"
   color_coding[["CD4+ T"]] <- "#153057"
   color_coding[["CD8+ T"]] <- "#009DDB"
+  # other cell type colors
+  color_coding[["HSPC"]] <- "#009E94"
+  color_coding[["platelet"]] <- "#9E1C00"
+  color_coding[["plasmablast"]] <- "#DB8E00"
+  color_coding[["other T"]] <- "#FF63B6"
   return(color_coding)
 }
 
 label_dict <- function(){
   label_dict <- list()
+  # condition combinations
   label_dict[['UTBaseline']] <- 'UT-Baseline'
   label_dict[['UTt24h']] <- 'UT-t24h'
   label_dict[['UTt8w']] <- 'UT-t8w'
@@ -214,10 +277,12 @@ label_dict <- function(){
   label_dict[['UTt8w']] <- 'HC-t8w'
   label_dict[['Baselinet24h']] <- 't0-t24h'
   label_dict[['Baselinet8w']] <- 't0-t8w'
+  # conditions
   label_dict[['UT']] <- 'HC'
   label_dict[['Baseline']] <- 't0'
   label_dict[['t24h']] <- 't24h'
   label_dict[['t8w']] <- 't8w'
+  # major cell types
   label_dict[["Bulk"]] <- "bulk-like"
   label_dict[["CD4T"]] <- "CD4+ T"
   label_dict[["CD8T"]] <- "CD8+ T"
@@ -229,6 +294,33 @@ label_dict <- function(){
   label_dict[["plasmablast"]] <- "plasmablast"
   label_dict[["platelet"]] <- "platelet"
   label_dict[["T_other"]] <- "other T"
+  # minor cell types
+  label_dict[["CD4_TCM"]] <- "CD4 TCM"
+  label_dict[["Treg"]] <- "T regulatory"
+  label_dict[["CD4_Naive"]] <- "CD4 naive"
+  label_dict[["CD4_CTL"]] <- "CD4 CTL"
+  label_dict[["CD8_TEM"]] <- "CD8 TEM"
+  label_dict[["cMono"]] <- "cMono"
+  label_dict[["CD8_TCM"]] <- "CD8 TCM"
+  label_dict[["ncMono"]] <- "ncMono"
+  label_dict[["cDC2"]] <- "cDC2"
+  label_dict[["B_intermediate"]] <- "B intermediate"
+  label_dict[["NKdim"]] <- "NK dim"
+  label_dict[["pDC"]] <- "pDC"
+  label_dict[["ASDC"]] <- "ASDC"
+  label_dict[["CD8_Naive"]] <- "CD8 naive"
+  label_dict[["MAIT"]] <- "MAIT"
+  label_dict[["CD8_Proliferating"]] <- "CD8 proliferating"
+  label_dict[["CD4_TEM"]] <- "CD4 TEM"
+  label_dict[["B_memory"]] <- "B memory"
+  label_dict[["NKbright"]] <- "NK bright"
+  label_dict[["B_naive"]] <- "B naive"
+  label_dict[["gdT"]] <- "gamma delta T"
+  label_dict[["CD4_Proliferating"]] <- "CD4 proliferating"
+  label_dict[["NK_Proliferating"]] <- "NK proliferating"
+  label_dict[["cDC1"]] <- "cDC1"
+  label_dict[["ILC"]] <- "ILC"
+  label_dict[["dnT"]] <- "double negative T"
   return(label_dict)
 }
 
@@ -244,15 +336,45 @@ meta.data <- read.table(meta.data.loc, sep = '\t', header = T, row.names = 1)
 cell_numbers <- metadata_to_ct_table(meta.data)
 # plot the cell numbers
 plot_ct_numbers_boxplot(numbers_table = cell_numbers, to_fraction = F, legendless = F, pointless = T)
+# change to scaled cell numbers
+cell_numbers_baselinescaled <- scale_cell_numbers_to_condition(cell_numbers, c('t24h', 't8w'), 'Baseline')
+# plot these scaled numbers
+plot_ct_numbers_boxplot(numbers_table = cell_numbers_baselinescaled, pointless = T)
+
 # use the gally method to plot the cell numbers
 cell_numbers_gally_stemi <- metadata_to_ggally_table(meta.data[meta.data$orig.ident == 'stemi_v2' | meta.data$orig.ident == 'stemi_v3', ])
 ggparcoord(cell_numbers_gally_stemi[cell_numbers_gally_stemi$cell_type == 'monocyte', ], columns = c(4,3,5), groupColumn = 'assignment')
 # do the same, but with fractions
 cell_numbers_gally_stemi_frac <- metadata_to_ggally_table(meta.data[meta.data$orig.ident == 'stemi_v2' | meta.data$orig.ident == 'stemi_v3', ], to_fraction = T)
 ggparcoord(cell_numbers_gally_stemi_frac[cell_numbers_gally_stemi_frac$cell_type == 'monocyte', ], columns = c(4,3,5), groupColumn = 'assignment')
-# change to scaled cell numbers
-cell_numbers_baselinescaled <- scale_cell_numbers_to_condition(cell_numbers, c('t24h', 't8w'), 'Baseline')
-# plot these scaled numbers
-plot_ct_numbers_boxplot(numbers_table = cell_numbers_baselinescaled, pointless = T)
+# now with the lfc of fractions
+cell_numbers_gally_stemi_frac_baselinescaled <- cell_numbers_gally_stemi_frac[, c('assignment', 'cell_type')]
+cell_numbers_gally_stemi_frac_baselinescaled$t0_t0 <- log2(as.numeric(cell_numbers_gally_stemi_frac$Baseline) / as.numeric(cell_numbers_gally_stemi_frac$Baseline))
+cell_numbers_gally_stemi_frac_baselinescaled$t24h_t0 <- log2(as.numeric(cell_numbers_gally_stemi_frac$t24h) / as.numeric(cell_numbers_gally_stemi_frac$Baseline))
+cell_numbers_gally_stemi_frac_baselinescaled$t8w_t0 <- log2(as.numeric(cell_numbers_gally_stemi_frac$t8w) / as.numeric(cell_numbers_gally_stemi_frac$Baseline))
+ggparcoord(cell_numbers_gally_stemi_frac_baselinescaled[cell_numbers_gally_stemi_frac_baselinescaled$cell_type == 'monocyte' & cell_numbers_gally_stemi_frac_baselinescaled$assignment != 'TEST_81', ], columns = c(3,4,5), groupColumn = 'assignment', scale = 'globalminmax')
 
+
+# set the fraction as the number
+cell_numbers_fracasnr <- cell_numbers
+cell_numbers_fracasnr$number <- cell_numbers_fracasnr$fraction
+# scale that
+cell_numbers_fracasnr_baselinescaled <- scale_cell_numbers_to_condition(cell_numbers_fracasnr, c('t24h', 't8w'), 'Baseline')
+# set label correctly again
+cell_numbers_fracasnr_baselinescaled$fraction <- cell_numbers_fracasnr_baselinescaled$number
+# plot
+plot_ct_numbers_boxplot(numbers_table = cell_numbers_fracasnr_baselinescaled, pointless = T, to_fraction = T)
+
+# get cell numbers regardless of the participant
+numbers_per_cond <- get_cell_types_per_condition(numbers_table = cell_numbers)
+plot_cell_type_per_condition_bars(numbers_per_cond)
+# now for v2 and v3 separately
+cell_numbers_v2 <- metadata_to_ct_table(meta.data[meta.data$chem == 'V2', ])
+cell_numbers_v3 <- metadata_to_ct_table(meta.data[meta.data$chem == 'V3', ])
+numbers_per_cond_v2 <- get_cell_types_per_condition(numbers_table = cell_numbers_v2)
+numbers_per_cond_v3 <- get_cell_types_per_condition(numbers_table = cell_numbers_v3)
+numbers_per_cond_v2$chem <- 'V2'
+numbers_per_cond_v3$chem <- 'V3'
+numbers_per_cond_chemsplit <- rbind(numbers_per_cond_v2, numbers_per_cond_v3)
+plot_cell_type_per_condition_bars(numbers_per_cond_chemsplit, split_chem = T)
 
