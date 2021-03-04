@@ -21,13 +21,13 @@ metadata_to_ct_table <- function(metadata, cell_type_column='cell_type_lowerres'
       # subset to that participant
       metadata.tp.part <- metadata.tp[metadata.tp[[assignment.column]] == participant, ]
       # get the total number of cells
-      total_cells <- nrow(metadata.tp)
+      total_cells <- nrow(metadata.tp.part)
       # check each cell type
       for(cell_type in unique(metadata.tp.part[[cell_type_column]])){
         # get that number of cells
         nr_cells <- nrow(metadata.tp.part[metadata.tp.part[[cell_type_column]] == cell_type, ])
         # turn into that dataframe
-        nr_cells_df <- data.frame(participant=c(participant), condition=c(timepoint), cell_type=c(cell_type), number=c(nr_cells), fraction=c(nr_cells/total_cells))
+        nr_cells_df <- data.frame(participant=c(participant), condition=c(timepoint), cell_type=c(cell_type), number=c(nr_cells), fraction=c(nr_cells/total_cells), stringsAsFactors = F)
         # add to existing dataframe
         if(is.null(cell_type_table)){
           cell_type_table <- nr_cells_df
@@ -61,7 +61,7 @@ scale_cell_numbers_to_condition <- function(cell_numbers, timepoints_to_scale, t
           # log2 transform
           scaled <- log2(scaled)
           # add to table
-          scaled_df <- data.frame(participant=c(participant), condition=c(timepoint_to_scale), cell_type=c(cell_type), number=c(scaled))
+          scaled_df <- data.frame(participant=c(participant), condition=c(timepoint_to_scale), cell_type=c(cell_type), number=c(scaled), stringsAsFactors = F)
           if(is.null(scaled_number_table)){
             scaled_number_table <- scaled_df
           }
@@ -209,6 +209,64 @@ plot_cell_type_per_condition_bars <- function(numbers_per_cond, to_fraction=T, u
   return(p)
 }
 
+get_cell_numbers <- function(metadata, cell_type_to_check, conditions=c('Baseline', 't24h', 't8w'), cell_type_column='cell_type_lowerres', condition_column='timepoint.final', assignment_column='assignment.final' ){
+  counts <- NULL
+  # check each participant
+  for(participant in unique(metadata[[assignment_column]])){
+    numbers <- c(participant)
+    # check each timepoint
+    for(condition in conditions){
+      # get the total number of cells in this condition
+      total <- nrow(metadata[metadata[[assignment_column]] == participant & metadata[[condition_column]] == condition, ])
+      # get the cells of the cell type
+      ct <- nrow(metadata[metadata[[assignment_column]] == participant & metadata[[condition_column]] == condition & metadata[[cell_type_column]] == cell_type_to_check, ])
+      numbers <- c(numbers, total, ct)
+    }
+    # add to table
+    if(is.null(counts)){
+      # create the table if non-existant
+      counts <- data.frame(t(matrix(numbers)), stringsAsFactors = F)
+      each_number <- c('all', cell_type_to_check)
+      ct_tp_combinations <- paste(rep(conditions, each = length(each_number)), each_number, sep = "_")
+      # put the participant in there, and the columns of each time point wiht 'all' and the cell type we are looking at
+      colnames(counts) <- c('participant', ct_tp_combinations)
+    }
+    else{
+      counts <- rbind(counts, numbers)
+    }
+  }
+  return(counts)
+}
+
+metadata_to_ct_table_per_column <- function(metadata, cell_type_column='cell_type_lowerres', timepoint.column='timepoint.final', timepoints_to_check=NULL, cell_types_to_check=NULL){
+  # check either cell types provided or all
+  cell_types <- cell_types_to_check
+  if(is.null(cell_types)){
+    cell_types <- unique(metadata[[cell_type_column]])
+  }
+  # check either timepoints provided or all
+  timepoints <- timepoints_to_check
+  if(is.null(timepoints)){
+    timepoints <- unique(metadata[[timepoint.column]])
+  }
+  # init the matrix
+  numbers_table <- matrix(, nrow=length(timepoints), ncol=length(cell_types), dimnames = list(timepoints, cell_types))
+  # check each timepoint
+  for(timepoint in intersect(timepoints, unique(metadata[[timepoint.column]]))){
+    # subset to that timepoint
+    metadata.tp <- metadata[metadata[[timepoint.column]] == timepoint, ]
+    # check each cell type
+    for(cell_type in intersect(cell_types, unique(metadata.tp[[cell_type_column]]))){
+      # get the number of cells
+      nr_of_cells <- nrow(metadata.tp[metadata.tp[[cell_type_column]] == cell_type, ])
+      # add to the matrix
+      numbers_table[timepoint, cell_type] <- nr_of_cells
+    }
+  }
+  # I like dataframes
+  numbers_table <- data.frame(numbers_table)
+  return(numbers_table)
+}
 
 get_color_coding_dict <- function(){
   # set the condition colors
@@ -331,7 +389,7 @@ label_dict <- function(){
 # location of the metadata
 meta.data.loc <- '/data/cardiology/metadata/cardio.integrated.20210301.metadata.tsv'
 # read into table
-meta.data <- read.table(meta.data.loc, sep = '\t', header = T, row.names = 1)
+meta.data <- read.table(meta.data.loc, sep = '\t', header = T, row.names = 1, stringsAsFactors = F)
 # get the cell numbers
 cell_numbers <- metadata_to_ct_table(meta.data)
 # plot the cell numbers
@@ -353,7 +411,6 @@ cell_numbers_gally_stemi_frac_baselinescaled$t0_t0 <- log2(as.numeric(cell_numbe
 cell_numbers_gally_stemi_frac_baselinescaled$t24h_t0 <- log2(as.numeric(cell_numbers_gally_stemi_frac$t24h) / as.numeric(cell_numbers_gally_stemi_frac$Baseline))
 cell_numbers_gally_stemi_frac_baselinescaled$t8w_t0 <- log2(as.numeric(cell_numbers_gally_stemi_frac$t8w) / as.numeric(cell_numbers_gally_stemi_frac$Baseline))
 ggparcoord(cell_numbers_gally_stemi_frac_baselinescaled[cell_numbers_gally_stemi_frac_baselinescaled$cell_type == 'monocyte' & cell_numbers_gally_stemi_frac_baselinescaled$assignment != 'TEST_81', ], columns = c(3,4,5), groupColumn = 'assignment', scale = 'globalminmax')
-
 
 # set the fraction as the number
 cell_numbers_fracasnr <- cell_numbers
@@ -377,4 +434,23 @@ numbers_per_cond_v2$chem <- 'V2'
 numbers_per_cond_v3$chem <- 'V3'
 numbers_per_cond_chemsplit <- rbind(numbers_per_cond_v2, numbers_per_cond_v3)
 plot_cell_type_per_condition_bars(numbers_per_cond_chemsplit, split_chem = T)
+ggsave('~/Desktop/cardio.integrated.20210301.cell_type_proportions_lowerres_overall_per_chem.pdf', width = 10, height = 5)
+
+# create the cell type number tables as required in the supplements
+ct_tbl <- metadata_to_ct_table_per_column(meta.data)
+ct_tbl_hr <- metadata_to_ct_table_per_column(meta.data, cell_type_column = 'cell_type')
+# make the col and rownames prettier
+colnames(ct_tbl) <- as.vector(unlist(label_dict()[colnames(ct_tbl)]))
+rownames(ct_tbl) <- as.vector(unlist(label_dict()[rownames(ct_tbl)]))
+colnames(ct_tbl_hr) <- as.vector(unlist(label_dict()[colnames(ct_tbl_hr)]))
+rownames(ct_tbl_hr) <- as.vector(unlist(label_dict()[rownames(ct_tbl_hr)]))
+
+# Generating monocyte variables
+cell_numbers_gally_stemi_frac_baselinescaled_wgroups <- cell_numbers_gally_stemi_frac_baselinescaled
+cell_numbers_gally_stemi_frac_baselinescaled_wgroups$group_t24h <- NA
+cell_numbers_gally_stemi_frac_baselinescaled_wgroups[!is.na(cell_numbers_gally_stemi_frac_baselinescaled_wgroups$t24h_t0) & cell_numbers_gally_stemi_frac_baselinescaled_wgroups$t24h_t0 >= 0.5, "group_t24h" ] <- "higher"
+cell_numbers_gally_stemi_frac_baselinescaled_wgroups[!is.na(cell_numbers_gally_stemi_frac_baselinescaled_wgroups$t24h_t0) & cell_numbers_gally_stemi_frac_baselinescaled_wgroups$t24h_t0 <= -0.5, "group_t24h" ] <- "lower"
+cell_numbers_gally_stemi_frac_baselinescaled_wgroups[!is.na(cell_numbers_gally_stemi_frac_baselinescaled_wgroups$t24h_t0) & cell_numbers_gally_stemi_frac_baselinescaled_wgroups$t24h_t0 > -0.5 & cell_numbers_gally_stemi_frac_baselinescaled$t24h_t0 < 0.5, "group_t24h" ] <- "steady"
+cell_numbers_gally_stemi_frac_baselinescaled_wgroups_monos <- cell_numbers_gally_stemi_frac_baselinescaled_wgroups[cell_numbers_gally_stemi_frac_baselinescaled_wgroups$cell_type == "monocyte", ]
+
 
