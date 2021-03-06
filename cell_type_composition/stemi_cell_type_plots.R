@@ -407,10 +407,14 @@ cell_numbers_gally_stemi_frac <- metadata_to_ggally_table(meta.data[meta.data$or
 ggparcoord(cell_numbers_gally_stemi_frac[cell_numbers_gally_stemi_frac$cell_type == 'monocyte', ], columns = c(4,3,5), groupColumn = 'assignment')
 # now with the lfc of fractions
 cell_numbers_gally_stemi_frac_baselinescaled <- cell_numbers_gally_stemi_frac[, c('assignment', 'cell_type')]
-cell_numbers_gally_stemi_frac_baselinescaled$t0_t0 <- log2(as.numeric(cell_numbers_gally_stemi_frac$Baseline) / as.numeric(cell_numbers_gally_stemi_frac$Baseline))
-cell_numbers_gally_stemi_frac_baselinescaled$t24h_t0 <- log2(as.numeric(cell_numbers_gally_stemi_frac$t24h) / as.numeric(cell_numbers_gally_stemi_frac$Baseline))
-cell_numbers_gally_stemi_frac_baselinescaled$t8w_t0 <- log2(as.numeric(cell_numbers_gally_stemi_frac$t8w) / as.numeric(cell_numbers_gally_stemi_frac$Baseline))
+#cell_numbers_gally_stemi_frac_baselinescaled$t0_t0 <- log2(as.numeric(cell_numbers_gally_stemi_frac$Baseline) / as.numeric(cell_numbers_gally_stemi_frac$Baseline))
+#cell_numbers_gally_stemi_frac_baselinescaled$t24h_t0 <- log2(as.numeric(cell_numbers_gally_stemi_frac$t24h) / as.numeric(cell_numbers_gally_stemi_frac$Baseline))
+#cell_numbers_gally_stemi_frac_baselinescaled$t8w_t0 <- log2(as.numeric(cell_numbers_gally_stemi_frac$t8w) / as.numeric(cell_numbers_gally_stemi_frac$Baseline))
+cell_numbers_gally_stemi_frac_baselinescaled$t24h_t0 <- apply(cell_numbers_gally_stemi_frac, 1, function(x){log2(as.numeric(x['Baseline']) / as.numeric(x['Baseline']))})
+cell_numbers_gally_stemi_frac_baselinescaled$t24h_t0 <- apply(cell_numbers_gally_stemi_frac, 1, function(x){log2(as.numeric(x['t24h']) / as.numeric(x['Baseline']))})
+cell_numbers_gally_stemi_frac_baselinescaled$t8w_t0 <- apply(cell_numbers_gally_stemi_frac, 1, function(x){log2(as.numeric(x['t8w']) / as.numeric(x['Baseline']))})
 ggparcoord(cell_numbers_gally_stemi_frac_baselinescaled[cell_numbers_gally_stemi_frac_baselinescaled$cell_type == 'monocyte' & cell_numbers_gally_stemi_frac_baselinescaled$assignment != 'TEST_81', ], columns = c(3,4,5), groupColumn = 'assignment', scale = 'globalminmax')
+
 
 # set the fraction as the number
 cell_numbers_fracasnr <- cell_numbers
@@ -444,13 +448,3 @@ colnames(ct_tbl) <- as.vector(unlist(label_dict()[colnames(ct_tbl)]))
 rownames(ct_tbl) <- as.vector(unlist(label_dict()[rownames(ct_tbl)]))
 colnames(ct_tbl_hr) <- as.vector(unlist(label_dict()[colnames(ct_tbl_hr)]))
 rownames(ct_tbl_hr) <- as.vector(unlist(label_dict()[rownames(ct_tbl_hr)]))
-
-# Generating monocyte variables
-cell_numbers_gally_stemi_frac_baselinescaled_wgroups <- cell_numbers_gally_stemi_frac_baselinescaled
-cell_numbers_gally_stemi_frac_baselinescaled_wgroups$group_t24h <- NA
-cell_numbers_gally_stemi_frac_baselinescaled_wgroups[!is.na(cell_numbers_gally_stemi_frac_baselinescaled_wgroups$t24h_t0) & cell_numbers_gally_stemi_frac_baselinescaled_wgroups$t24h_t0 >= 0.5, "group_t24h" ] <- "higher"
-cell_numbers_gally_stemi_frac_baselinescaled_wgroups[!is.na(cell_numbers_gally_stemi_frac_baselinescaled_wgroups$t24h_t0) & cell_numbers_gally_stemi_frac_baselinescaled_wgroups$t24h_t0 <= -0.5, "group_t24h" ] <- "lower"
-cell_numbers_gally_stemi_frac_baselinescaled_wgroups[!is.na(cell_numbers_gally_stemi_frac_baselinescaled_wgroups$t24h_t0) & cell_numbers_gally_stemi_frac_baselinescaled_wgroups$t24h_t0 > -0.5 & cell_numbers_gally_stemi_frac_baselinescaled$t24h_t0 < 0.5, "group_t24h" ] <- "steady"
-cell_numbers_gally_stemi_frac_baselinescaled_wgroups_monos <- cell_numbers_gally_stemi_frac_baselinescaled_wgroups[cell_numbers_gally_stemi_frac_baselinescaled_wgroups$cell_type == "monocyte", ]
-
-
