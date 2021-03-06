@@ -1326,13 +1326,13 @@ avg_exp_table_to_hm_table <- function(expression_table){
 #mast_output_prepend <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/differential_expression/MAST/results/stemi_v'
 mast_output_prepend <- '/data/cardiology/differential_expression/MAST/results/stemi_v'
 #mast_output_append <- '_paired_lores_20200707/rna/'
-mast_output_append <- '_paired_lores_lfc025minpct01ncountrna_20201209/rna/'
-mast_output_append_lfc01 <- '_paired_lores_lfc01minpct01ncountrna_20201209/rna/'
+mast_output_append <- '_paired_lores_lfc025minpct01ncountrna_20210301/rna/'
+mast_output_append_lfc01 <- '_paired_lores_lfc01minpct01ncountrna_20210301/rna/'
 # write the location of the combined output
 #mast_meta_output_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/differential_expression/MAST/results/stemi_meta_paired_lores_20200707/rna/'
 #mast_meta_output_loc <- '/data/cardiology/differential_expression/MAST/results/stemi_meta_paired_lores_20200707/rna/'
 #mast_meta_output_loc <- '/data/cardiology/differential_expression/MAST/results/stemi_meta_paired_lores_lfc025minpct01ncountrna_20200707/rna/'
-mast_meta_output_loc_lfc01 <- '/data/cardiology/differential_expression/MAST/results/stemi_meta_paired_lores_lfc01minpct01ncountrna_20201209/rna/'
+mast_meta_output_loc_lfc01 <- '/data/cardiology/differential_expression/MAST/results/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/rna/'
 
 # write meta output
 write_meta_mast(mast_output_prepend, mast_output_append, mast_meta_output_loc)
@@ -1363,27 +1363,27 @@ sig_down_output_loc_gs <- '/data/cardiology/differential_expression/sigs_neg/met
 get_significant_genes(mast_meta_output_loc, sig_down_output_loc, only_negative = T, to_ens = T, symbols.to.ensg.mapping = gene_to_ens_mapping)
 get_significant_genes(mast_meta_output_loc, sig_down_output_loc_gs, only_negative = T, to_ens = F, symbols.to.ensg.mapping = gene_to_ens_mapping)
 # for the lfc01 output as well
-sig_output_loc_lfc01 <- '/data/cardiology/differential_expression/sigs/meta_paired_lores_lfc01minpct01_20201209_ensid/rna/'
-sig_output_loc_gs_lfc01 <- '/data/cardiology/differential_expression/sigs/meta_paired_lores_lfc01minpct01_20201209/rna/'
+sig_output_loc_lfc01 <- '/data/cardiology/differential_expression/sigs/meta_paired_lores_lfc01minpct01_20210301_ensid/rna/'
+sig_output_loc_gs_lfc01 <- '/data/cardiology/differential_expression/sigs/meta_paired_lores_lfc01minpct01_20210301/rna/'
 # write the significant genes
 get_significant_genes(mast_meta_output_loc_lfc01, sig_output_loc_lfc01, to_ens = T, symbols.to.ensg.mapping = gene_to_ens_mapping)
 get_significant_genes(mast_meta_output_loc_lfc01, sig_output_loc_gs_lfc01, to_ens = F, symbols.to.ensg.mapping = gene_to_ens_mapping)
 # set the location for the significant genes that were upregulated
-sig_up_output_loc_lfc01 <- '/data/cardiology/differential_expression/sigs_pos/meta_paired_lores_lfc01minpct01_20201209_ensid/rna/'
-sig_up_output_loc_gs_lfc01 <- '/data/cardiology/differential_expression/sigs_pos/meta_paired_lores_lfc01minpct01_20201209/rna/'
+sig_up_output_loc_lfc01 <- '/data/cardiology/differential_expression/sigs_pos/meta_paired_lores_lfc01minpct01_20210301_ensid/rna/'
+sig_up_output_loc_gs_lfc01 <- '/data/cardiology/differential_expression/sigs_pos/meta_paired_lores_lfc01minpct01_20210301/rna/'
 # write the significantly upregulated genes
 get_significant_genes(mast_meta_output_loc_lfc01, sig_up_output_loc_lfc01, only_positive = T, to_ens = T, symbols.to.ensg.mapping = gene_to_ens_mapping)
 get_significant_genes(mast_meta_output_loc_lfc01, sig_up_output_loc_gs_lfc01, only_positive = T, to_ens = F, symbols.to.ensg.mapping = gene_to_ens_mapping)
 # set the location for the significant genes that were upregulated
-sig_down_output_loc_lfc01 <- '/data/cardiology/differential_expression/sigs_neg/meta_paired_lores_lfc01minpct01_20201209_ensid/rna/'
-sig_down_output_loc_gs_lfc01 <- '/data/cardiology/differential_expression/sigs_neg/meta_paired_lores_lfc01minpct01_20201209/rna/'
+sig_down_output_loc_lfc01 <- '/data/cardiology/differential_expression/sigs_neg/meta_paired_lores_lfc01minpct01_20210301_ensid/rna/'
+sig_down_output_loc_gs_lfc01 <- '/data/cardiology/differential_expression/sigs_neg/meta_paired_lores_lfc01minpct01_20210301/rna/'
 # write the significantly upregulated genes
 get_significant_genes(mast_meta_output_loc_lfc01, sig_down_output_loc_lfc01, only_negative = T, to_ens = T, symbols.to.ensg.mapping = gene_to_ens_mapping)
 get_significant_genes(mast_meta_output_loc_lfc01, sig_down_output_loc_gs_lfc01, only_negative = T, to_ens = F, symbols.to.ensg.mapping = gene_to_ens_mapping)
 
 # set the location for the significant genes that were upregulated
-sig_up_output_loc_lfc01_v2 <- '/data/cardiology/differential_expression/sigs_pos/v2_paired_lores_lfc01minpct01_20201209_ensid/rna/'
-sig_up_output_loc_gs_lfc01_v2 <- '/data/cardiology/differential_expression/sigs_pos/v2_paired_lores_lfc01minpct01_20201209/rna/'
+sig_up_output_loc_lfc01_v2 <- '/data/cardiology/differential_expression/sigs_pos/v2_paired_lores_lfc01minpct01_20210301_ensid/rna/'
+sig_up_output_loc_gs_lfc01_v2 <- '/data/cardiology/differential_expression/sigs_pos/v2_paired_lores_lfc01minpct01_20210301/rna/'
 # write the significantly upregulated genes
 get_significant_genes(paste(mast_output_prepend, '2', mast_output_append_lfc01, sep = ''), sig_up_output_loc_lfc01_v2, only_positive = T, to_ens = T, symbols.to.ensg.mapping = gene_to_ens_mapping, pval_column='p_val_adj', lfc_column = 'avg_logFC')
 get_significant_genes(paste(mast_output_prepend, '2', mast_output_append_lfc01, sep = ''), sig_up_output_loc_gs_lfc01_v2, only_positive = T, to_ens = F, symbols.to.ensg.mapping = gene_to_ens_mapping, pval_column='p_val_adj', lfc_column = 'avg_logFC')
