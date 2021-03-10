@@ -75,7 +75,7 @@ scale_cell_numbers_to_condition <- function(cell_numbers, timepoints_to_scale, t
   return(scaled_number_table)
 }
 
-plot_ct_numbers_boxplot <- function(numbers_table, conditions_to_plot=c('UT', 'Baseline', 't24h', 't8w'), cell_types_to_plot=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), use_label_dict=T, to_fraction=F, pointless=F, legendless=F){
+plot_ct_numbers_boxplot <- function(numbers_table, conditions_to_plot=c('UT', 'Baseline', 't24h', 't8w'), cell_types_to_plot=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), use_label_dict=T, to_fraction=F, pointless=F, legendless=F, to_pct=F){
   # subset to want we want to plot
   numbers_table <- numbers_table[numbers_table$condition %in% conditions_to_plot, ]
   numbers_table <- numbers_table[numbers_table$cell_type %in% cell_types_to_plot, ]
@@ -93,13 +93,19 @@ plot_ct_numbers_boxplot <- function(numbers_table, conditions_to_plot=c('UT', 'B
     # ovewrite label as well
     ylabel <- 'fraction of cells'
   }
+  if(to_pct){
+    # based on fraction
+    numbers_table$number <- numbers_table$fraction*100
+    # ovewrite label as well
+    ylabel <- 'percentage of cells'
+  }
   # fetch colors
   cc <- get_color_coding_dict()
   # set colors based on condition
   colScale <- scale_fill_manual(name = "condition",values = unlist(cc[numbers_table$condition]))
   # create the plot
   p <- ggplot(data=numbers_table, aes(x=condition, y=number, fill=condition)) + 
-    geom_boxplot() + 
+    geom_boxplot(outlier.shape = NA) + 
     colScale +
     geom_jitter(size = 0.5, alpha = 0.5) +
     facet_grid(. ~ cell_type) +
@@ -393,11 +399,15 @@ meta.data <- read.table(meta.data.loc, sep = '\t', header = T, row.names = 1, st
 # get the cell numbers
 cell_numbers <- metadata_to_ct_table(meta.data)
 # plot the cell numbers
-plot_ct_numbers_boxplot(numbers_table = cell_numbers, to_fraction = F, legendless = F, pointless = T)
+plot_ct_numbers_boxplot(numbers_table = cell_numbers, to_fraction = T, legendless = F, pointless = T)
 # change to scaled cell numbers
 cell_numbers_baselinescaled <- scale_cell_numbers_to_condition(cell_numbers, c('t24h', 't8w'), 'Baseline')
 # plot these scaled numbers
 plot_ct_numbers_boxplot(numbers_table = cell_numbers_baselinescaled, pointless = T)
+# for higher res as well
+cell_numbers_hr <- metadata_to_ct_table(meta.data, cell_type_column = 'cell_type')
+plot_ct_numbers_boxplot(numbers_table = cell_numbers_hr[cell_numbers_hr$cell_type %in% c('cMono', 'NKdim'), ], to_fraction = T, legendless = F, pointless = T)
+
 
 # use the gally method to plot the cell numbers
 cell_numbers_gally_stemi <- metadata_to_ggally_table(meta.data[meta.data$orig.ident == 'stemi_v2' | meta.data$orig.ident == 'stemi_v3', ])
@@ -448,3 +458,8 @@ colnames(ct_tbl) <- as.vector(unlist(label_dict()[colnames(ct_tbl)]))
 rownames(ct_tbl) <- as.vector(unlist(label_dict()[rownames(ct_tbl)]))
 colnames(ct_tbl_hr) <- as.vector(unlist(label_dict()[colnames(ct_tbl_hr)]))
 rownames(ct_tbl_hr) <- as.vector(unlist(label_dict()[rownames(ct_tbl_hr)]))
+
+
+
+model_ncMono_t24ht0 <- lm(data=cell_numbers_gally_stemi_frac_baselinescaled_hr_ncmono_clinvar[!is.na(cell_numbers_gally_stemi_frac_baselinescaled_hr_ncmono_clinvar$t24h_t0), ], formula=t24h_t0 ~ logpeakckmb+age+gender+ck_mb)
+
