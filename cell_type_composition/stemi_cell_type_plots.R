@@ -75,7 +75,7 @@ scale_cell_numbers_to_condition <- function(cell_numbers, timepoints_to_scale, t
   return(scaled_number_table)
 }
 
-plot_ct_numbers_boxplot <- function(numbers_table, conditions_to_plot=c('UT', 'Baseline', 't24h', 't8w'), cell_types_to_plot=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), use_label_dict=T, to_fraction=F, pointless=F, legendless=F, to_pct=F){
+plot_ct_numbers_boxplot <- function(numbers_table, conditions_to_plot=c('UT', 'Baseline', 't24h', 't8w'), cell_types_to_plot=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), use_label_dict=T, to_fraction=F, pointless=F, legendless=F, to_pct=F, ylim=NULL){
   # subset to want we want to plot
   numbers_table <- numbers_table[numbers_table$condition %in% conditions_to_plot, ]
   numbers_table <- numbers_table[numbers_table$cell_type %in% cell_types_to_plot, ]
@@ -110,6 +110,10 @@ plot_ct_numbers_boxplot <- function(numbers_table, conditions_to_plot=c('UT', 'B
     geom_jitter(size = 0.5, alpha = 0.5) +
     facet_grid(. ~ cell_type) +
     ylab(ylabel)
+  # add xlimit if requested
+  if(!is.null(ylim)){
+    p <- p + ylim(ylim)
+  }
   if(pointless){
     p <- p + theme(axis.text.x=element_blank(), 
                    axis.ticks = element_blank())
@@ -399,7 +403,7 @@ meta.data <- read.table(meta.data.loc, sep = '\t', header = T, row.names = 1, st
 # get the cell numbers
 cell_numbers <- metadata_to_ct_table(meta.data)
 # plot the cell numbers
-plot_ct_numbers_boxplot(numbers_table = cell_numbers, to_fraction = T, legendless = F, pointless = T)
+plot_ct_numbers_boxplot(numbers_table = cell_numbers, legendless = F, pointless = T, to_pct = T, ylim=c(0,100))
 # change to scaled cell numbers
 cell_numbers_baselinescaled <- scale_cell_numbers_to_condition(cell_numbers, c('t24h', 't8w'), 'Baseline')
 # plot these scaled numbers
