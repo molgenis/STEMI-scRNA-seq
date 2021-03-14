@@ -253,6 +253,12 @@ cardio_object_loc <- paste(object_loc, 'cardio.integrated.20210301.rds', sep = '
 # location of the clinical variables
 clinvar_loc <- paste('/groups/umcg-wijmenga/', storage_read_part, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/clinical_parameters/scRNAseq_clinical_data_20200910_final_notextfields.tsv', sep = '')
 
+# MAST output location
+mast_output_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/differential_expression/MAST/results/'
+mast_output_loc_v2 <- paste(mast_output_loc, 'stemi_v2_peak_ck_mb_20210314/')
+mast_output_loc_v3 <- paste(mast_output_loc, 'stemi_v3_peak_ck_mb_20210314/')
+
+
 # read the object
 cardio.integrated <- readRDS(cardio_object_loc)
 
@@ -262,7 +268,25 @@ clinvar <- read.table(clinvar_loc, sep = '\t', header=T, dec = ',')
 clinvar <- add_peak_ck_mb(clinvar)
 # add the peak ckmb and ckmb at t0
 cardio.integrated <- add_clinical_variables(cardio.integrated, clinvar, clinical_vars_to_add = c('ck_mb', 'peak_ck_mb'))
+# can't do the analysis where there is no ck_mb
+cardio.integrated.ckmb <- cardio.integrated[, !is.na(cardio.integrated@meta.data$ck_mb)]
+# clean memory
+rm(cardio.integrated)
+
+# subset per chemistry
+cardio.integrated.ckmb.v2 <- cardio.integrated.ckmb.v2[, cardio.integrated.ckmb.v2@meta.data$chem == 'V2']
 
 # specifically for the monocyte
 options(mc.cores=12)
-de_ck_mb_monocyte <- glmer_per_condition_parallel(cardio.integrated, cell_types = c('monocyte'))
+de_ck_mb_monocyte_v2 <- glmer_per_condition_parallel(cardio.integrated.ckmb.v2, cell_types = c('monocyte'))
+saveRDS(de_ck_mb_monocyte_v2, paste(mast_output_loc_v2, 'monocyte_v2.rds'))
+
+# clean up
+rm(cardio.integrated.ckmb.v2)
+
+# v3 now
+cardio.integrated.ckmb.v3 <- cardio.integrated.ckmb.v3[, cardio.integrated.ckmb.v2@meta.data$chem == 'V3']
+de_ck_mb_monocyte_v3 <- glmer_per_condition_parallel(cardio.integrated.ckmb.v3, cell_types = c('monocyte'))
+saveRDS(de_ck_mb_monocyte_v3, paste(mast_output_loc_v3, 'monocyte_v3.rds'))
+
+
