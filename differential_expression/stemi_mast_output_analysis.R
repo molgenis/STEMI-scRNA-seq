@@ -399,10 +399,10 @@ de_genes_number_to_table <- function(mast_output_loc, pval_column='metap_bonferr
   return(number_table)
 }
 
-numbers_table_to_plot <- function(numbers_table, cols_include=NULL, use_label_dict=T, use_groups_dict=T){
+numbers_table_to_plot <- function(numbers_table, cols_include=NULL, use_label_dict=T, use_groups_dict=T, title=NULL, pointless=F, legendless=F){
   numbers_table_to_do <- numbers_table
   if(!is.null(cols_include)){
-    numbers_table_to_do <- numbers_table_to_do[, cols_include]
+    numbers_table_to_do <- numbers_table_to_do[, cols_include, drop = F]
   }
   plot_data <- NULL
   for(cell_type in rownames(numbers_table_to_do)){
@@ -411,11 +411,16 @@ numbers_table_to_plot <- function(numbers_table, cols_include=NULL, use_label_di
       if(is.na(val)){
         val <- 0
       }
+      # set labels to use in plot
       conditions_label <- condition_comb
+      cell_type_label <- cell_type
+      # create nicer labels if requested
       if(use_label_dict){
-        conditions_label <- split_label_dict()[[conditions_label]]
+        conditions_label <- label_dict()[[conditions_label]]
+        cell_type_label <- label_dict()[[cell_type]]
       }
-      row_plot_data <- data.frame(de_genes=val, cell_type=cell_type, conditions=conditions_label)
+      # create the row
+      row_plot_data <- data.frame(de_genes=val, cell_type=cell_type_label, conditions=conditions_label)
       if(use_groups_dict){
         row_plot_data$comparison <- groups_dict()[[condition_comb]]
       }
@@ -427,13 +432,16 @@ numbers_table_to_plot <- function(numbers_table, cols_include=NULL, use_label_di
       }
     }
   }
+  # create the ylim
+  ylims <- c(0, max(plot_data$de_genes*1.1))
+  # make the plots
+  p <- NULL
   if(use_groups_dict){
-    ggplot(data=plot_data, aes(x=comparison, y=de_genes)) + geom_point(aes(color=conditions), size=6) + facet_grid(. ~ cell_type) + scale_color_manual(name = 'condition\ncombination', values = unlist(get_color_coding_dict()[unique(plot_data$conditions)]))
+    p <- ggplot(data=plot_data, aes(x=comparison, y=de_genes)) + geom_point(aes(color=conditions), size=6) + facet_grid(. ~ cell_type) + scale_color_manual(name = 'condition\ncombination', values = unlist(get_color_coding_dict()[unique(plot_data$conditions)])) + ylim(ylims)
   }
-  else{
-    #ggplot(data=plot_data, aes(x=conditions, y=de_genes)) + geom_point(aes(color=conditions), size=6) + facet_grid(. ~ cell_type)  + scale_color_manual(name = 'condition\ncombination', values = unlist(get_color_coding_dict()[unique(plot_data$conditions)])) + theme(legend.position = 'none') +
-    ggplot(data=plot_data, aes(x=conditions, y=de_genes)) + geom_point(aes(color=conditions), size=6) + facet_grid(. ~ cell_type)  + scale_color_manual(name = 'condition\ncombination', values = unlist(get_color_coding_dict()[unique(plot_data$conditions)])) +
-      xlab('condition combination') + 
+  else if(length(unique(plot_data$conditions))==1){
+    p <- ggplot(data=plot_data, aes(x=conditions, y=de_genes)) + geom_point(aes(color=cell_type), size=6) + facet_grid(. ~ cell_type)  + scale_color_manual(values = unlist(get_color_coding_dict()[unique(plot_data$cell_type)])) +
+      xlab('') + 
       ylab('number of DE genes') +
       theme(axis.text.x=element_blank(), 
             axis.ticks = element_blank(), 
@@ -442,8 +450,35 @@ numbers_table_to_plot <- function(numbers_table, cols_include=NULL, use_label_di
             axis.title.x = element_text(size=14),
             axis.title.y = element_text(size=14),
             axis.text.y = element_text(size=12),
-            strip.text.x = element_text(size=12))
+            strip.text.x = element_text(size=12),
+            legend.position = 'none') + ylim(ylims)
   }
+  else{
+    #ggplot(data=plot_data, aes(x=conditions, y=de_genes)) + geom_point(aes(color=conditions), size=6) + facet_grid(. ~ cell_type)  + scale_color_manual(name = 'condition\ncombination', values = unlist(get_color_coding_dict()[unique(plot_data$conditions)])) + theme(legend.position = 'none') +
+    p <- ggplot(data=plot_data, aes(x=conditions, y=de_genes)) + geom_point(aes(color=conditions), size=6) + facet_grid(. ~ cell_type)  + scale_color_manual(name = 'condition\ncombination', values = unlist(get_color_coding_dict()[unique(plot_data$conditions)])) +
+      xlab('condition combination') + 
+      ylab('number of DE genes') +
+      theme(#axis.text.x=element_blank(), 
+            #axis.ticks = element_blank(), 
+            legend.title = element_text(size=14), 
+            legend.text = element_text(size=12),
+            axis.title.x = element_text(size=14),
+            axis.title.y = element_text(size=14),
+            axis.text.y = element_text(size=12),
+            strip.text.x = element_text(size=12)) + ylim(ylims)
+  }
+  if(!is.null(title)){
+    p <- p + ggtitle(title)
+  }
+  if(pointless){
+    p <- p + theme(axis.text.x=element_blank(), 
+                   axis.ticks = element_blank(),
+                   axis.title.x = element_blank())
+  }
+  if(legendless){
+    p <- p + theme(legend.position = 'none')
+  }
+  return(p)
 }
 
 split_label_dict <- function(){
@@ -525,9 +560,14 @@ get_color_coding_dict <- function(){
   color_coding[["HC-t0"]] <- "khaki2"
   color_coding[["HC-t24h"]] <- "khaki4"
   color_coding[["HC-t8w"]] <- "paleturquoise1"
-  color_coding[["t0-t24h"]] <- "paleturquoise3"
-  color_coding[["t0-t8w"]] <- "rosybrown1"
-  color_coding[["t24h-t8w"]] <- "rosybrown3"
+  color_coding[["t0-t24h"]] <- "#FF6066" #"paleturquoise3"
+  color_coding[["t0-t8w"]] <- "#C060A6" #"rosybrown1"
+  color_coding[["t24h-t8w"]] <- "#C00040" #"rosybrown3"
+  # set condition colors
+  color_coding[["HC"]] <- "grey"
+  color_coding[["t0"]] <- "pink"
+  color_coding[["t24h"]] <- "red"
+  color_coding[["t8w"]] <- "purple"
   # set the cell type colors
   color_coding[["Bulk"]] <- "black"
   color_coding[["CD4T"]] <- "#153057"
@@ -538,7 +578,73 @@ get_color_coding_dict <- function(){
   color_coding[["DC"]] <- "#965EC8"
   color_coding[["CD4+ T"]] <- "#153057"
   color_coding[["CD8+ T"]] <- "#009DDB"
+  # other cell type colors
+  color_coding[["HSPC"]] <- "#009E94"
+  color_coding[["platelet"]] <- "#9E1C00"
+  color_coding[["plasmablast"]] <- "#DB8E00"
+  color_coding[["other T"]] <- "#FF63B6"
   return(color_coding)
+}
+
+label_dict <- function(){
+  label_dict <- list()
+  # condition combinations
+  label_dict[['UTBaseline']] <- 'UT-Baseline'
+  label_dict[['UTt24h']] <- 'UT-t24h'
+  label_dict[['UTt8w']] <- 'UT-t8w'
+  label_dict[['Baselinet24h']] <- 'Baseline-t24h'
+  label_dict[['Baselinet8w']] <- 'Baseline-t8w'
+  label_dict[['t24ht8w']] <- 't24h-t8w'
+  label_dict[['UTBaseline']] <- 'HC-t0'
+  label_dict[['UTt24h']] <- 'HC-t24h'
+  label_dict[['UTt8w']] <- 'HC-t8w'
+  label_dict[['Baselinet24h']] <- 't0-t24h'
+  label_dict[['Baselinet8w']] <- 't0-t8w'
+  # conditions
+  label_dict[['UT']] <- 'HC'
+  label_dict[['Baseline']] <- 't0'
+  label_dict[['t24h']] <- 't24h'
+  label_dict[['t8w']] <- 't8w'
+  # major cell types
+  label_dict[["Bulk"]] <- "bulk-like"
+  label_dict[["CD4T"]] <- "CD4+ T"
+  label_dict[["CD8T"]] <- "CD8+ T"
+  label_dict[["monocyte"]] <- "monocyte"
+  label_dict[["NK"]] <- "NK"
+  label_dict[["B"]] <- "B"
+  label_dict[["DC"]] <- "DC"
+  label_dict[["HSPC"]] <- "HSPC"
+  label_dict[["plasmablast"]] <- "plasmablast"
+  label_dict[["platelet"]] <- "platelet"
+  label_dict[["T_other"]] <- "other T"
+  # minor cell types
+  label_dict[["CD4_TCM"]] <- "CD4 TCM"
+  label_dict[["Treg"]] <- "T regulatory"
+  label_dict[["CD4_Naive"]] <- "CD4 naive"
+  label_dict[["CD4_CTL"]] <- "CD4 CTL"
+  label_dict[["CD8_TEM"]] <- "CD8 TEM"
+  label_dict[["cMono"]] <- "cMono"
+  label_dict[["CD8_TCM"]] <- "CD8 TCM"
+  label_dict[["ncMono"]] <- "ncMono"
+  label_dict[["cDC2"]] <- "cDC2"
+  label_dict[["B_intermediate"]] <- "B intermediate"
+  label_dict[["NKdim"]] <- "NK dim"
+  label_dict[["pDC"]] <- "pDC"
+  label_dict[["ASDC"]] <- "ASDC"
+  label_dict[["CD8_Naive"]] <- "CD8 naive"
+  label_dict[["MAIT"]] <- "MAIT"
+  label_dict[["CD8_Proliferating"]] <- "CD8 proliferating"
+  label_dict[["CD4_TEM"]] <- "CD4 TEM"
+  label_dict[["B_memory"]] <- "B memory"
+  label_dict[["NKbright"]] <- "NK bright"
+  label_dict[["B_naive"]] <- "B naive"
+  label_dict[["gdT"]] <- "gamma delta T"
+  label_dict[["CD4_Proliferating"]] <- "CD4 proliferating"
+  label_dict[["NK_Proliferating"]] <- "NK proliferating"
+  label_dict[["cDC1"]] <- "cDC1"
+  label_dict[["ILC"]] <- "ILC"
+  label_dict[["dnT"]] <- "double negative T"
+  return(label_dict)
 }
 
 
@@ -877,7 +983,7 @@ plot_de_number_vs_subcell_population <- function(mast_output_loc, cell_type_larg
 }
 
 
-plot_DE_sharing_per_celltype <- function(condition_combination, mast_output_loc, cell_types_to_use=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK"), pval_column='metap_bonferroni', sig_pval=0.05, only_positive=F, only_negative=F, lfc_column='metafc'){
+plot_DE_sharing_per_celltype <- function(condition_combination, mast_output_loc, cell_types_to_use=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK"), pval_column='metap_bonferroni', sig_pval=0.05, only_positive=F, only_negative=F, lfc_column='metafc', use_label_dict=T, use_color_dict=T){
   DE_genes_per_ct <- list()
   # get the DE genes for each cell type
   for(cell_type in cell_types_to_use){
@@ -903,7 +1009,39 @@ plot_DE_sharing_per_celltype <- function(condition_combination, mast_output_loc,
       DE_genes_per_ct[[cell_type]] <- sig_genes
     })
   }
-  upset(fromList(DE_genes_per_ct), order.by = 'freq', nsets = length(DE_genes_per_ct))
+  if(use_label_dict){
+    names(DE_genes_per_ct) <- label_dict()[names(DE_genes_per_ct)]
+  }
+  queries <- list()
+  sets.bar.color <- 'black'
+  if(use_color_dict){
+    # create df to store the number of each set, so we know how to order
+    nrs_df <- NULL
+    # add the colors for the cell types
+    for(i in 1:length(names(DE_genes_per_ct))){
+      cell_type <- names(DE_genes_per_ct)[i]
+      # add for the singles in the intersection sizes
+      ct_list <- list(
+        query = intersects,
+        params = list(cell_type),
+        color = get_color_coding_dict()[[cell_type]],
+        active = T)
+      queries[[i]] <- ct_list
+      # add for the DF to order the set sizes
+      numbers_row <- data.frame(ct=c(cell_type), nr=c(length(DE_genes_per_ct[[cell_type]])), stringsAsFactors = F)
+      if(is.null(nrs_df)){
+        nrs_df <- numbers_row
+      }
+      else{
+        nrs_df <- rbind(nrs_df, numbers_row)
+      }
+    }
+    # get the order of the sets
+    ordered_cts <- nrs_df[order(nrs_df$nr, decreasing = T), 'ct']
+    # add the colors for the sets
+    sets.bar.color <- unlist(get_color_coding_dict()[ordered_cts])
+  }
+  upset(fromList(DE_genes_per_ct), order.by = 'freq', nsets = length(DE_genes_per_ct), queries = queries, sets.bar.color=sets.bar.color	)
   #return(DE_genes_per_ct)
 }
 
@@ -1734,7 +1872,10 @@ de_numbers_table_down <- de_genes_number_to_table(mast_meta_output_loc_lfc01, on
 # plot the number of DE genes
 numbers_table_to_plot(de_numbers_table)
 numbers_table_to_plot(de_numbers_table, use_groups_dict = F, cols_include = c('UTBaseline', 'UTt24h', 'UTt8w'))
-numbers_table_to_plot(de_numbers_table, use_groups_dict = F, cols_include = c('Baselinet24h', 'Baselinet8w', 't24ht8w'))
+numbers_table_to_plot(de_numbers_table, use_groups_dict = F, cols_include = c('Baselinet24h', 'Baselinet8w', 't24ht8w'), pointless = T)
+# only HC vs t0
+numbers_table_to_plot(de_numbers_table, use_groups_dict = F, cols_include = c('UTBaseline'))
+
 
 # specifically for monocytes, check the number of DE genes and the fractional differences of their sub-celltype populations
 plot_de_number_vs_subcell_population(mast_meta_output_loc_lfc01, 'monocyte', 'cMono', meta.data, timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', "Baselinet24h", "Baselinet8w", "t24ht8w"), cell_type_column_higherres='cell_type', cell_type_column_lowerres='cell_type_lowerres', make_absolute=F)

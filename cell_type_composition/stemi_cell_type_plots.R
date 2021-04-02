@@ -278,6 +278,57 @@ metadata_to_ct_table_per_column <- function(metadata, cell_type_column='cell_typ
   return(numbers_table)
 }
 
+metadata_to_ct_table_per_column_per_part <- function(metadata, cell_type_column='cell_type_lowerres', timepoint.column='timepoint.final', assignment.column='assignment.final', timepoints_to_check=NULL, cell_types_to_check=NULL, na_to_zero=T, remove_zero_rows=T){
+  # check either cell types provided or all
+  cell_types <- cell_types_to_check
+  if(is.null(cell_types)){
+    cell_types <- unique(metadata[[cell_type_column]])
+  }
+  # check either timepoints provided or all
+  timepoints <- timepoints_to_check
+  if(is.null(timepoints)){
+    timepoints <- unique(metadata[[timepoint.column]])
+  }
+  assignments <- unique(metadata[[assignment.column]])
+  # create rownames
+  rows <- paste(rep(timepoints, each = length(assignments)), assignments, sep = ".")
+  # init the matrix
+  numbers_table <- matrix(, nrow=length(rows), ncol=length(cell_types), dimnames = list(rows, cell_types))
+  # check each timepoint
+  for(timepoint in intersect(timepoints, unique(metadata[[timepoint.column]]))){
+    # subset to that timepoint
+    metadata.tp <- metadata[metadata[[timepoint.column]] == timepoint, ]
+    # check each cell type
+    for(cell_type in intersect(cell_types, unique(metadata.tp[[cell_type_column]]))){
+      # subset to cell type
+      metadata.tp.ct <- metadata.tp[metadata.tp[[cell_type_column]] == cell_type, ]
+      # check each participant
+      for(assignment in intersect(assignments, unique(metadata.tp.ct[[assignment.column]]))){
+        # get the number of cells
+        nr_of_cells <- nrow(metadata.tp.ct[metadata.tp.ct[[assignment.column]] == assignment, ])
+        # create row name
+        rowname <- paste(timepoint, assignment, sep = '.')
+        # add to the matrix
+        numbers_table[rowname, cell_type] <- nr_of_cells
+      }
+    }
+  }
+  # I like dataframes
+  numbers_table <- data.frame(numbers_table)
+  # na to zero if requested
+  if(na_to_zero){
+    numbers_table[is.na(numbers_table)] <- 0
+  }
+  # remove entries with no values if requested
+  if(remove_zero_rows){
+    # calculate sums
+    sums_cells <- apply(numbers_table, 1, sum)
+    # subset to non-zero
+    numbers_table <- numbers_table[sums_cells > 0, ]
+  }
+  return(numbers_table)
+}
+
 get_color_coding_dict <- function(){
   # set the condition colors
   color_coding <- list()
