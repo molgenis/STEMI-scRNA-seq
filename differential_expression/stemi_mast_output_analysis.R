@@ -1045,6 +1045,78 @@ plot_DE_sharing_per_celltype <- function(condition_combination, mast_output_loc,
   #return(DE_genes_per_ct)
 }
 
+plot_DE_sharing_per_celltype_meh <- function(condition_combination, mast_output_loc, cell_types_to_use=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK"), pval_column='metap_bonferroni', sig_pval=0.05, only_positive=F, only_negative=F, lfc_column='metafc', use_label_dict=T, use_color_dict=T){
+  DE_genes_per_ct <- list()
+  # get the DE genes for each cell type
+  for(cell_type in cell_types_to_use){
+    # build the full path
+    full_mast_path <- paste(mast_output_loc, cell_type, condition_combination, '.tsv', sep = '')
+    # grab the significant genes
+    try({
+      # read the mast output
+      mast <- read.table(full_mast_path, header=T, row.names = 1, sep = '\t')
+      # filter to only include the significant results
+      mast <- mast[mast[[pval_column]] <= 0.05, ]
+      # filter for only the positive lfc if required
+      if(only_positive){
+        mast <- mast[mast[[lfc_column]] < 0, ]
+      }
+      # filter for only the positive lfc if required
+      if(only_negative){
+        mast <- mast[mast[[lfc_column]] > 0, ]
+      }
+      # we just care about the gene names
+      sig_genes <- rownames(mast)
+      # store these for the cell type
+      DE_genes_per_ct[[cell_type]] <- sig_genes
+    })
+  }
+  if(use_label_dict){
+    names(DE_genes_per_ct) <- label_dict()[names(DE_genes_per_ct)]
+  }
+  # init the dataframe
+  numbers <- NULL
+  for(cell_type in names(DE_genes_per_ct)){
+    # make a copy of everything
+    DE_genes_per_ct_not_this_ct <- DE_genes_per_ct
+    # remove this specific cell type from the copy
+    DE_genes_per_ct_not_this_ct[[cell_type]] <- NULL
+    # combine all the genes (which dont containt this cell type specific genes anymore)
+    DE_genes_not_this_ct <- unique(as.vector(unlist(DE_genes_per_ct_not_this_ct)))
+    # get the genes specific for this cell type
+    DE_genes_ct <- DE_genes_per_ct[[cell_type]]
+    # check which are unique to the cell type
+    DE_genes_ct_unique <- setdiff(DE_genes_ct, DE_genes_not_this_ct)
+    # put it into numbers
+    DE_genes_ct_unique_number <- length(DE_genes_ct_unique)
+    DE_genes_ct_shared_number <- length(DE_genes_ct) = DE_genes_ct_unique_number
+    # turn into rows
+    rows <- data.frame(cell_type=c(cell_type, cell_type), unique=c('shared', cell_type), number=c(DE_genes_ct_shared_number, DE_genes_ct_unique_number), stringsAsFactors = F)
+    # add to dataframe
+    if(is.null(numbers)){
+      numbers <- rows
+    }
+    else{
+      numbers <- rbind(numers, rows)
+    }
+  }
+  # set the order I like for the legend, but setting the factor order
+  numbers$unique <- factor(plot_df$condition, levels=c('mixed', names(DE_genes_per_ct)))
+  # grab the colours
+  cc <- get_color_coding_dict()
+  # add the 'mixed' condition
+  cc[['mixed']] <- 'gray'
+  fillScale <- scale_fill_manual(name = "cell type",values = unlist(cc[c(names(DE_genes_per_ct), 'mixed')]))
+  # make the plot finally
+  p <- ggplot(plot_df, aes(fill=unique, y=number, x=cell_type)) +
+    geom_bar(position='stack', stat='identity') +
+    labs(x='cell type', y='number of DE genes') +
+    ggtitle('DE genes and cell type specificity') +
+    labs(fill = "Found in") +
+    fillScale
+  return(p)
+}
+
 pathway_mapping_filtered_childless <- function(list_of_pathways_and_parents, pathway_mapping){
   # full list of terms
   all_terms <- c()
