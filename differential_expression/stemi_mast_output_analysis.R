@@ -1045,7 +1045,7 @@ plot_DE_sharing_per_celltype <- function(condition_combination, mast_output_loc,
   #return(DE_genes_per_ct)
 }
 
-plot_DE_sharing_per_celltype_meh <- function(condition_combination, mast_output_loc, cell_types_to_use=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK"), pval_column='metap_bonferroni', sig_pval=0.05, only_positive=F, only_negative=F, lfc_column='metafc', use_label_dict=T, use_color_dict=T){
+plot_DE_sharing_per_celltype_meh <- function(condition_combination, mast_output_loc, cell_types_to_use=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK"), pval_column='metap_bonferroni', sig_pval=0.05, only_positive=F, only_negative=F, lfc_column='metafc', use_label_dict=T, use_color_dict=T, flip_shared_unique=F){
   DE_genes_per_ct <- list()
   # get the DE genes for each cell type
   for(cell_type in cell_types_to_use){
@@ -1089,29 +1089,34 @@ plot_DE_sharing_per_celltype_meh <- function(condition_combination, mast_output_
     DE_genes_ct_unique <- setdiff(DE_genes_ct, DE_genes_not_this_ct)
     # put it into numbers
     DE_genes_ct_unique_number <- length(DE_genes_ct_unique)
-    DE_genes_ct_shared_number <- length(DE_genes_ct) = DE_genes_ct_unique_number
+    DE_genes_ct_shared_number <- length(DE_genes_ct) - DE_genes_ct_unique_number
     # turn into rows
-    rows <- data.frame(cell_type=c(cell_type, cell_type), unique=c('shared', cell_type), number=c(DE_genes_ct_shared_number, DE_genes_ct_unique_number), stringsAsFactors = F)
+    rows <- data.frame(cell_type=c(cell_type, cell_type), unique=c(cell_type, 'shared'), number=c(DE_genes_ct_unique_number, DE_genes_ct_shared_number), stringsAsFactors = F)
     # add to dataframe
     if(is.null(numbers)){
       numbers <- rows
     }
     else{
-      numbers <- rbind(numers, rows)
+      numbers <- rbind(numbers, rows)
     }
   }
   # set the order I like for the legend, but setting the factor order
-  numbers$unique <- factor(plot_df$condition, levels=c('mixed', names(DE_genes_per_ct)))
+  numbers$unique <- factor(numbers$unique, levels=c('shared', names(DE_genes_per_ct)))
+  if(flip_shared_unique){
+    numbers$unique <- factor(numbers$unique, levels=c(names(DE_genes_per_ct), 'shared'))
+  }
   # grab the colours
   cc <- get_color_coding_dict()
   # add the 'mixed' condition
-  cc[['mixed']] <- 'gray'
-  fillScale <- scale_fill_manual(name = "cell type",values = unlist(cc[c(names(DE_genes_per_ct), 'mixed')]))
+  cc[['shared']] <- 'gray'
+  fillScale <- scale_fill_manual(name = "cell type",values = unlist(cc[c('shared', names(DE_genes_per_ct))]))
+  # get a nice label for the condition combination
+  condition_combination_label <- label_dict()[[condition_combination]]
   # make the plot finally
-  p <- ggplot(plot_df, aes(fill=unique, y=number, x=cell_type)) +
+  p <- ggplot(numbers, aes(fill=unique, y=number, x=cell_type)) +
     geom_bar(position='stack', stat='identity') +
     labs(x='cell type', y='number of DE genes') +
-    ggtitle('DE genes and cell type specificity') +
+    ggtitle(paste('DE genes and cell type specificity in', condition_combination_label)) +
     labs(fill = "Found in") +
     fillScale
   return(p)
