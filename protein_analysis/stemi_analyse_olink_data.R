@@ -1,5 +1,5 @@
 
-plot_qtl <- function(expression, genotypes, gene_name, snp_name){
+plot_qtl <- function(expression, genotypes, gene_name, snp_name, paper_style=F){
   # get overlapping expression and genotypes
   participants_both <- intersect(colnames(expression), colnames(expression))
   # get the expression data
@@ -12,7 +12,7 @@ plot_qtl <- function(expression, genotypes, gene_name, snp_name){
   p <- ggplot(data=plot_table, mapping=aes(x=genotype, y=expression, fill=genotype)) + 
     geom_boxplot(outlier.shape = NA) +
     geom_jitter(size = 0.5, alpha = 0.5) +
-    ggtitle(snp_name, 'affecting', gene_name)
+    ggtitle(paste(snp_name, 'affecting', gene_name))
   # use paper style if requested
   if(paper_style){
     p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
@@ -260,6 +260,74 @@ olink_to_emp_format <- function(olink, split_char='\\.', olinkid_to_uid_loc=NULL
     expression_per_condition[[condition]] <- expression_condition
   }
   return(expression_per_condition)
+}
+
+
+correlate_gene_and_protein_expression <- function(protein_expression_matrix, gene_expression_matrix, method='spearman'){
+  # get the common participants
+  common_parts <- intersect(colnames(protein_expression_matrix), colnames(gene_expression_matrix))
+  # get the common genes
+  common_genes <- intersect(rownames(protein_expression_matrix), rownames(gene_expression_matrix))
+  # check each gene
+  correlations <- list()
+  for(gene in common_genes){
+    # get expression data
+    gene_expression <- as.vector(unlist(gene_expression_matrix[gene, common_parts]))
+    protein_expression <- as.vector(unlist(protein_expression_matrix[gene, common_parts]))
+    # calculate the correlation
+    correlation <- NA
+    try({
+      # inside a try block so if we can't correlate, we'll still do the rest
+      correlation <- cor(gene_expression, protein_expression)
+    })
+    correlations[[gene]] <- correlation
+  }
+  return(correlations)
+}
+
+
+correlate_gene_and_protein_expression_per_cell_type <- function(protein_expression_location, gene_expression_location, cell_types=c('bulk', 'B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')){
+  # create a dataframe to store results
+  correlation_per_cell_type <- NULL
+  # load the protein expression
+  protein_expression <- read.table(protein_expression_location, sep = '\t', header = T, row.names = 1)
+  # check each cell type
+  for(cell_type in cell_types){
+    # make the location of the cell type
+    gene_expression_cell_type_loc <- paste(gene_expression_location, cell_type, '_expression.tsv', sep = '')
+    # read that table
+    gene_expression <- read.table(gene_expression_cell_type_loc, header = T, row.names = 1)
+    # get the correlations
+    correlations <- correlate_gene_and_protein_expression(protein_expression, gene_expression)
+    # turn into a dataframe
+    correlation_columns <- data.frame(gene=names(correlations), correlation=as.vector(unlist(correlations)))
+    # set the correlations as cell type
+    colnames(correlation_columns) <- c('gene', cell_type)
+    # add to existing dataframe
+    if(is.null(correlation_per_cell_type)){
+      correlation_per_cell_type <- correlation_columns
+    }
+    else{
+      correlation_per_cell_type <- merge(correlation_per_cell_type, correlation_columns, by='gene', all=T)
+    }
+  }
+  return(correlation_per_cell_type)
+}
+
+
+correlate_gene_and_protein_expression_per_condition <- function(protein_expression_location, gene_expression_location, conditions=c('Baseline', 't24h', 't8w'), cell_types=c('bulk', 'B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')){
+  # save table per condition
+  table_per_condition <- list()
+  # check each condition
+  for(condition in conditions){
+    # paste the protein location together
+    protein_expression_location_condition <- paste(protein_expression_location, condition, '/bulk_expression.tsv', sep = '')
+    # paste the gene expression location together
+    gene_expression_location_condition <- paste(gene_expression_location, condition, '/', sep = '')
+    # save result in list
+    table_per_condition[[condition]] <- correlate_gene_and_protein_expression_per_cell_type(protein_expression_location, gene_expression_location_condition, cell_types)
+  }
+  return(table_per_condition)
 }
 
 get_color_coding_dict <- function(){

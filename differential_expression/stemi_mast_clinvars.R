@@ -69,7 +69,7 @@ do_sct_per_lane <- function(seurat_object){
     # grab the element
     split_seurat_object <- seurat_object_list[[lane]]
     # remove normalization
-    split_seurat_object@assays$SCT <- NULL
+    #split_seurat_object@assays$SCT <- NULL
     # normalize
     split_seurat_object <- SCTransform(split_seurat_object)
     # add to the remerged object
