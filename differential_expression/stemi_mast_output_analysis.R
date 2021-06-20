@@ -1524,12 +1524,20 @@ get_average_gene_expression_per_ct_and_tp <- function(seurat_object, condition.c
       if(assay == 'RNA'){
         DefaultAssay(seurat_object_cell_type) <- 'RNA'
         averages <- apply(seurat_object_cell_type$RNA@data, 1, mean)
-        exp_df_ct_cond <- data.frame(condition=rep(condition, times = length(averages)), cell_type=rep(cell_type, times = length(averages)), gene=rownames(seurat_object_cell_type$RNA@data), average=averages)
+        pct_exp <- apply(seurat_object_cell_type$RNA@data, 1, function(x){sum(x != 0)/length(x)})
+        exp_df_ct_cond <- data.frame(condition=rep(condition, times = length(averages)), cell_type=rep(cell_type, times = length(averages)), gene=rownames(seurat_object_cell_type$RNA@data), average=averages, pct_exp=pct_exp)
       }
       else if(assay == 'SCT'){
         DefaultAssay(seurat_object_cell_type) <- 'SCT'
         averages <- apply(seurat_object_cell_type$SCT@counts, 1, mean)
-        exp_df_ct_cond <- data.frame(condition=rep(condition, times = length(averages)), cell_type=rep(cell_type, times = length(averages)), gene=rownames(seurat_object_cell_type$SCT@counts), average=averages)
+        pct_exp <- apply(seurat_object_cell_type$SCT@counts, 1, function(x){sum(x != 0)/length(x)})
+        exp_df_ct_cond <- data.frame(condition=rep(condition, times = length(averages)), cell_type=rep(cell_type, times = length(averages)), gene=rownames(seurat_object_cell_type$SCT@counts), average=averages, pct_exp=pct_exp)
+      }
+      else if(assay == 'CBT'){
+        DefaultAssay(seurat_object_cell_type) <- 'CBT'
+        averages <- apply(seurat_object_cell_type$CBT@data, 1, mean)
+        pct_exp <- apply(seurat_object_cell_type$CBT@data, 1, function(x){sum(x != 0)/length(x)})
+        exp_df_ct_cond <- data.frame(condition=rep(condition, times = length(averages)), cell_type=rep(cell_type, times = length(averages)), gene=rownames(seurat_object_cell_type$CBT@data), average=averages, pct_exp=pct_exp)
       }
       # paste to the overall df
       if(is.null(exp_df)){

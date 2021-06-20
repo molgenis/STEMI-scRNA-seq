@@ -2,6 +2,21 @@
 library(Seurat)
 library(sva)
 library(Matrix)
+
+
+runPhenograph <- function(seurat_object, k=30, dims=1:30){
+  # get the assay
+  assay_used <- seurat_object@reductions$pca@assay.used
+  # calculate phenograph from the PCs
+  seurat_object.pheno_out <- Rphenograph(as.matrix(seurat_object@reductions$pca@cell.embeddings[, dims]), k=k)
+  # add to the metadata in the same way as the 'FindClusters' method
+  seurat_object@meta.data$phenograph_clusters <- as.vector(unlist(membership(seurat_object.pheno_out.pheno_out[[2]])))
+  seurat_object@meta.data[[paste(assay_used, 'pheno', k, sep = '_')]] <- as.vector(unlist(membership(seurat_object.pheno_out.pheno_out[[2]])))
+  return(seurat_object)
+}
+
+
+
 # vector size needs to be increased
 options(future.globals.maxSize = 370 * 1000 * 1024^2)
 # load the file
