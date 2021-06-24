@@ -58,16 +58,26 @@ olink_to_plottable_table <- function(olink, split_char='\\.'){
   return(olink)
 }
 
-plot_olink_expression <- function(olink, identifier, olinkid_to_uid_loc=NULL, uniprotid_to_gs_loc=NULL){
+plot_olink_expression <- function(olink, identifier, olinkid_to_uid_loc=NULL, uniprotid_to_gs_loc=NULL, violin=F){
   # add extra column
   olink$protein_expression <- olink[[identifier]]
   # set colors based on condition
+  cc <- get_color_coding_dict()
   colScale <- scale_fill_manual(name = "condition",values = unlist(cc[olink$timepoint]))
   # create the plot
-  p <- ggplot(data=olink, mapping=aes(x=timepoint, y=protein_expression, fill=timepoint)) + 
-    geom_boxplot(outlier.shape = NA) + 
-    colScale +
-    geom_jitter(size = 0.5, alpha = 0.5)
+  p <- NULL
+  if(violin){
+    p <- ggplot(data=olink, mapping=aes(x=timepoint, y=protein_expression, fill=timepoint)) + 
+      geom_violin() + 
+      colScale +
+      geom_jitter(size = 0.5, alpha = 0.5)
+  }
+  else{
+    p <- ggplot(data=olink, mapping=aes(x=timepoint, y=protein_expression, fill=timepoint)) + 
+      geom_boxplot(outlier.shape = NA) + 
+      colScale +
+      geom_jitter(size = 0.5, alpha = 0.5)
+  }
   
   title <- paste('protein expression of', identifier)
   if(!is.null(olinkid_to_uid)){
@@ -90,7 +100,7 @@ plot_olink_expression <- function(olink, identifier, olinkid_to_uid_loc=NULL, un
   return(p)
 }
 
-plot_olink_expression_per_protein <- function(olink, output_loc, olinkid_to_uid_loc=NULL, uniprotid_to_gs_loc=NULL, use_label_dict=F){
+plot_olink_expression_per_protein <- function(olink, output_loc, olinkid_to_uid_loc=NULL, uniprotid_to_gs_loc=NULL, use_label_dict=F, violin=F){
   # make labels prettier for timepoint if requested
   if(use_label_dict){
     olink$timepoint <- as.vector(unlist(label_dict()[as.character(olink$timepoint)]))
@@ -99,7 +109,7 @@ plot_olink_expression_per_protein <- function(olink, output_loc, olinkid_to_uid_
   identifiers <- setdiff(colnames(olink), c('timepoint', 'id'))
   # plot each protein
   for(identifier in identifiers){
-    p <- plot_olink_expression(olink, identifier, olinkid_to_uid_loc, uniprotid_to_gs_loc)
+    p <- plot_olink_expression(olink, identifier, olinkid_to_uid_loc, uniprotid_to_gs_loc, violin=violin)
     # set the location
     output_file <- paste(output_loc, identifier, '.pdf', sep = '')
     p
@@ -695,6 +705,8 @@ olink_plottable <- olink_to_plottable_table(olink)
 # remove the test samples
 olink_plottable <- olink_plottable[olink_plottable$timepoint %in% c('Baseline', 't24h', 't8w'), ]
 plot_olink_expression_per_protein(olink_plottable, '/data/cardiology/olink/plots/expression/', olinkid_to_uid_loc, uniprotid_to_gs_loc)
+plot_olink_expression_per_protein(olink_plottable, '/data/cardiology/olink/plots/expression/violin/', olinkid_to_uid_loc, uniprotid_to_gs_loc, violin = T)
+
 # do DE analysis
 olink_de <- do_differential_expression_analysis_all(olink=olink, olinkid_to_uid_loc = olinkid_to_uid_loc, uniprotid_to_gs_loc = uniprotid_to_gs_loc, inclusion_list_loc=inclusion_list_loc)
 write.table(olink_de, '/data/cardiology/differential_expression/olink_de_paired_wilcoxon_baseline.tsv', row.names=T, col.names = T, sep = '\t')
@@ -754,3 +766,16 @@ v2_exp_olinkfiltered <- v2_exp[v2_exp$gene %in% gene_symbols, ]
 v3_exp_olinkfiltered <- v3_exp[v3_exp$gene %in% gene_symbols, ]
 plot_genes_left_per_pct(v2_exp_olinkfiltered)
 plot_genes_left_per_pct(v3_exp_olinkfiltered)
+
+# lead genotype data
+genotypes <- readGT('/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/genotype/stemi_all_merged_biallelics.vcf.gz')
+genotypes[genotypes == '1|0'] <- '0|1'
+# load protein expression
+
+# plot
+p1 <- plot_qtl(Baseline_protein, genotypes, 'ENSG00000160712', 'rs6689306', paper_style = T) + ylim(c(11.0, 13.1)) + ggtitle('') + ylab('IL6R protein expression') + xlab('') + scale_fill_manual(values=c("#57a350", "#fd7600", "#383bfe")) + theme(legend.position = "none")
+p2 <- plot_qtl(t24h_protein, genotypes, 'ENSG00000160712', 'rs6689306', paper_style = T) + ylim(c(11.0, 13.1)) + ggtitle('') + ylab('') + xlab('genotype') + scale_fill_manual(values=c("#57a350", "#fd7600", "#383bfe")) + theme(legend.position = "none")
+p3 <- plot_qtl(t8w_protein, genotypes, 'ENSG00000160712', 'rs6689306', paper_style = T) + ylim(c(11.0, 13.1)) + ggtitle('') + ylab('') + xlab('') + scale_fill_manual(values=c("#57a350", "#fd7600", "#383bfe")) + theme(legend.position = "none")
+ggarrange(p1, p2, p3, labels = c('t0', 't24h', 't6-8w'), nrow = 1, ncol = 3)
+
+

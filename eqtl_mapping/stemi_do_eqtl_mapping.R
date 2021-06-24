@@ -100,8 +100,13 @@ output_file_name_cis <- args[5]
 # get covariate data
 covariates_file_name <- args[6]
 # TODO expand further
+confinement_file_name <- NULL
+confinement_file_string <- args[7]
+if(!(is.na(confinement_file_string))){
+  confinement_file_name <- confinement_file_string
+}
 
-test=T
+test=F
 if(test){
   features_loc<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/features/stemi_all_lowerres_20210301_metaqtl/Baseline/monocyte_expression.tsv'
   snps_loc<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/genotype/stemi_all_merged_nomissing_numeric.tsv'
@@ -109,6 +114,9 @@ if(test){
   gene_location_file_name<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/metadata/gene_positions.tsv'
   output_file_name_cis<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/results/MatrixeQTL/stemi_all_lowerres_20210301/Baseline/monocyte.cis.tsv'
   covariates_file_name<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/metadata/stemi_all_lowerres_20210301/Baseline/monocyte_metadata.chem.tsv'
+  #confinement_file_name <- NULL
+  #confinement_file_name <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/confinements/harst_2017_SNPs.txt'
+  #confinement_file_name <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/confinements/eqtl_v1013_lead_esnps.txt'
 }
 
 
@@ -127,6 +135,22 @@ participants <- intersect(participants, colnames(covariates)[2:ncol(covariates)]
 snps <- snps[, c('id', participants), with = F]
 expressions <- expressions[, c('id', participants), with = F]
 covariates <- covariates[, c('id', participants), with = F]
+# filter by confinement
+if(!is.null(confinement_file_name)){
+  # read the table
+  confinement <- read.table(confinement_file_name, sep = '\t', header = F, stringsAsFactors = T)
+  # we check SNPs for sure
+  snps_confined <- confinement$V1
+  # and subset the SNPs
+  snps <- snps[snps$id %in% snps_confined, ]
+  # check the number of columns
+  if(ncol(confinement) > 1){
+    # get the genes
+    genes_confined <- confinement$V2
+    # subset the genes
+    expressions <- expressions[expressions$id %in% genes_confined, ]
+  }
+}
 # filter snps by maf, which of course can work both ways
 maf_reverse <- 1-maf
 snps <- snps[rowSums(snps[, 2:ncol(snps)])/(ncol(snps)-1)/2 >= maf & rowSums(snps[, 2:ncol(snps)])/(ncol(snps)-1)/2 <= maf_reverse, ,]
@@ -150,5 +174,80 @@ do_QTL_mapping(
   covariates_file_name=covariates_file_name # Covariates file name
 )
 
-
-
+do_all <- T
+if(do_all){
+  
+  snps_loc<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/genotype/stemi_all_merged_nomissing_numeric.tsv'
+  snps_location_file_name<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/metadata/snp_pos.tsv'
+  gene_location_file_name<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/metadata/gene_positions.tsv'
+  
+  features_loc_prepend<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/features/stemi_all_lowerres_20210301_metaqtl/'
+  output_file_name_cis_prepend<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/results/MatrixeQTL/stemi_all_lowerres_20210301_harst_100k/'
+  covariates_file_name_prepend<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/metadata/stemi_all_lowerres_20210301/'
+  
+  features_loc_append<-'_expression.tsv'
+  output_file_name_cis_append<-'.cis.tsv'
+  covariates_file_name_append<-'_metadata.chem.tsv'
+  
+  # filter by confinement
+  if(!is.null(confinement_file_name)){
+    # read the table
+    confinement <- read.table(confinement_file_name, sep = '\t', header = F, stringsAsFactors = T)
+    # we check SNPs for sure
+    snps_confined <- confinement$V1
+    # and subset the SNPs
+    snps <- snps[snps$id %in% snps_confined, ]
+    # check the number of columns
+    if(ncol(confinement) > 1){
+      # get the genes
+      genes_confined <- confinement$V2
+      # subset the genes
+      expressions <- expressions[expressions$id %in% genes_confined, ]
+    }
+  }
+  
+  for(cell_type in c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')){
+    for(condition in c('Baseline', 't24h', 't8w')){
+      # get the specific expression data
+      features_loc_ct_cond <- paste(features_loc_prepend, condition, '/',  cell_type, features_loc_append, sep = '') 
+      output_file_name_cis_ct_cond <- paste(output_file_name_cis_prepend, condition, '/',  cell_type, output_file_name_cis_append, sep = '')
+      covariates_file_loc_ct_cond <- paste(covariates_file_name_prepend, condition, '/',  cell_type, covariates_file_name_append, sep = '')
+      
+      # read covariate data
+      covariates_ct_cond<- fread(covariates_file_loc_ct_cond, sep = '\t', header = T, stringsAsFactors=FALSE)
+      # read the expression data
+      expressions_ct_cond <- fread(features_loc_ct_cond, sep = '\t', header=T, stringsAsFactors=FALSE)
+      
+      # get the participants that we have both expression and snps data for
+      participants_ct_cond <- intersect(colnames(snps)[2:ncol(snps)], colnames(expressions_ct_cond)[2:ncol(expressions_ct_cond)])
+      # get also overlap with the covariates data
+      participants_ct_cond <- intersect(participants_ct_cond, colnames(covariates_ct_cond)[2:ncol(covariates_ct_cond)])
+      # perform subsetting
+      snps_ct_cond <- snps[, c('id', participants_ct_cond), with = F]
+      expressions_ct_cond <- expressions_ct_cond[, c('id', participants_ct_cond), with = F]
+      covariates_ct_cond <- covariates_ct_cond[, c('id', participants_ct_cond), with = F]
+      
+      # filter snps by maf, which of course can work both ways
+      maf_reverse <- 1-maf
+      snps_ct_cond <- snps_ct_cond[rowSums(snps_ct_cond[, 2:ncol(snps_ct_cond)])/(ncol(snps_ct_cond)-1)/2 >= maf & rowSums(snps_ct_cond[, 2:ncol(snps_ct_cond)])/(ncol(snps_ct_cond)-1)/2 <= maf_reverse, ,]
+      # now write the filtered files to temporary storage
+      SNP_file_name_ct_cond <- tempfile()
+      expression_file_name_ct_cond <- tempfile()
+      covariates_file_name_ct_cond <- tempfile()
+      write.table(snps_ct_cond, SNP_file_name_ct_cond, sep = '\t', row.names = F, col.names = T)
+      write.table(expressions_ct_cond, expression_file_name_ct_cond, sep = '\t', row.names = F, col.names = T)
+      write.table(covariates_ct_cond, covariates_file_name_ct_cond, sep = '\t', row.names = F, col.names = T)
+      
+      
+      do_QTL_mapping(
+        SNP_file_name=SNP_file_name_ct_cond, # Genotype file name
+        expression_file_name=expression_file_name_ct_cond, # Gene expression file name
+        snpspos=snpspos, # dataframe containing the snp positions
+        genepos=genepos, # dataframe containing the gene positions
+        output_file_name_cis=output_file_name_cis_ct_cond, # Output file name
+        covariates_file_name=covariates_file_name_ct_cond, # Covariates file name
+        cisDist = 100000
+      )
+    }
+  }
+}
