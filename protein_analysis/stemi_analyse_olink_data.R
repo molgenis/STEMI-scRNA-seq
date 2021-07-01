@@ -767,7 +767,7 @@ v3_exp_olinkfiltered <- v3_exp[v3_exp$gene %in% gene_symbols, ]
 plot_genes_left_per_pct(v2_exp_olinkfiltered)
 plot_genes_left_per_pct(v3_exp_olinkfiltered)
 
-# lead genotype data
+# load genotype data
 genotypes <- readGT('/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/genotype/stemi_all_merged_biallelics.vcf.gz')
 genotypes[genotypes == '1|0'] <- '0|1'
 # load protein expression
