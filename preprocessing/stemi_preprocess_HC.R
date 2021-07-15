@@ -284,7 +284,7 @@ cellranger_lanes_dir <- "/groups/umcg-franke-scrna/tmp01/releases/wijst-2020-hg1
 # we'll save some plots here
 plot_dir = "/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/plots/"
 # excluding some lanes
-exclude_lanes <- c("181010_lane3", "181011_lane3", "181017_lane3", "181105_lane3", "181106_lane3", "181121_lane3", "181122_lane3", "181213_lane4", "181214_lane3","181024_lane1","181024_lane2","181024_lane3","190101_lane1","190101_lane2")
+exclude_lanes <- c("181010_lane3", "181011_lane3", "181017_lane3", "181105_lane3", "181106_lane3", "181121_lane3", "181122_lane3", "181213_lane4", "181214_lane3","181024_lane1","181024_lane2","181024_lane3","190101_lane1","190101_lane2", "190123_lane1", "190123_lane2")
 # include HCs
 include_hc_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/metadata/hc-sampleIDs.txt'
 

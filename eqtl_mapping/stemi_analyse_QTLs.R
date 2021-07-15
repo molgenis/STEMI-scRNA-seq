@@ -50,10 +50,10 @@ get_conditions_mash <- function(eqtl_output_loc, conditions = c('Baseline', 't24
         table_b2 <- data.frame(table_b2, row.names = paste(table$SNPChr,table$SNPChrPos,table$ProbeName,sep="_"))
         table_se2 <- data.frame(table_se2, row.names = paste(table$SNPChr,table$SNPChrPos,table$ProbeName,sep="_"))
         # add the colnames
-        colnames(table_b1) <- c(paste(condition, 'v2', sep = '.'))
-        colnames(table_se1) <- c(paste(condition, 'v2', sep = '.'))
-        colnames(table_b2) <- c(paste(condition, 'v3', sep = '.'))
-        colnames(table_se2) <- c(paste(condition, 'v3', sep = '.'))
+        colnames(table_b1) <- c(paste(condition, cell_type, 'v2', sep = '.'))
+        colnames(table_se1) <- c(paste(condition, cell_type, 'v2', sep = '.'))
+        colnames(table_b2) <- c(paste(condition, cell_type, 'v3', sep = '.'))
+        colnames(table_se2) <- c(paste(condition, cell_type, 'v3', sep = '.'))
         # banana
         if(is.null(ses)){
           ses <- merge(table_se1, table_se2, by="row.names",all.x=TRUE)
@@ -118,10 +118,10 @@ get_conditions_mash_meta_z <- function(eqtl_output_loc, conditions = c('Baseline
         # add the SNP>probe as rownames
         table_b1 <- data.frame(table_b1, row.names = paste(table$SNPChr,table$SNPChrPos,table$ProbeName,sep="_"))
         # add the colnames
-        colnames(table_b1) <- c(condition)
+        colnames(table_b1) <- c(paste(cell_type, '.', condition, sep = ''))
         # create the SEs
         table_se1 <- data.frame(c(rep(1, nrow(table_b1))), row.names = paste(table$SNPChr,table$SNPChrPos,table$ProbeName,sep="_"))
-        colnames(table_se1) <- c(condition)
+        colnames(table_se1) <- c(paste(cell_type, '.', condition, sep = ''))
         # banana
         if(is.null(ses)){
           ses <- table_se1
@@ -153,26 +153,37 @@ get_conditions_mash_meta_z <- function(eqtl_output_loc, conditions = c('Baseline
 }
 
 
-get_conditions_cell_types_mash <- function(eqtl_output_loc, conditions = c('Baseline', 't24h','t8w'), cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), use_z=F){
+get_conditions_cell_types_mash <- function(eqtl_output_loc, conditions = c('Baseline', 't24h','t8w'), cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), use_z=F, npcs=5, full=F){
   data <- NULL
   if(use_z){
     data <- get_conditions_mash_meta_z(eqtl_output_loc, conditions = conditions, cell_types)
   } else{
     data <- get_conditions_mash(eqtl_output_loc, conditions = conditions, cell_types)
   }
-  lfsr <- NULL
+  m <- NULL
   # result might be NULL if there is not enough data to compare
   if(!is.null(data)){
     # run MASH
+    print('running mash')
     m.1by1 = mash_1by1(data)
+    print('getting significant results')
     strong <- get_significant_results(m.1by1, 0.05)
-    U.pca = cov_pca(data,ncol(data$Bhat), subset = strong) # 6PCS due to number of conditions
+    print('getting PCA')
+    U.pca = cov_pca(data, npcs, subset = strong) # 5PCS due to number of conditions
+    print('cov ed')
     U.ed = cov_ed(data, U.pca)
+    print('U.c')
     U.c = cov_canonical(data)
+    print('mashing')
     m = mash(data, c(U.c,U.ed))
-    lfsr <- m$result$lfsr
   }
-  return(lsfr)
+  if(full){
+    return(m)
+  }
+  else{
+    lfsr <- m$result$lfsr
+    return(lfsr)
+  }
 }
 
 
@@ -183,6 +194,10 @@ snps_loc<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardio
 # load genotype data
 snps <- fread(snps_loc, header=T)
 # locations of features
-features_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/'
-
-
+features_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/features/'
+# locations of the results
+results_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/results/' 
+results_emp_meta_eqtlgenlead <- paste(results_loc, 'inhouse_eQTL_mapping_pipeline/stemi_meta_lowerres_20210301_confine_lead_snp_gene/', sep = '')
+#
+mash_emp_meta_eqtlgenlead <- get_conditions_cell_types_mash(results_emp_meta_eqtlgenlead)
+saveRDS(mash_emp_meta_eqtlgenlead, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/results/mashr_stemi_meta_lowerres_20210301_confine_lead_snp_gene.rds')
