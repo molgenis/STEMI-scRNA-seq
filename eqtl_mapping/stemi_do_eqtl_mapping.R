@@ -82,6 +82,179 @@ do_QTL_mapping <- function(
   # release resources for the temporary file
 }
 
+determine_fdr <- function(output_file_name_cis, permutation_rounds, do_smallest_per_gene){
+  # we will add the permutation rounds together
+  permutation_table <- NULL
+  # we'll store the SNP and gene info separately, that's easier for the rowmeans
+  snp_gene <- NULL
+  for(i in 1:permutation_rounds){
+    # read the current round
+    permutation_round <- fread(paste(output_file_name_cis, 'permuted', i), sep = '\t')
+    # paste onto the rest of the output
+    if(is.null(permutation_table)){
+      permutation_table <- data.frame(perm1 = permutation_round[['p-value']])
+      # we'll need this one later
+      snp_gene <- permutation_round[, c('SNP', 'gene')]
+    }
+    else{
+      permutation_table[[paste('perm', i, sep = '')]] <- permutation_round
+    }
+  }
+  # calculate the average p-value
+  mean_p_permuted=rowMeans(permutation_table)
+  # add back the snp and gene info
+  permuted_table <- snp_gene
+  permuted_table[['perm']] <- mean_p_permuted
+  # order by significance
+  permuted_table <- permuted_table[order(permuted_table[['perm']]), ]
+  # filter to the best value per gene, if requested
+  if(do_smallest_per_gene){
+    # we ordered the table, so the first entry found for a gene, should always be the most significant one
+    permuted_table <- permuted_table[match(unique(permuted_table[['gene']]), permuted_table[['gene']]), ]
+  }
+  # now read the non-permuted file
+  output_file <- fread(paste(output_file_name_cis), sep = '\t')
+  # go through each row
+  output_file[['permuted_fdr']] <- apply(output_file, 1, function(x){
+    # grab the p-value
+    p_real <- x[['p-value']]
+    # get the number of permuted p values
+    nr_permuted_p <- nrow(permuted_table)
+    # check how many of these p values are smaller than the actual p
+    nr_permuted_p_smaller <- nrow(permuted_table[permuted_table[['perm']] < p_real, ])
+    # calculate the fraction of permuted Ps, that are smaller than your actual p
+    perm_fdr <- nr_permuted_p_smaller / nr_permuted_p
+    # that fraction is the chance that your p could come from the permuted distribution
+    return(perm_fdr)
+  })
+  # get the file without the extention
+  output_file_name_cis_fdred <- sub('\\..[^\\.]*$', '', output_file_name_cis)
+  # add new extention
+  output_file_name_cis_fdred <- paste(output_file_name_cis_fdred, '.fdr.tsv')
+  # write the file
+  write.table(output_file, output_file_name_cis_fdred, sep = '\t', row.names = F, col.names = T, quote = F)
+}
+
+
+run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, covariates_file_loc_ct_cond, snps, snpspos, genepos, maf=0.1, permutation_rounds = 0, permute_in_covar_group=NULL){
+    
+  # read covariate data
+  covariates_ct_cond<- fread(covariates_file_loc_ct_cond, sep = '\t', header = T, stringsAsFactors=FALSE)
+  # read the expression data
+  expressions_ct_cond <- fread(features_loc_ct_cond, sep = '\t', header=T, stringsAsFactors=FALSE)
+  
+  # get the participants that we have both expression and snps data for
+  participants_ct_cond <- intersect(colnames(snps)[2:ncol(snps)], colnames(expressions_ct_cond)[2:ncol(expressions_ct_cond)])
+  # get also overlap with the covariates data
+  participants_ct_cond <- intersect(participants_ct_cond, colnames(covariates_ct_cond)[2:ncol(covariates_ct_cond)])
+  # perform subsetting
+  snps_ct_cond <- snps[, c('id', participants_ct_cond), with = F]
+  expressions_ct_cond <- expressions_ct_cond[, c('id', participants_ct_cond), with = F]
+  covariates_ct_cond <- covariates_ct_cond[, c('id', participants_ct_cond), with = F]
+  
+  # filter snps by maf, which of course can work both ways
+  maf_reverse <- 1-maf
+  snps_ct_cond <- snps_ct_cond[rowSums(snps_ct_cond[, 2:ncol(snps_ct_cond)])/(ncol(snps_ct_cond)-1)/2 >= maf & rowSums(snps_ct_cond[, 2:ncol(snps_ct_cond)])/(ncol(snps_ct_cond)-1)/2 <= maf_reverse, ,]
+  # now write the filtered files to temporary storage
+  SNP_file_name_ct_cond <- tempfile()
+  expression_file_name_ct_cond <- tempfile()
+  covariates_file_name_ct_cond <- tempfile()
+  write.table(snps_ct_cond, SNP_file_name_ct_cond, sep = '\t', row.names = F, col.names = T)
+  write.table(expressions_ct_cond, expression_file_name_ct_cond, sep = '\t', row.names = F, col.names = T)
+  write.table(covariates_ct_cond, covariates_file_name_ct_cond, sep = '\t', row.names = F, col.names = T)
+  
+  # do actual mapping
+  do_QTL_mapping(
+    SNP_file_name=SNP_file_name_ct_cond, # Genotype file name
+    expression_file_name=expression_file_name_ct_cond, # Gene expression file name
+    snpspos=snpspos, # dataframe containing the snp positions
+    genepos=genepos, # dataframe containing the gene positions
+    output_file_name_cis=output_file_name_cis_ct_cond, # Output file name
+    covariates_file_name=covariates_file_name_ct_cond, # Covariates file name
+    cisDist = 100000
+  )
+  # do permuted mappings as well
+  for(i in 1:permutation_rounds){
+    # we will have a permuted expression file for each round
+    expression_file_name_ct_cond_permuted <- tempfile()
+    # and we will output somewhere
+    output_file_name_cis_ct_cond_permuted <- paste(output_file_name_cis_ct_cond_permuted, 'permuted', i, sep = '')
+    # do label swapping per covariate group, if requested
+    if(!is.null(permute_in_covar_group)){
+      # start with the unpermuted file
+      expressions_ct_cond_permuted <- expressions_ct_cond
+      # go through each permutable category
+      for(group in unique(covariates_ct_cond[[permute_in_covar_group]])){
+        # get the samples with this group
+        partipants_group <- covariates_ct_cond[covariates_ct_cond[[permute_in_covar_group]] == group, 1]
+        # get the location of these participants in the expression file
+        participant_locations <- match(partipants_group, colnames(covariates_ct_cond))
+        # randomly shuffle these positions
+        participant_locations_shuffled <- sample(x = participant_locations, size = length(participant_locations))
+        # now replace the entries we have for this group, with the ones we sampled
+        expressions_ct_cond_permuted[, participant_locations] <- expressions_ct_cond_permuted[, participant_locations_shuffled]
+      }
+      # and in the end, set the colnames like nothing happened
+      colnames(expressions_ct_cond_permuted) <- colnames(expressions_ct_cond)
+    }
+    # do it all at once
+    else{
+      # grab randomly from the column names (all after the first), which should be the participants
+      expressions_ct_cond_permuted <- expressions_ct_cond[, sample(x = 2:ncol(expressions_ct_cond), size = ncol(expressions_ct_cond) - 1)]
+      # set as if we did not change anything
+      colnames(expressions_ct_cond_permuted) <- colnames(expressions_ct_cond)
+      # write as file
+      expression_file_name_ct_cond_permuted <- tempfile()
+      write.table(expressions_ct_cond_permuted, expression_file_name_ct_cond_permuted, sep = '\t', row.names = F, col.names = T)
+    }
+    do_QTL_mapping(
+      SNP_file_name=SNP_file_name_ct_cond, # Genotype file name
+      expression_file_name=expression_file_name_ct_cond_permuted, # Gene expression file name
+      snpspos=snpspos, # dataframe containing the snp positions
+      genepos=genepos, # dataframe containing the gene positions
+      output_file_name_cis=expression_file_name_ct_cond_permuted, # Output file name
+      covariates_file_name=covariates_file_name_ct_cond, # Covariates file name
+      cisDist = 100000
+    )
+  }
+}
+
+
+perform_qtl_mapping <- function(snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append, output_file_name_cis_append, covariates_file_name_append, confinement_file_name, permutation_rounds = 0, permute_in_covar_group=NULL, maf=0.1, cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), conditions=c('Baseline', 't24h', 't8w')){
+  # read the snps
+  snps <- fread(snps_loc, sep = '\t', header = T, stringsAsFactors=FALSE)
+  # read the positions of the gene and snp positions
+  snpspos = fread(snps_location_file_name, header = TRUE, stringsAsFactors = FALSE);
+  genepos = fread(gene_location_file_name, header = TRUE, stringsAsFactors = FALSE);
+  # filter by confinement
+  if(!is.null(confinement_file_name)){
+    # read the table
+    confinement <- read.table(confinement_file_name, sep = '\t', header = F, stringsAsFactors = T)
+    # we check SNPs for sure
+    snps_confined <- confinement$V1
+    # and subset the SNPs
+    snps <- snps[snps$id %in% snps_confined, ]
+    # check the number of columns
+    if(ncol(confinement) > 1){
+      # get the genes
+      genes_confined <- confinement$V2
+      # subset the genes
+      expressions <- expressions[expressions$id %in% genes_confined, ]
+    }
+  }
+    
+  for(cell_type in cell_typers){
+    for(condition in conditions){
+      # get the specific expression data
+      features_loc_ct_cond <- paste(features_loc_prepend, condition, '/',  cell_type, features_loc_append, sep = '') 
+      output_file_name_cis_ct_cond <- paste(output_file_name_cis_prepend, condition, '/',  cell_type, output_file_name_cis_append, sep = '')
+      covariates_file_loc_ct_cond <- paste(covariates_file_name_prepend, condition, '/',  cell_type, covariates_file_name_append, sep = '')
+      # do the mapping
+      run_qtl_mapping(features_loc_ct_cond, output_file_name_cis_ct_cond, covariates_file_loc_ct_cond, snps, snpspos, genepos, maf, permutation_rounds = permutation_rounds , permute_in_covar_group = permute_in_covar_group)
+    }
+  }
+}
+
 # not yet configurable constants
 maf <- 0.1
 cisDist <- 1e5
@@ -120,62 +293,10 @@ if(test){
 }
 
 
-
-# read covariate data
-covariates <- fread(covariates_file_name, sep = '\t', header = T, stringsAsFactors=FALSE)
-# read the expression data
-expressions <- fread(features_loc, sep = '\t', header=T, stringsAsFactors=FALSE)
-# read the SNPs
-snps <- fread(snps_loc, sep = '\t', header = T, stringsAsFactors=FALSE)
-# get the participants that we have both expression and snps data for
-participants <- intersect(colnames(snps)[2:ncol(snps)], colnames(expressions)[2:ncol(expressions)])
-# get also overlap with the covariates data
-participants <- intersect(participants, colnames(covariates)[2:ncol(covariates)])
-# perform subsetting
-snps <- snps[, c('id', participants), with = F]
-expressions <- expressions[, c('id', participants), with = F]
-covariates <- covariates[, c('id', participants), with = F]
-# filter by confinement
-if(!is.null(confinement_file_name)){
-  # read the table
-  confinement <- read.table(confinement_file_name, sep = '\t', header = F, stringsAsFactors = T)
-  # we check SNPs for sure
-  snps_confined <- confinement$V1
-  # and subset the SNPs
-  snps <- snps[snps$id %in% snps_confined, ]
-  # check the number of columns
-  if(ncol(confinement) > 1){
-    # get the genes
-    genes_confined <- confinement$V2
-    # subset the genes
-    expressions <- expressions[expressions$id %in% genes_confined, ]
-  }
-}
-# filter snps by maf, which of course can work both ways
-maf_reverse <- 1-maf
-snps <- snps[rowSums(snps[, 2:ncol(snps)])/(ncol(snps)-1)/2 >= maf & rowSums(snps[, 2:ncol(snps)])/(ncol(snps)-1)/2 <= maf_reverse, ,]
-# now write the filtered files to temporary storage
-SNP_file_name <- tempfile()
-expression_file_name <- tempfile()
-covariates_file_name <- tempfile()
-write.table(snps, SNP_file_name, sep = '\t', row.names = F, col.names = T)
-write.table(expressions, expression_file_name, sep = '\t', row.names = F, col.names = T)
-write.table(covariates, covariates_file_name, sep = '\t', row.names = F, col.names = T)
-# next read the position files
-snpspos = fread(snps_location_file_name, header = TRUE, stringsAsFactors = FALSE);
-genepos = fread(gene_location_file_name, header = TRUE, stringsAsFactors = FALSE);
-# finally call the function
-do_QTL_mapping(
-  SNP_file_name=SNP_file_name, # Genotype file name
-  expression_file_name=expression_file_name, # Gene expression file name
-  snpspos=snpspos, # dataframe containing the snp positions
-  genepos=genepos, # dataframe containing the gene positions
-  output_file_name_cis=output_file_name_cis, # Output file name
-  covariates_file_name=covariates_file_name # Covariates file name
-)
-
 do_all <- T
 if(do_all){
+  confinement_file_name <- NULL
+  confinement_file_name <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/confinements/harst_2017_SNPs.txt'
   
   snps_loc<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/genotype/stemi_all_merged_nomissing_numeric.tsv'
   snps_location_file_name<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/metadata/snp_pos.tsv'
@@ -189,65 +310,11 @@ if(do_all){
   output_file_name_cis_append<-'.cis.tsv'
   covariates_file_name_append<-'_metadata.chem.tsv'
   
-  # filter by confinement
-  if(!is.null(confinement_file_name)){
-    # read the table
-    confinement <- read.table(confinement_file_name, sep = '\t', header = F, stringsAsFactors = T)
-    # we check SNPs for sure
-    snps_confined <- confinement$V1
-    # and subset the SNPs
-    snps <- snps[snps$id %in% snps_confined, ]
-    # check the number of columns
-    if(ncol(confinement) > 1){
-      # get the genes
-      genes_confined <- confinement$V2
-      # subset the genes
-      expressions <- expressions[expressions$id %in% genes_confined, ]
-    }
-  }
+  maf <- 0.1
+  permutation_rounds <- 20
   
-  for(cell_type in c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')){
-    for(condition in c('Baseline', 't24h', 't8w')){
-      # get the specific expression data
-      features_loc_ct_cond <- paste(features_loc_prepend, condition, '/',  cell_type, features_loc_append, sep = '') 
-      output_file_name_cis_ct_cond <- paste(output_file_name_cis_prepend, condition, '/',  cell_type, output_file_name_cis_append, sep = '')
-      covariates_file_loc_ct_cond <- paste(covariates_file_name_prepend, condition, '/',  cell_type, covariates_file_name_append, sep = '')
-      
-      # read covariate data
-      covariates_ct_cond<- fread(covariates_file_loc_ct_cond, sep = '\t', header = T, stringsAsFactors=FALSE)
-      # read the expression data
-      expressions_ct_cond <- fread(features_loc_ct_cond, sep = '\t', header=T, stringsAsFactors=FALSE)
-      
-      # get the participants that we have both expression and snps data for
-      participants_ct_cond <- intersect(colnames(snps)[2:ncol(snps)], colnames(expressions_ct_cond)[2:ncol(expressions_ct_cond)])
-      # get also overlap with the covariates data
-      participants_ct_cond <- intersect(participants_ct_cond, colnames(covariates_ct_cond)[2:ncol(covariates_ct_cond)])
-      # perform subsetting
-      snps_ct_cond <- snps[, c('id', participants_ct_cond), with = F]
-      expressions_ct_cond <- expressions_ct_cond[, c('id', participants_ct_cond), with = F]
-      covariates_ct_cond <- covariates_ct_cond[, c('id', participants_ct_cond), with = F]
-      
-      # filter snps by maf, which of course can work both ways
-      maf_reverse <- 1-maf
-      snps_ct_cond <- snps_ct_cond[rowSums(snps_ct_cond[, 2:ncol(snps_ct_cond)])/(ncol(snps_ct_cond)-1)/2 >= maf & rowSums(snps_ct_cond[, 2:ncol(snps_ct_cond)])/(ncol(snps_ct_cond)-1)/2 <= maf_reverse, ,]
-      # now write the filtered files to temporary storage
-      SNP_file_name_ct_cond <- tempfile()
-      expression_file_name_ct_cond <- tempfile()
-      covariates_file_name_ct_cond <- tempfile()
-      write.table(snps_ct_cond, SNP_file_name_ct_cond, sep = '\t', row.names = F, col.names = T)
-      write.table(expressions_ct_cond, expression_file_name_ct_cond, sep = '\t', row.names = F, col.names = T)
-      write.table(covariates_ct_cond, covariates_file_name_ct_cond, sep = '\t', row.names = F, col.names = T)
-      
-      
-      do_QTL_mapping(
-        SNP_file_name=SNP_file_name_ct_cond, # Genotype file name
-        expression_file_name=expression_file_name_ct_cond, # Gene expression file name
-        snpspos=snpspos, # dataframe containing the snp positions
-        genepos=genepos, # dataframe containing the gene positions
-        output_file_name_cis=output_file_name_cis_ct_cond, # Output file name
-        covariates_file_name=covariates_file_name_ct_cond, # Covariates file name
-        cisDist = 100000
-      )
-    }
-  }
+  cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
+  conditions <- c('Baseline')
+  
+  perform_qtl_mapping(snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append, output_file_name_cis_append, covariates_file_name_append, confinement_file_name, permutation_rounds = permutation_rounds, permute_in_covar_group=permute_in_covar_group, cell_typers=cell_typers, conditions=conditions)
 }
