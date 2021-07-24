@@ -82,14 +82,14 @@ do_QTL_mapping <- function(
   # release resources for the temporary file
 }
 
-determine_fdr <- function(output_file_name_cis, permutation_rounds, do_smallest_per_gene){
+determine_fdr <- function(output_file_name_cis, permutation_rounds, do_smallest_per_gene=T){
   # we will add the permutation rounds together
   permutation_table <- NULL
   # we'll store the SNP and gene info separately, that's easier for the rowmeans
   snp_gene <- NULL
   for(i in 1:permutation_rounds){
     # read the current round
-    permutation_round <- fread(paste(output_file_name_cis, 'permuted', i), sep = '\t')
+    permutation_round <- fread(paste(output_file_name_cis, '.permuted.', i, sep = ''), sep = '\t')
     # paste onto the rest of the output
     if(is.null(permutation_table)){
       permutation_table <- data.frame(perm1 = permutation_round[['p-value']])
@@ -130,13 +130,13 @@ determine_fdr <- function(output_file_name_cis, permutation_rounds, do_smallest_
   # get the file without the extention
   output_file_name_cis_fdred <- sub('\\..[^\\.]*$', '', output_file_name_cis)
   # add new extention
-  output_file_name_cis_fdred <- paste(output_file_name_cis_fdred, '.fdr.tsv')
+  output_file_name_cis_fdred <- paste(output_file_name_cis_fdred, '.fdr.tsv', sep = '')
   # write the file
   write.table(output_file, output_file_name_cis_fdred, sep = '\t', row.names = F, col.names = T, quote = F)
 }
 
 
-run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, covariates_file_loc_ct_cond, snps, snpspos, genepos, maf=0.1, permutation_rounds = 0, permute_in_covar_group=NULL){
+run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, covariates_file_loc_ct_cond, snps, snpspos, genepos, maf=0.1, permutation_rounds = 0, permute_in_covar_group=NULL, do_smallest_per_gene=T){
     
   # read covariate data
   covariates_ct_cond<- fread(covariates_file_loc_ct_cond, sep = '\t', header = T, stringsAsFactors=FALSE)
@@ -178,7 +178,7 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
     # we will have a permuted expression file for each round
     expression_file_name_ct_cond_permuted <- tempfile()
     # and we will output somewhere
-    output_file_name_cis_ct_cond_permuted <- paste(output_file_name_cis_ct_cond_permuted, 'permuted', i, sep = '')
+    output_file_name_cis_ct_cond_permuted <- paste(output_file_name_cis_ct_cond, '.permuted.', i, sep = '')
     # do label swapping per covariate group, if requested
     if(!is.null(permute_in_covar_group)){
       # start with the unpermuted file
@@ -196,6 +196,8 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
       }
       # and in the end, set the colnames like nothing happened
       colnames(expressions_ct_cond_permuted) <- colnames(expressions_ct_cond)
+      # then write the file
+      write.table(expressions_ct_cond_permuted, expression_file_name_ct_cond_permuted, sep = '\t', row.names = F, col.names = T)
     }
     # do it all at once
     else{
@@ -204,7 +206,6 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
       # set as if we did not change anything
       colnames(expressions_ct_cond_permuted) <- colnames(expressions_ct_cond)
       # write as file
-      expression_file_name_ct_cond_permuted <- tempfile()
       write.table(expressions_ct_cond_permuted, expression_file_name_ct_cond_permuted, sep = '\t', row.names = F, col.names = T)
     }
     do_QTL_mapping(
@@ -212,15 +213,18 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
       expression_file_name=expression_file_name_ct_cond_permuted, # Gene expression file name
       snpspos=snpspos, # dataframe containing the snp positions
       genepos=genepos, # dataframe containing the gene positions
-      output_file_name_cis=expression_file_name_ct_cond_permuted, # Output file name
+      output_file_name_cis=output_file_name_cis_ct_cond_permuted, # Output file name
       covariates_file_name=covariates_file_name_ct_cond, # Covariates file name
       cisDist = 100000
     )
   }
+  if(permutation_rounds > 0){
+    determine_fdr(output_file_name_cis = output_file_name_cis_ct_cond, permutation_rounds = permutation_rounds, do_smallest_per_gene = do_smallest_per_gene)
+  }
 }
 
 
-perform_qtl_mapping <- function(snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append, output_file_name_cis_append, covariates_file_name_append, confinement_file_name, permutation_rounds = 0, permute_in_covar_group=NULL, maf=0.1, cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), conditions=c('Baseline', 't24h', 't8w')){
+perform_qtl_mapping <- function(snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append, output_file_name_cis_append, covariates_file_name_append, confinement_file_name, permutation_rounds = 0, permute_in_covar_group=NULL, maf=0.1, cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), conditions=c('Baseline', 't24h', 't8w'), do_smallest_per_gene=T){
   # read the snps
   snps <- fread(snps_loc, sep = '\t', header = T, stringsAsFactors=FALSE)
   # read the positions of the gene and snp positions
@@ -250,7 +254,7 @@ perform_qtl_mapping <- function(snps_loc, snps_location_file_name, gene_location
       output_file_name_cis_ct_cond <- paste(output_file_name_cis_prepend, condition, '/',  cell_type, output_file_name_cis_append, sep = '')
       covariates_file_loc_ct_cond <- paste(covariates_file_name_prepend, condition, '/',  cell_type, covariates_file_name_append, sep = '')
       # do the mapping
-      run_qtl_mapping(features_loc_ct_cond, output_file_name_cis_ct_cond, covariates_file_loc_ct_cond, snps, snpspos, genepos, maf, permutation_rounds = permutation_rounds , permute_in_covar_group = permute_in_covar_group)
+      run_qtl_mapping(features_loc_ct_cond, output_file_name_cis_ct_cond, covariates_file_loc_ct_cond, snps, snpspos, genepos, maf, permutation_rounds = permutation_rounds , permute_in_covar_group = permute_in_covar_group, do_smallest_per_gene = do_smallest_per_gene)
     }
   }
 }
@@ -315,6 +319,8 @@ if(do_all){
   
   cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
   conditions <- c('Baseline')
+  
+  permute_in_covar_group <- 'chem'
   
   perform_qtl_mapping(snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append, output_file_name_cis_append, covariates_file_name_append, confinement_file_name, permutation_rounds = permutation_rounds, permute_in_covar_group=permute_in_covar_group, cell_typers=cell_typers, conditions=conditions)
 }
