@@ -89,7 +89,7 @@ determine_fdr <- function(output_file_name_cis, permutation_rounds, do_smallest_
   snp_gene <- NULL
   for(i in 1:permutation_rounds){
     # read the current round
-    permutation_round <- fread(paste(output_file_name_cis, '.permuted.', i, sep = ''), sep = '\t')
+    permutation_round <- fread(paste(output_file_name_cis, '.permuted.', i, sep = ''), sep = '\t', header = T)
     # paste onto the rest of the output
     if(is.null(permutation_table)){
       permutation_table <- data.frame(perm1 = permutation_round[['p-value']])
@@ -97,7 +97,7 @@ determine_fdr <- function(output_file_name_cis, permutation_rounds, do_smallest_
       snp_gene <- permutation_round[, c('SNP', 'gene')]
     }
     else{
-      permutation_table[[paste('perm', i, sep = '')]] <- permutation_round
+      permutation_table[[paste('perm', i, sep = '')]] <- permutation_round[, c('p-value'), drop = F]
     }
   }
   # calculate the average p-value
@@ -113,7 +113,7 @@ determine_fdr <- function(output_file_name_cis, permutation_rounds, do_smallest_
     permuted_table <- permuted_table[match(unique(permuted_table[['gene']]), permuted_table[['gene']]), ]
   }
   # now read the non-permuted file
-  output_file <- fread(paste(output_file_name_cis), sep = '\t')
+  output_file <- fread(paste(output_file_name_cis), sep = '\t', header = T)
   # go through each row
   output_file[['permuted_fdr']] <- apply(output_file, 1, function(x){
     # grab the p-value
