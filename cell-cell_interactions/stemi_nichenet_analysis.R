@@ -258,3 +258,33 @@ for(plot_name in names(v2_UT_vs_Baseline_plots)){
   ggsave(paste('./', 'nichenet_', 'UT_vs_Baseline_', plot_name, '.pdf', sep = ''), width = 10, heigh = 10, plot=v2_UT_vs_Baseline_plots[[plot_name]])
 }
 
+
+# read the object
+combined_v3 <- readRDS(combined_v3_loc)
+# compare Baseline to t24h
+v3_Baseline_vs_t24h <- do_nichenet_analysis_per_celltype(combined_v3, 'timepoint.final', 't24h', 'Baseline', lr_network, weighted_networks, ligand_target_matrix)
+saveRDS(v3_Baseline_vs_t24h, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_Baseline_vs_t24h_nichenet.rds')
+# compare Baseline to t8w
+v3_Baseline_vs_t8w <- do_nichenet_analysis_per_celltype(combined_v3, 'timepoint.final', 't8w', 'Baseline', lr_network, weighted_networks, ligand_target_matrix)
+saveRDS(v3_Baseline_vs_t8w, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_Baseline_vs_t8w_nichenet.rds')
+# compare HC to Baseline
+v3_UT_vs_Baseline <- do_nichenet_analysis_per_celltype(combined_v3, 'timepoint.final', 'Baseline', 'UT', lr_network, weighted_networks, ligand_target_matrix)
+saveRDS(v3_UT_vs_Baseline, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_UT_vs_Baseline_nichenet.rds')
+
+# trying to create the plots
+v3_Baseline_vs_t24h_plots <- nichenet_output_to_plot(v3_Baseline_vs_t24h)
+v3_Baseline_vs_t8w_plots <- nichenet_output_to_plot(v3_Baseline_vs_t8w)
+v3_UT_vs_Baseline_plots <- nichenet_output_to_plot(v3_UT_vs_Baseline)
+
+# save plots
+for(plot_name in names(v3_Baseline_vs_t24h_plots)){
+  ggsave(paste('./', 'nichenet_', 'Baseline_vs_t24h_', plot_name, '.pdf', sep = ''), width = 10, heigh = 10, plot=v3_Baseline_vs_t24h_plots[[plot_name]])
+}
+for(plot_name in names(v3_Baseline_vs_t8w_plots)){
+  ggsave(paste('./', 'nichenet_', 'Baseline_vs_t8w_', plot_name, '.pdf', sep = ''), width = 10, heigh = 10, plot=v3_Baseline_vs_t8w_plots[[plot_name]])
+}
+for(plot_name in names(v3_UT_vs_Baseline_plots)){
+  ggsave(paste('./', 'nichenet_', 'UT_vs_Baseline_', plot_name, '.pdf', sep = ''), width = 10, heigh = 10, plot=v3_UT_vs_Baseline_plots[[plot_name]])
+}
+
+

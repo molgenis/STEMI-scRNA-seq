@@ -190,6 +190,159 @@ create_feature_files_per_condition_combined <- function(seurat_object, output_lo
 }
 
 
+# creates a files per cell type, with in the columns the participants and in the rows the genes, with each cell the mean expression of that participant for that gene, in each folder per condition
+create_metadata_files_per_condition <- function(seurat_object, output_loc, cell_types_to_output = NULL, conditions_to_output = NULL, condition.column.name = "timepoint.final", sample.id.column.name="assignment.final", cell_type_column = "cell_type", assay = "RNA", prepend_1 = F){
+  # grab the conditions
+  conditions <- unique(seurat_object@meta.data[[condition.column.name]])
+  # remove any na conditions (sometimes caused if using demux assignments)
+  conditions <- conditions[!is.na(conditions)]
+  # unless we wnat only specific conditions, we'll just to those
+  if(!(is.null(conditions_to_output))){
+    conditions <- conditions_to_output
+  }
+  # go through the conditions
+  for(condition in conditions){
+    # there should be a subdirectory per condition
+    output_loc_condition <- paste0(output_loc, condition,"/")
+    # there might be a prepended 'X' that we might want to remove
+    if(startsWith(condition, "X")){
+      output_loc_condition <- paste0(output_loc, substr(condition, 2, nchar(condition)),"/")
+    }
+    # grab only the cells with this condition
+    print(paste("grabbing condition", condition))
+    cells_condition <- seurat_object[,seurat_object@meta.data[condition.column.name] == condition]
+    print(paste("finished grabbing condition", condition))
+    # do the feature file creation for this condition
+    create_metadata_files(cells_condition, cell_types_to_output = cell_types_to_output, output_loc = output_loc_condition, sample.id.column.name=sample.id.column.name, cell_type_column=cell_type_column, assay=assay, prepend_1 = prepend_1)
+  }
+}
+
+
+create_metadata_files_per_condition_combined <- function(seurat_object, output_loc, cell_types_to_output = NULL, conditions_to_output_a=c('UT'), conditions_to_output_b=c('Baseline', 't24h', 't8w'), condition.column.name = "timepoint.final", sample.id.column.name="assignment.final", cell_type_column = "cell_type", assay = "RNA", symbols.to.ensg = F, symbols.to.ensg.mapping="genes.tsv", prepend_1_a = T, prepend_1_b = F, metaqtl_format=F, make_plink_compat=F){
+  # subset to what we can actually use
+  seurat_object <- seurat_object[, !is.na(seurat_object@meta.data[[cell_type_column]]) & !is.na(seurat_object@meta.data[[condition.column.name]]) & !is.na(seurat_object@meta.data[[sample.id.column.name]])]
+  # combined each A with each B
+  for(condition_a in conditions_to_output_a){
+    # with condition b
+    for(condition_b in conditions_to_output_b){
+      # subset to both
+      seurat_object_conditions <- seurat_object[, seurat_object@meta.data[[condition.column.name]] %in% c(condition_a, condition_b)]
+      # do magic on the participant column
+      if(prepend_1_a){
+        seurat_object_conditions@meta.data[seurat_object_conditions@meta.data[[condition.column.name]] == condition_a, sample.id.column.name] <- paste('1_', seurat_object_conditions@meta.data[seurat_object_conditions@meta.data[[condition.column.name]] == condition_a, sample.id.column.name], sep = '')
+      }
+      if(prepend_1_b){
+        seurat_object_conditions@meta.data[seurat_object_conditions@meta.data[[condition.column.name]] == condition_b, sample.id.column.name] <- paste('1_', seurat_object_conditions@meta.data[seurat_object_conditions@meta.data[[condition.column.name]] == condition_b, sample.id.column.name], sep = '')
+      }
+      # paste the output location
+      output_loc_full <- paste(output_loc, condition_a, '_', condition_b, '/', sep = '')
+      # do the feature file creation for this condition
+      create_metadata_files(seurat_object_conditions, cell_types_to_output = cell_types_to_output, output_loc = output_loc_full, sample.id.column.name=sample.id.column.name, cell_type_column=cell_type_column, assay=assay, prepend_1 = F)
+    }
+  }
+}
+
+
+create_metadata_files <- function(seurat_object,  output_loc, cell_types_to_output = NULL, sample.id.column.name="assignment.final", cell_type_column = "cell_type", assay = "RNA", prepend_1 = F){
+  # set the assay
+  DefaultAssay(seurat_object) <- assay
+  # if the user did not specify the cell types to output, just do all of them
+  if(is.null(cell_types_to_output)){
+    cell_types_to_output = unique(seurat_object@meta.data[[cell_type_column]])
+  }
+  # go through the cell types we want to output
+  for (celltype in cell_types_to_output) {
+    # get the individuals in the object
+    individuals <- unique(seurat_object@meta.data[seurat_object@meta.data[[cell_type_column]] == celltype, sample.id.column.name])
+    # remove any na individuals (sometimes caused if using demux assignments)
+    individuals <- individuals[!is.na(individuals)]
+    # create a matrix where we will store the data
+    metadata_matrix <- matrix(nrow=6, ncol = length(individuals), 
+                              dimnames = list(c('chem', 'lane', 'ncells', 'avg_numi', 'gender', 'age'), individuals))
+    # go through the individuals
+    for (individual in individuals) {
+      # get the data for the individual
+      try({
+        # subset to cells of individual
+        seurat_object_participant <- seurat_object[, seurat_object@meta.data[[sample.id.column.name]] == individual &
+                                                     seurat_object@meta.data[[cell_type_column]] == celltype]
+        # get static data
+        chem <- unique(seurat_object_participant@meta.data$chem)[1]
+        lane <- unique(seurat_object_participant@meta.data$lane)[1]
+        gender <- unique(seurat_object_participant@meta.data$gender)[1]
+        age <- unique(seurat_object_participant@meta.data$age)[1]
+        ncells <- nrow(seurat_object_participant@meta.data)
+        # get the average number of umis
+        avg_umi <- NULL
+        if(assay == 'SCT'){
+          avg_umi <- mean(seurat_object_participant@meta.data$nCount_SCT)
+        }
+        else if(assay == 'RNA'){
+          avg_umi <- mean(seurat_object_participant@meta.data$nCount_RNA)
+        }
+        else{
+          print('unknown assay, using RNA')
+          avg_umi <- mean(seurat_object_participant@meta.data$nCount_RNA)
+        }
+        # setting data
+        metadata_matrix['chem', individual] <- chem
+        metadata_matrix['lane', individual] <- lane
+        metadata_matrix['gender', individual] <- gender
+        metadata_matrix['age', individual] <- age
+        metadata_matrix['ncells', individual] <- ncells
+        metadata_matrix['avg_numi', individual] <- avg_umi
+      })
+    }
+    # write the results
+    if(prepend_1){
+      # prepend the '1_' to the id 
+      colnames(metadata_matrix) <- paste0("1_", colnames(metadata_matrix))
+    }
+    # add the rownames as a variable
+    var_names <- data.frame(id=c('chem', 'lane', 'ncells', 'avg_numi', 'gender', 'age'))
+    metadata_matrix <- cbind(var_names, data.frame(metadata_matrix))
+    # write our table of means for this cell type
+    write.table(metadata_matrix, 
+                file = paste0(output_loc, gsub(' ', '_', celltype), "_metadata", ".tsv"),
+                quote = F, sep = "\t", col.names = T, row.names = F)
+  }
+}
+
+metadata_file_to_coded_file <- function(metadata_file_loc, metadata_output_loc=NULL,vars_to_keep=NULL, vars_to_convert=NULL){
+  # read the original file
+  metadata <- read.table(metadata_file_loc, sep = '\t', header=T, stringsAsFactors = F)
+  # check if the user gave us any commands
+  variables <- vars_to_keep
+  if(is.null(variables)){
+    variables <- metadata$id
+  }
+  varsconv <- vars_to_convert
+  if(is.null(varsconv)){
+    varsconv <- metadata$id
+  }
+  # here's what we'll keep
+  metadata <- metadata[metadata$id %in% variables, , drop=F]
+  # and now do some replacing
+  for(variable in vars_to_convert){
+    variable_row <- as.vector(unlist(metadata[metadata$id == variable, ]))
+    variable_row <- as.numeric(as.factor(variable_row))
+    metadata[metadata$id == variable, ] <- variable_row
+  }
+  # write the result
+  output_location <- metadata_output_loc
+  if(is.null(output_location)){
+    output_location <- paste(gsub('(tsv$)|(txt$)', '', metadata_file_loc), paste(vars_to_keep, sep='_'), '.tsv', sep='')
+  }
+  metadata$id <- vars_to_keep
+  # write our table of means for this cell type
+  write.table(metadata, 
+              file = output_location,
+              quote = F, sep = "\t", col.names = T, row.names = F)
+}
+
+
+
+
 #
 # main code
 #
@@ -372,4 +525,16 @@ create_feature_files_per_condition_combined(all_combined, '/groups/umcg-wijmenga
 create_feature_files_per_condition(all_combined[, all_combined@meta.data$timepoint.final == 'UT'], '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/features/stemi_and_1mut_lowerres_20210629_limix/', cell_types_to_output=c('bulk'), cell_type_column = 'bulk', prepend_1 = F, symbols.to.ensg = T, symbols.to.ensg.mapping = gene_to_ens_mapping, assay = 'SCT', make_plink_compat=T)
 create_feature_files_per_condition_combined(all_combined, '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/features/stemi_and_1mut_lowerres_20210629_limix/', cell_types_to_output=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), cell_type_column = 'cell_type_lowerres', prepend_1_a = F, symbols.to.ensg = T, symbols.to.ensg.mapping = gene_to_ens_mapping, assay = 'SCT', make_plink_compat=T)
 create_feature_files_per_condition(all_combined[, all_combined@meta.data$timepoint.final == 'UT'], '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/features/stemi_and_1mut_lowerres_20210629_limix/', cell_types_to_output=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), cell_type_column = 'cell_type_lowerres', prepend_1 = F, symbols.to.ensg = T, symbols.to.ensg.mapping = gene_to_ens_mapping, assay = 'SCT', make_plink_compat=T)
+
+# create metadata for MatrixEQTL
+create_metadata_files_per_condition(all_combined, '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/metadata/stemi_and_1mut_lowerres_20210629/', cell_type_column = 'cell_type_lowerres')
+create_metadata_files_per_condition_combined(all_combined, '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/metadata/stemi_and_1mut_lowerres_20210629/', cell_type_column = 'cell_type_lowerres')
+# add a mock bulk column
+all_combined@meta.data$bulk <- 'bulk'
+create_feature_files_per_condition_combined(all_combined, '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/features/stemi_and_1mut_lowerres_20210629_metaqtl/', cell_types_to_output=c('bulk'), cell_type_column = 'bulk', prepend_1_a = F, symbols.to.ensg = T, symbols.to.ensg.mapping = gene_to_ens_mapping, assay = 'SCT', make_plink_compat=F, metaqtl_format=T)
+create_feature_files_per_condition(all_combined[, all_combined@meta.data$timepoint.final == 'UT'], '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/features/stemi_and_1mut_lowerres_20210629_metaqtl/', cell_types_to_output=c('bulk'), cell_type_column = 'bulk', prepend_1 = F, symbols.to.ensg = T, symbols.to.ensg.mapping = gene_to_ens_mapping, assay = 'SCT', make_plink_compat=F, metaqtl_format=T)
+create_feature_files_per_condition_combined(all_combined, '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/features/stemi_and_1mut_lowerres_20210629_metaqtl/', cell_types_to_output=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), cell_type_column = 'cell_type_lowerres', prepend_1_a = F, symbols.to.ensg = T, symbols.to.ensg.mapping = gene_to_ens_mapping, assay = 'SCT', make_plink_compat=F, metaqtl_format=T)
+create_feature_files_per_condition(all_combined[, all_combined@meta.data$timepoint.final == 'UT'], '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/features/stemi_and_1mut_lowerres_20210629_metaqtl/', cell_types_to_output=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), cell_type_column = 'cell_type_lowerres', prepend_1 = F, symbols.to.ensg = T, symbols.to.ensg.mapping = gene_to_ens_mapping, assay = 'SCT', make_plink_compat=F, metaqtl_format=T)
+
+
 

@@ -1,6 +1,8 @@
 # load libraries
 library(MatrixEQTL)
 library(data.table)
+library(foreach)
+library(doMC)
 
 # functions
 do_QTL_mapping <- function(
@@ -90,14 +92,19 @@ determine_fdr <- function(output_file_name_cis, permutation_rounds, do_smallest_
   for(i in 1:permutation_rounds){
     # read the current round
     permutation_round <- fread(paste(output_file_name_cis, '.permuted.', i, sep = ''), sep = '\t', header = T)
+    # set rownames
+    rownames(permutation_round) <- paste(permutation_round[['SNP']], permutation_round[['gene']], sep = '_')
     # paste onto the rest of the output
     if(is.null(permutation_table)){
       permutation_table <- data.frame(perm1 = permutation_round[['p-value']])
+      # set the rownames here as well
+      rownames(permutation_table) <- rownames(permutation_round)
       # we'll need this one later
       snp_gene <- permutation_round[, c('SNP', 'gene')]
     }
     else{
-      permutation_table[[paste('perm', i, sep = '')]] <- permutation_round[, c('p-value'), drop = F]
+      # grab the same snp-gene pairs
+      permutation_table[[paste('perm', i, sep = '')]] <- permutation_round[rownames(permutation_table), c('p-value'), drop = F]
     }
   }
   # calculate the average p-value
@@ -139,7 +146,7 @@ determine_fdr <- function(output_file_name_cis, permutation_rounds, do_smallest_
 run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, covariates_file_loc_ct_cond, snps, snpspos, genepos, maf=0.1, permutation_rounds = 0, permute_in_covar_group=NULL, do_smallest_per_gene=T){
     
   # read covariate data
-  covariates_ct_cond<- fread(covariates_file_loc_ct_cond, sep = '\t', header = T, stringsAsFactors=FALSE)
+  covariates_ct_cond <- fread(covariates_file_loc_ct_cond, sep = '\t', header = T, stringsAsFactors=FALSE)
   # read the expression data
   expressions_ct_cond <- fread(features_loc_ct_cond, sep = '\t', header=T, stringsAsFactors=FALSE)
   
@@ -175,14 +182,21 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
   )
   # do permuted mappings as well
   for(i in 1:permutation_rounds){
+  #cl <- parallel::makeCluster(4)
+  #doParallel::registerDoParallel(cl)
+  #foreach(i=1:permutation_rounds) %dopar% {
     # we will have a permuted expression file for each round
     expression_file_name_ct_cond_permuted <- tempfile()
+    # and matched permuted covariates
+    covariate_file_name_ct_cond_permuted <- tempfile()
     # and we will output somewhere
     output_file_name_cis_ct_cond_permuted <- paste(output_file_name_cis_ct_cond, '.permuted.', i, sep = '')
     # do label swapping per covariate group, if requested
     if(!is.null(permute_in_covar_group)){
       # start with the unpermuted file
       expressions_ct_cond_permuted <- expressions_ct_cond
+      # covariates as well
+      covariates_ct_cond_permuted <- covariates_ct_cond
       # go through each permutable category
       for(group in unique(covariates_ct_cond[[permute_in_covar_group]])){
         # get the samples with this group
@@ -193,20 +207,29 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
         participant_locations_shuffled <- sample(x = participant_locations, size = length(participant_locations))
         # now replace the entries we have for this group, with the ones we sampled
         expressions_ct_cond_permuted[, participant_locations] <- expressions_ct_cond_permuted[, participant_locations_shuffled]
+        # permute the covariates in the same way so they are still matched to the expression (actually permuting genotype)
+        covariates_ct_cond_permuted[, participant_locations] <- covariates_ct_cond_permuted[, participant_locations_shuffled]
       }
       # and in the end, set the colnames like nothing happened
       colnames(expressions_ct_cond_permuted) <- colnames(expressions_ct_cond)
+      colnames(covariates_ct_cond_permuted) <- colnames(covariates_ct_cond)
       # then write the file
       write.table(expressions_ct_cond_permuted, expression_file_name_ct_cond_permuted, sep = '\t', row.names = F, col.names = T)
+      write.table(covariates_ct_cond_permuted, covariates_file_name_ct_cond, sep = '\t', row.names = F, col.names = T)
     }
     # do it all at once
     else{
       # grab randomly from the column names (all after the first), which should be the participants
-      expressions_ct_cond_permuted <- expressions_ct_cond[, sample(x = 2:ncol(expressions_ct_cond), size = ncol(expressions_ct_cond) - 1)]
+      random_sampling <- c(1 , sample(x = 2:ncol(expressions_ct_cond), size = ncol(expressions_ct_cond) - 1))
+      # grab participants 
+      expressions_ct_cond_permuted <- expressions_ct_cond[, random_sampling]
+      covariates_ct_cond_permuted <- covariates_ct_cond[, random_sampling]
       # set as if we did not change anything
       colnames(expressions_ct_cond_permuted) <- colnames(expressions_ct_cond)
+      colnames(covariates_ct_cond_permuted) <- colnames(expressions_ct_cond)
       # write as file
       write.table(expressions_ct_cond_permuted, expression_file_name_ct_cond_permuted, sep = '\t', row.names = F, col.names = T)
+      write.table(covariates_ct_cond_permuted, covariate_file_name_ct_cond_permuted, sep = '\t', row.names = F, col.names = T)
     }
     do_QTL_mapping(
       SNP_file_name=SNP_file_name_ct_cond, # Genotype file name
@@ -214,10 +237,11 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
       snpspos=snpspos, # dataframe containing the snp positions
       genepos=genepos, # dataframe containing the gene positions
       output_file_name_cis=output_file_name_cis_ct_cond_permuted, # Output file name
-      covariates_file_name=covariates_file_name_ct_cond, # Covariates file name
+      covariates_file_name=covariate_file_name_ct_cond_permuted, # Covariates file name
       cisDist = 100000
     )
   }
+  #parallel::stopCluster(cl)
   if(permutation_rounds > 0){
     determine_fdr(output_file_name_cis = output_file_name_cis_ct_cond, permutation_rounds = permutation_rounds, do_smallest_per_gene = do_smallest_per_gene)
   }
@@ -296,7 +320,7 @@ if(test){
   #confinement_file_name <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/confinements/eqtl_v1013_lead_esnps.txt'
 }
 
-
+registerDoMC(4)
 do_all <- T
 if(do_all){
   confinement_file_name <- NULL
@@ -318,7 +342,7 @@ if(do_all){
   permutation_rounds <- 20
   
   cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
-  conditions <- c('Baseline')
+  conditions <- c('t24h')
   
   permute_in_covar_group <- 'chem'
   
