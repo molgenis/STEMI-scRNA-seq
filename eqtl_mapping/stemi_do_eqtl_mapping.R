@@ -321,20 +321,64 @@ setup_settings <- function(configuration_table){
   return(configuration_list)
 }
 
+# do CLI method, when used as script
+cli <- F
+if(cli){
+  # read the command line arguments
+  args <- commandArgs(trailingOnly=TRUE)
+  # the config file is a parameter
+  config_loc <- args[1]
+  # read the file
+  config_table <- read.table(config_loc, header = F, sep = '\t')
+  # set up the configuration
+  settings_list <- setup_settings(config_table)
+  
+  # check for any confinements
+  confinement_file_name <- NULL
+  if('confinement_file_name' %in% names(settings_list)){
+    confinement_file_name <- settings_list[['confinement_file_name']]
+  }
+  #confinement_file_name <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/confinements/harst_2017_SNPs.txt'
+  snps_loc <- settings_list[['snps_loc']]
+  #snps_loc<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/genotype/stemi_all_merged_nomissing_numeric.tsv'
+  snps_location_file_name <- settings_list[['snps_location_file_name']]
+  #snps_location_file_name<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/metadata/snp_pos.tsv'
+  gene_location_file_name <- settings_list[['gene_location_file_name']]
+  #gene_location_file_name<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/metadata/gene_positions.tsv'
+  
+  features_loc_prepend <- settings_list[['features_loc_prepend']]
+  #features_loc_prepend<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/features/stemi_all_lowerres_20210301_metaqtl/'
+  output_file_name <- settings_list[['output_file_name']]
+  #output_file_name_cis_prepend<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/results/MatrixeQTL/stemi_all_lowerres_20210301_harst_100k/'
+  covariates_file_name_prepend <- settings_list[['covariates_file_name_prepend']]
+  #covariates_file_name_prepend<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/metadata/stemi_all_lowerres_20210301/'
+  
+  features_loc_append <- settings_list[['features_loc_append']]
+  #features_loc_append<-'_expression.tsv'
+  output_file_name_cis_append <- settings_list[['output_file_name_cis_append']]
+  #output_file_name_cis_append<-'.cis.tsv'
+  covariates_file_name_append <- settings_list[['covariates_file_name_append']]
+  #covariates_file_name_append<-'_metadata.chem.tsv'
+  
+  maf <- settings_list[['maf']]
+  #maf <- 0.1
+  permutation_rounds <- settings_list[['permutation_rounds']]
+  #permutation_rounds <- 20
+  
+  
+  cell_typers <- strsplit(settings_list[['cell_types']], ',')[[1]]
+  #cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
+  conditions <- strsplit(settings_list[['cell_types']], ',')[[1]]
+  #conditions <- c('Baseline', 't24h', 't8w')
+  
+  permute_in_covar_group <- settings_list[['permute_in_covar_group']]
+  #permute_in_covar_group <- 'chem'
+  
+  perform_qtl_mapping(snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append, output_file_name_cis_append, covariates_file_name_append, confinement_file_name, permutation_rounds = permutation_rounds, permute_in_covar_group=permute_in_covar_group, cell_typers=cell_typers, conditions=conditions)
+}
 
-# read the command line arguments
-args <- commandArgs(trailingOnly=TRUE)
-# the config file is a parameter
-config_loc <- args[1]
-# read the file
-config_table <- read.table(config_loc, header = F, sep = '\t')
-# set up the configuration
-settings_list <- setup_settings(config_table)
-
-
-registerDoMC(4)
-do_all <- T
-if(do_all){
+do_all_stemi_meta <- F
+if(do_all_stemi_meta){
   confinement_file_name <- NULL
   #confinement_file_name <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/confinements/harst_2017_SNPs.txt'
   confinement_file_name <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/confinements/eqtl_v1013_lead_snp_gene.txt'
@@ -364,8 +408,8 @@ if(do_all){
 }
 
 # UT+HC
-do_all <- T
-if(do_all){
+do_all_ut_stemi <- T
+if(do_all_ut_stemi){
   confinement_file_name <- NULL
   confinement_file_name <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/confinements/harst_2017_SNPs.txt'
   #confinement_file_name <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/confinements/eqtl_v1013_lead_snp_gene.txt'
