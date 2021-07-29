@@ -257,8 +257,8 @@ create_metadata_files <- function(seurat_object,  output_loc, cell_types_to_outp
     # remove any na individuals (sometimes caused if using demux assignments)
     individuals <- individuals[!is.na(individuals)]
     # create a matrix where we will store the data
-    metadata_matrix <- matrix(nrow=6, ncol = length(individuals), 
-                              dimnames = list(c('chem', 'lane', 'ncells', 'avg_numi', 'gender', 'age'), individuals))
+    metadata_matrix <- matrix(nrow=7, ncol = length(individuals), 
+                              dimnames = list(c('chem', 'lane', 'ncells', 'avg_numi', 'gender', 'age', 'status'), individuals))
     # go through the individuals
     for (individual in individuals) {
       # get the data for the individual
@@ -272,6 +272,7 @@ create_metadata_files <- function(seurat_object,  output_loc, cell_types_to_outp
         gender <- unique(seurat_object_participant@meta.data$gender)[1]
         age <- unique(seurat_object_participant@meta.data$age)[1]
         ncells <- nrow(seurat_object_participant@meta.data)
+        status <- unique(seurat_object_participant@meta.data[['timepoint.final']])[1]
         # get the average number of umis
         avg_umi <- NULL
         if(assay == 'SCT'){
@@ -291,6 +292,7 @@ create_metadata_files <- function(seurat_object,  output_loc, cell_types_to_outp
         metadata_matrix['age', individual] <- age
         metadata_matrix['ncells', individual] <- ncells
         metadata_matrix['avg_numi', individual] <- avg_umi
+        metadata_matrix['status', individual] <- status
       })
     }
     # write the results
@@ -299,7 +301,7 @@ create_metadata_files <- function(seurat_object,  output_loc, cell_types_to_outp
       colnames(metadata_matrix) <- paste0("1_", colnames(metadata_matrix))
     }
     # add the rownames as a variable
-    var_names <- data.frame(id=c('chem', 'lane', 'ncells', 'avg_numi', 'gender', 'age'))
+    var_names <- data.frame(id=c('chem', 'lane', 'ncells', 'avg_numi', 'gender', 'age', 'status'))
     metadata_matrix <- cbind(var_names, data.frame(metadata_matrix))
     # write our table of means for this cell type
     write.table(metadata_matrix, 
@@ -311,6 +313,8 @@ create_metadata_files <- function(seurat_object,  output_loc, cell_types_to_outp
 metadata_file_to_coded_file <- function(metadata_file_loc, metadata_output_loc=NULL,vars_to_keep=NULL, vars_to_convert=NULL){
   # read the original file
   metadata <- read.table(metadata_file_loc, sep = '\t', header=T, stringsAsFactors = F)
+  # create new metadata
+  metadata_new <- NULL
   # check if the user gave us any commands
   variables <- vars_to_keep
   if(is.null(variables)){
@@ -321,21 +325,47 @@ metadata_file_to_coded_file <- function(metadata_file_loc, metadata_output_loc=N
     varsconv <- metadata$id
   }
   # here's what we'll keep
-  metadata <- metadata[metadata$id %in% variables, , drop=F]
+  metadata_new <- metadata[metadata$id %in% variables, , drop=F]
   # and now do some replacing
-  for(variable in vars_to_convert){
-    variable_row <- as.vector(unlist(metadata[metadata$id == variable, ]))
-    variable_row <- as.numeric(as.factor(variable_row))
-    metadata[metadata$id == variable, ] <- variable_row
+  for(variable_to_convert in vars_to_convert){
+    # get the variables in the row
+    variable_row <- as.character(as.vector(unlist(metadata[metadata$id == variable_to_convert, 2:ncol(metadata)])))
+    # check the unique variables
+    variable_unique <- unique(variable_row)
+    # turn binary, skipping the first one, because that would cause duplicate describing rows
+    if(length(variable_unique) > 1){
+      for(i in 2:length(variable_unique)){
+        # check the option
+        variable <- as.character(variable_unique[i])
+        # initiate a row, where nothing is this specific variable
+        binary_row <- rep(0, times = length(variable_row))
+        # then set to 1 where in the original data, this position held this variable
+        binary_row[variable_row == variable] <- 1
+        # add as a binary row
+        #metadata_new[paste(variable_to_convert, variable, sep = '_'), ] <- c(binary_row)
+        row <- c(paste(variable_to_convert, variable, sep = '_'), binary_row)
+        metadata_new <- rbind(metadata_new, row)
+      }
+      # remove the original row 
+      metadata_new <- metadata_new[metadata_new$id != variable_to_convert, ]
+    }
+    else{
+      # if the variable is the same, add it with all values being '1', so true
+      row <- c(paste(variable_to_convert, variable_unique, sep = '_'), rep(1, times = length(variable_row)))
+      metadata_new <- rbind(metadata_new, row)
+      # remove the original row 
+      metadata_new <- metadata_new[metadata_new$id != variable_to_convert, ]
+    }
   }
   # write the result
   output_location <- metadata_output_loc
   if(is.null(output_location)){
-    output_location <- paste(gsub('(tsv$)|(txt$)', '', metadata_file_loc), paste(vars_to_keep, sep='_'), '.tsv', sep='')
+    output_location <- paste(gsub('(tsv$)|(txt$)', '', metadata_file_loc), paste(vars_to_keep, collapse='_', sep = ''), '.tsv', sep='')
   }
-  metadata$id <- vars_to_keep
+  print(metadata_new)
+  #metadata$id <- vars_to_keep
   # write our table of means for this cell type
-  write.table(metadata, 
+  write.table(metadata_new, 
               file = output_location,
               quote = F, sep = "\t", col.names = T, row.names = F)
 }
@@ -537,4 +567,11 @@ create_feature_files_per_condition_combined(all_combined, '/groups/umcg-wijmenga
 create_feature_files_per_condition(all_combined[, all_combined@meta.data$timepoint.final == 'UT'], '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/features/stemi_and_1mut_lowerres_20210629_metaqtl/', cell_types_to_output=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), cell_type_column = 'cell_type_lowerres', prepend_1 = F, symbols.to.ensg = T, symbols.to.ensg.mapping = gene_to_ens_mapping, assay = 'SCT', make_plink_compat=F, metaqtl_format=T)
 
 
-
+for(condition in c('Baseline', 't24h', 't8w', 'UT', 'UT_Baseline', 'UT_t24h', 'UT_t8w')){
+  print(condition)
+  for(cell_type in c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')){
+    print(cell_type)
+    loc <- paste('/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/metadata/stemi_and_1mut_lowerres_20210629/', condition, '/', cell_type, '_metadata.tsv', sep = '')
+    metadata_file_to_coded_file(loc, vars_to_keep = c('chem', 'status'), vars_to_convert = c('chem', 'status'))
+  }
+}
