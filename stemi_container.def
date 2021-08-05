@@ -58,7 +58,7 @@ Include: yum
     # needed for R devtools
     yum -y install libxml2-devel
     ########################
-    # try to install conda #
+    # install conda #
     ########################
     yum -y install curl
     wget https://repo.anaconda.com/archive/Anaconda3-2019.07-Linux-x86_64.sh
@@ -66,7 +66,7 @@ Include: yum
     ln -s /opt/anaconda3/bind/conda /usr/local/bin/conda
     rm Anaconda3-2019.07-Linux-x86_64.sh
     #########################
-    # install java          #
+    # install java tools    #
     #########################
     yum -y install java-1.8.0-openjdk-devel
     yum -y install java-11-openjdk
@@ -97,6 +97,26 @@ Include: yum
     yum -y install yum-utils
     #sudo yum-config-manager --enable "rhel-*-optional-rpms"
     #########################
+    # install plink         #
+    #########################
+    yum -y install unzip
+    curl -O https://s3.amazonaws.com/plink1-assets/plink_linux_x86_64_20210606.zip
+    mkdir -p /opt/plink
+    unzip -o plink_linux_x86_64_20210606.zip -d /opt/plink/
+    chmod u+x /opt/plink/plink
+    ln -s /opt/plink/plink /usr/local/bin/plink
+    rm plink_linux_x86_64_20210606.zip
+    curl -O https://s3.amazonaws.com/plink2-assets/plink2_linux_avx2_20210804.zip
+    mkdir -p /opt/plink2
+    unzip -o plink2_linux_avx2_20210804.zip -d /opt/plink2/
+    chmod u+x /opt/plink2/plink2
+    ln -s /opt/plink2/plink2 /usr/local/bin/plink2
+    rm plink2_linux_avx2_20210804.zip
+    #########################
+    # install bcftools      #
+    #########################
+    yum -y install bcftools
+    #########################
     # install R             #
     #########################
     export R_VERSION=4.1.0
@@ -104,6 +124,9 @@ Include: yum
     yum -y install R-${R_VERSION}-1-1.x86_64.rpm
     ln -s /opt/R/${R_VERSION}/bin/R /usr/local/bin/R
     ln -s /opt/R/${R_VERSION}/bin/Rscript /usr/local/bin/Rscript
+    #########################
+    # install R libraries   #
+    #########################
     # set the repo
     echo 'local({r <- getOption("repos");r["CRAN"] <- "https://mirror.lyrahosting.com/";options(repos = r)})' > ~/Rprofile.site
     # first install biocmanager and remotes
@@ -141,8 +164,9 @@ Include: yum
     R --slave -e 'devtools::install_github("thomasp85/patchwork@v1.1.0")'
     R --slave -e 'devtools::install_github("mojaveazure/seurat-disk", ref="163f1aade5bac38ed1e9e9c912283a7e74781610")'
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/MAST_1.18.0.tar.gz", repos=NULL)'
-    R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/limma_3.48.1.tar.gz", repos=NULL)'
+    R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/limma_3.48.1.tar.gz", repos=NULL)'
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/MetaVolcanoR_1.6.0.tar.gz", repos=NULL)'
+    R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.38.0.tar.gz", repos=NULL)'
     R --slave -e 'remotes::install_version("harmony", "0.1.0", repos="https://mirror.lyrahosting.com/CRAN/")'
     R --slave -e 'devtools::install_github("JinmiaoChenLab/Rphenograph", ref="0298487f0ee13aac55eb77d19992f6bd878ba2fc")'
     R --slave -e 'devtools::install_github("sqjin/CellChat", ref="eb959d5fc45df9920116f90644fe0b5e155e304b")'
