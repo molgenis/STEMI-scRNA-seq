@@ -170,5 +170,5 @@ Include: yum
     R --slave -e 'remotes::install_version("harmony", "0.1.0", repos="https://mirror.lyrahosting.com/CRAN/")'
     R --slave -e 'devtools::install_github("JinmiaoChenLab/Rphenograph", ref="0298487f0ee13aac55eb77d19992f6bd878ba2fc")'
     R --slave -e 'devtools::install_github("sqjin/CellChat", ref="eb959d5fc45df9920116f90644fe0b5e155e304b")'
-    R --slave -e 'devtools::install_github("leeshawn/MetaSKAT", ref="c0b63c1961a8d772842d4a5004330d273a8aeb43")'
-    R --slave -e 'devtools::install_github("weizhouUMICH/SAIGE", ref="648850f38ed8f2d187af6a0587cb078fa3233ec6")'
+    #R --slave -e 'devtools::install_github("leeshawn/MetaSKAT", ref="c0b63c1961a8d772842d4a5004330d273a8aeb43")'
+    #R --slave -e 'devtools::install_github("weizhouUMICH/SAIGE", ref="648850f38ed8f2d187af6a0587cb078fa3233ec6")'
