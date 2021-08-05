@@ -1,8 +1,8 @@
 # load libraries
 library(MatrixEQTL)
 library(data.table)
-library(foreach)
-library(doMC)
+#library(foreach)
+#library(doMC)
 
 # functions
 do_QTL_mapping <- function(
@@ -155,11 +155,12 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
   expressions_ct_cond <- fread(features_loc_ct_cond, sep = '\t', header=T, stringsAsFactors=FALSE)
   # subset to confined ones, if requested
   if(!is.null(gene_confinement)){
-    expressions_ct_cond <- expressions_ct_cond[expressions_ct_cond$id %in% gene_confinement, ]
+    expressions_ct_cond <- expressions_ct_cond[!is.na(expressions_ct_cond$id) & expressions_ct_cond$id %in% gene_confinement, ]
   }
   if(!is.null(snp_confinement)){
-    snps <- snps[snps$id %in% snp_confinement, ]
+    snps <- snps[!is.na(snps$id) & snps$id %in% snp_confinement, ]
   }
+
   # get the participants that we have both expression and snps data for
   participants_ct_cond <- intersect(colnames(snps)[2:ncol(snps)], colnames(expressions_ct_cond)[2:ncol(expressions_ct_cond)])
   # get also overlap with the covariates data
@@ -168,10 +169,20 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
   snps_ct_cond <- snps[, c('id', participants_ct_cond), with = F]
   expressions_ct_cond <- expressions_ct_cond[, c('id', participants_ct_cond), with = F]
   covariates_ct_cond <- covariates_ct_cond[, c('id', participants_ct_cond), with = F]
+
+  # remove the covariates which show no variation
+  covariates_ct_cond <- covariates_ct_cond[apply(covariates_ct_cond, 1, function(x){length(unique(x)) > 1}), ]
+  
+  # remove SNPs with missing values
+  snps_ct_cond <- snps_ct_cond[rowSums(is.na(snps_ct_cond)) == 0 & rowSums(snps_ct_cond[, 2:ncol(snps_ct_cond)] < 0) == 0, ]
+  
+  # doublecheck SNPs
+  all_env <<- snps_ct_cond
   
   # filter snps by maf, which of course can work both ways
   maf_reverse <- 1-maf
-  snps_ct_cond <- snps_ct_cond[rowSums(snps_ct_cond[, 2:ncol(snps_ct_cond)])/(ncol(snps_ct_cond)-1)/2 >= maf & rowSums(snps_ct_cond[, 2:ncol(snps_ct_cond)])/(ncol(snps_ct_cond)-1)/2 <= maf_reverse, ,]
+  snps_ct_cond <- snps_ct_cond[rowSums(snps_ct_cond[, 2:ncol(snps_ct_cond)])/(ncol(snps_ct_cond)-1)/2 >= maf & rowSums(snps_ct_cond[, 2:ncol(snps_ct_cond)])/(ncol(snps_ct_cond)-1)/2 <= maf_reverse, ]
+  
   # now write the filtered files to temporary storage
   SNP_file_name_ct_cond <- tempfile()
   expression_file_name_ct_cond <- tempfile()
@@ -180,7 +191,7 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
   write.table(snps_ct_cond, SNP_file_name_ct_cond, sep = '\t', row.names = F, col.names = T)
   write.table(expressions_ct_cond, expression_file_name_ct_cond, sep = '\t', row.names = F, col.names = T)
   write.table(covariates_ct_cond, covariates_file_name_ct_cond, sep = '\t', row.names = F, col.names = T)
-  
+
   # do actual mapping
   print('start actual mapping')
   do_QTL_mapping(
@@ -276,7 +287,7 @@ perform_qtl_mapping <- function(snps_loc, snps_location_file_name, gene_location
     # we check SNPs for sure
     snps_confined <- confinement$V1
     # and subset the SNPs
-    snps <- snps[snps$id %in% snps_confined, ]
+    snps <- snps[!is.na(snps$id) & snps$id %in% snps_confined, ]
     # check the number of columns
     if(ncol(confinement) > 1){
       # get the genes
@@ -322,7 +333,7 @@ setup_settings <- function(configuration_table){
 }
 
 # do CLI method, when used as script
-cli <- F
+cli <- T
 if(cli){
   # read the command line arguments
   args <- commandArgs(trailingOnly=TRUE)
@@ -407,6 +418,37 @@ if(do_all_stemi_meta){
   perform_qtl_mapping(snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append, output_file_name_cis_append, covariates_file_name_append, confinement_file_name, permutation_rounds = permutation_rounds, permute_in_covar_group=permute_in_covar_group, cell_typers=cell_typers, conditions=conditions)
 }
 
+do_all_ut_stemi_unconfined <- T
+if(do_all_ut_stemi_unconfined){
+  confinement_file_name <- NULL
+  #confinement_file_name <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/confinements/harst_2017_SNPs.txt'
+  #confinement_file_name <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/confinements/eqtl_v1013_lead_snp_gene.txt'
+  
+  snps_loc<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/genotype/hc_and_stemi_numeric.tsv'
+  snps_location_file_name<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/metadata/snp_pos.tsv'
+  gene_location_file_name<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/metadata/gene_positions.tsv'
+  
+  features_loc_prepend<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/features/stemi_and_1mut_lowerres_20210629_metaqtl/'
+  #output_file_name_cis_prepend<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/results/MatrixeQTL/stemi_all_lowerres_20210301_harst_100k/'
+  output_file_name_cis_prepend<-'/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/results/MatrixeQTL/stemi_and_1mut_lowerres_20210629_unconfined_100k/'
+  covariates_file_name_prepend<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/metadata/stemi_and_1mut_lowerres_20210629/'
+  
+  features_loc_append<-'_expression.tsv'
+  output_file_name_cis_append<-'.cis.tsv'
+  covariates_file_name_append<-'_metadata.chem.tsv'
+  
+  maf <- 0.1
+  permutation_rounds <- 20
+  
+  cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
+  conditions <- c('UT', 'UT_Baseline', 'UT_t24h', 'UT_t8w')
+  
+  permute_in_covar_group <- 'chem'
+  
+  perform_qtl_mapping(snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append, output_file_name_cis_append, covariates_file_name_append, confinement_file_name, permutation_rounds = permutation_rounds, permute_in_covar_group=permute_in_covar_group, cell_typers=cell_typers, conditions=conditions)
+}
+
+
 # UT+HC
 do_all_ut_stemi <- T
 if(do_all_ut_stemi){
@@ -431,9 +473,12 @@ if(do_all_ut_stemi){
   permutation_rounds <- 20
   
   cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
-  conditions <- c('UT', 'UT_Baseline', 'UT_t24h', 'UT_t8w')
+  conditions <- c('UT_Baseline', 'UT_t24h', 'UT_t8w', 'UT')
   
   permute_in_covar_group <- 'chem'
-  
+  #snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append
   perform_qtl_mapping(snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append, output_file_name_cis_append, covariates_file_name_append, confinement_file_name, permutation_rounds = permutation_rounds, permute_in_covar_group=permute_in_covar_group, cell_typers=cell_typers, conditions=conditions)
 }
+
+
+all_env <- NULL
