@@ -1,10 +1,3 @@
-# make sure you have the storage to store singularity cache files etc.
-# if you've never used singularity before, in your home dir do
-# cd
-# mkdir ./singularity
-# mkdir ./.singularity
-# ln -s
-
 # set the group where we will store the image and the simulated disk
 GROUP=umcg-wijmenga
 # get the folder to store the image
@@ -28,15 +21,12 @@ wget https://drive.google.com/uc?export=download&id=1zzvl8eBsYyt9MHyTggBpjc3jCjM
 echo 'alias Rsing="singularity exec --bind '${sim_disk}':/home/'${USER}${paths}' '${img_folder}'singlecell_container.simg R"' >> /home/${USER}/.bashrc
 echo 'alias Rsingscript="singularity exec --bind ${sim_disk}:/home/${USER}${paths}  ${img_folder}singlecell_container.simg Rscript"' >> /home/${USER}/.bashrc
 
-# make sure you have the storage to store singularity cache files etc.
-# go to the home directory
-# cd
-# if you've never used singularity before, in your home dir do
-# mkdir ./singularity
-# mkdir ./.singularity
+# in case you've never used singularity before
+mkdir -p ./singularity
+mkdir -p ./.singularity
 # move the directories
-# mv ./singularity /groups/${GROUP}/tmp01/users/${USER}/
-# mv ./.singularity /groups/${GROUP}/tmp01/users/${USER}/
+mv ./singularity /groups/${GROUP}/tmp01/users/${USER}/
+mv ./.singularity /groups/${GROUP}/tmp01/users/${USER}/
 # symlink the directories
-# ln -s /groups/${GROUP}/tmp01/users/${USER}/.singularity ./.singularity
-# ln -s /groups/${GROUP}/tmp01/users/${USER}/singularity ./singularity
+ln -s /groups/${GROUP}/tmp01/users/${USER}/.singularity ./.singularity
+ln -s /groups/${GROUP}/tmp01/users/${USER}/singularity ./singularity
