@@ -55,6 +55,7 @@ do_nichenet_analysis <- function(seurat_object, receiver, sender_celltypes, cond
     ligand_activities = ligand_activities %>% arrange(-pearson) %>% mutate(rank = rank(desc(pearson)))
     # subset to top ligands
     best_upstream_ligands = ligand_activities %>% top_n(top_n, pearson) %>% arrange(-pearson) %>% pull(test_ligand) %>% unique()
+    analysis_list[['best_upstream_ligands']] <- best_upstream_ligands
     # infer receptors and top-predicted target genes of top-ranked ligands
     active_ligand_target_links_df = best_upstream_ligands %>% lapply(get_weighted_ligand_target_links,geneset = geneset_oi, ligand_target_matrix = ligand_target_matrix, n = max_active_ligand_target_links) %>% bind_rows() %>% tidyr::drop_na()
     active_ligand_target_links = prepare_ligand_target_visualization(ligand_target_df = active_ligand_target_links_df, ligand_target_matrix = ligand_target_matrix, cutoff = active_ligand_target_links_cutoff)
@@ -219,8 +220,11 @@ write_partition <- 'tmp01'
 
 # locations of files
 ligand_target_matrix_loc <- url('https://zenodo.org/record/3260758/files/ligand_target_matrix.rds')
+ligand_target_matrix_loc <-paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/references/', 'ligand_target_matrix.rds', sep = '')
 lr_network_loc <- url('https://zenodo.org/record/3260758/files/lr_network.rds')
+lr_network_loc <- paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/references/','lr_network.rds', sep = '')
 weighted_networks_loc <- url("https://zenodo.org/record/3260758/files/weighted_networks.rds")
+weighted_networks_loc <- paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/references/','weighted_networks.rds', sep = '')
 objects_loc <- paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/', sep = '')
 combined_v2_loc <- paste(objects_loc, 'combined.v2.20210629.ct.rds', sep = '')
 combined_v3_loc <- paste(objects_loc, 'combined.v3.20210629.ct.rds', sep = '')
