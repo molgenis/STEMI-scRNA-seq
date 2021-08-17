@@ -79,6 +79,16 @@ Include: yum
     bash Anaconda3-2019.07-Linux-x86_64.sh -b -p /opt/anaconda3
     ln -s /opt/anaconda3/bind/conda /usr/local/bin/conda
     rm Anaconda3-2019.07-Linux-x86_64.sh
+    # install python tools
+    #conda config --add channels defaults
+    #conda config --add channels bioconda
+    #conda config --add channels conda-forge
+    #conda create -n scanpyenv scanpy=1.8.1 python=3.7
+    #conda create -n scvelo_env scvelo=0.2.3 python=3.7
+    #conda create -n scrublet_env python=3.7
+    #conda activate scrublet_env
+    #pip install scrublet=0.2.3
+    #conda deactivate scrublet_env
     #########################
     # install java tools    #
     #########################
@@ -198,20 +208,21 @@ Include: yum
     R --slave -e 'remotes::install_version("plotly", "4.9.4.1", repos="https://mirror.lyrahosting.com/CRAN/")'
     R --slave -e 'remotes::install_version("htmlwidgets", "1.5.3", repos="https://mirror.lyrahosting.com/CRAN/")'
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/MetaVolcanoR_1.6.0.tar.gz", repos=NULL)'
-    R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/Biostrings_2.60.1.tar.gz", repos=NULL)'
+    R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/Biostrings_2.60.2.tar.gz", repos=NULL)'
     R --slave -e 'remotes::install_version("snow", "0.4-3", repos="https://mirror.lyrahosting.com/CRAN/")'
     R --slave -e 'remotes::install_version("BH", "1.75.0-0", repos="https://mirror.lyrahosting.com/CRAN/")'
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BiocParallel_1.26.1.tar.gz", repos=NULL)'
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/Rhtslib_1.24.0.tar.gz", repos=NULL)'
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/Rsamtools_2.8.0.tar.gz", repos=NULL)'
     R --slave -e 'remotes::install_version("RSQLite", "2.2.7", repos="https://mirror.lyrahosting.com/CRAN/")'
+    R --slave -e 'remotes::install_version("png", "0.1-7", repos="https://mirror.lyrahosting.com/CRAN/")'
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/KEGGREST_1.32.0.tar.gz", repos=NULL)'
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/AnnotationDbi_1.54.1.tar.gz", repos=NULL)'
     R --slave -e 'remotes::install_version("XML", "3.99-0.6", repos="https://mirror.lyrahosting.com/CRAN/")'
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/GenomicAlignments_1.28.0.tar.gz", repos=NULL)'
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BiocIO_1.2.0.tar.gz", repos=NULL)'
     R --slave -e 'remotes::install_version("restfulr", "0.0.13", repos="https://mirror.lyrahosting.com/CRAN/")'
-    R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/rtracklayer_1.52.0.tar.gz", repos=NULL)'
+    R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/rtracklayer_1.52.1.tar.gz", repos=NULL)'
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BSgenome_1.60.0.tar.gz", repos=NULL)'
     R --slave -e 'remotes::install_version("filelock", "1.0.2", repos="https://mirror.lyrahosting.com/CRAN/")'
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BiocFileCache_2.0.0.tar.gz", repos=NULL)'
@@ -235,6 +246,7 @@ Include: yum
     R --slave -e 'remotes::install_version("GetoptLong", "1.0.5", repos="https://mirror.lyrahosting.com/CRAN/")'
     R --slave -e 'remotes::install_version("Cairo", "1.5-12.2", repos="https://mirror.lyrahosting.com/CRAN/")'
     R --slave -e 'remotes::install_version("circlize", "0.4.13", repos="https://mirror.lyrahosting.com/CRAN/")'
+    R --slave -e 'remotes::install_version("doParallel", "1.0.16", repos="https://mirror.lyrahosting.com/CRAN/")'
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/ComplexHeatmap_2.8.0.tar.gz", repos=NULL)'
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/DelayedArray_0.18.0.tar.gz", repos=NULL)'
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/SummarizedExperiment_1.22.0.tar.gz", repos=NULL)'
@@ -243,7 +255,6 @@ Include: yum
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/limma_3.48.3.tar.gz", repos=NULL)'
     R --slave -e 'devtools::install_github("sqjin/CellChat", ref="eb959d5fc45df9920116f90644fe0b5e155e304b")'
     R --slave -e 'devtools::install_github("saeyslab/nichenetr", ref="2136a7260fbbe9ef5e9b4af0fd4c9101a3bc9a78")'
-    R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/Biostrings_2.60.2.tar.gz", repos=NULL)'
     R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/KEGGREST_1.32.0.tar.gz", repos=NULL)'
     R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/AnnotationDbi_1.54.1.tar.gz", repos=NULL)'
     R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/annotate_1.70.0.tar.gz", repos=NULL)'

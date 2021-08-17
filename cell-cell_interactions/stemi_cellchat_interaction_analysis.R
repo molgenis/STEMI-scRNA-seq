@@ -229,5 +229,5 @@ cardio.chem_v3.all_list <- do_default_cellchat_workflow_per_timepoint(cardio.int
 # save in list
 cardio.list_per_chem <- list('V2' = cardio.chem_v2.all_list, 'V3' = cardio.chem_v3.all_list)
 saveRDS(cardio.list_per_chem, chat.all.loc)
-
-
+plot_all_communications_networks_separate(cardio.list_per_chem, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/cellchat/')
+plot_all_aggregate_pathways(cardio.list_per_chem, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/cellchat/')
