@@ -18,7 +18,7 @@ cd ${img_folder}
 #wget https://drive.google.com/uc?export=download&id=1zzvl8eBsYyt9MHyTggBpjc3jCjMA5dOk
 # download the image with a nifty little tool
 git clone https://github.com/circulosmeos/gdown.pl.git
-./gdown.pl/gdown.pl https://drive.google.com/file/d/1zzvl8eBsYyt9MHyTggBpjc3jCjMA5dOk/view?usp=sharing singlecell_container.simg
+./gdown.pl/gdown.pl https://drive.google.com/file/d/1Y1tyXK6ojNZW4sj5O8hkeNFFLM0SIacT/view?usp=sharing singlecell_container.simg
 
 # add an alias to start the container
 echo 'alias Rsing="singularity exec --bind '${sim_disk}':/home/'${USER}${paths}' '${img_folder}'singlecell_container.simg R"' >> /home/${USER}/.bashrc
