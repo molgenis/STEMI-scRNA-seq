@@ -10,7 +10,7 @@ paths=,/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology
 ,/groups/umcg-bios/tmp01/projects/1M_cells_scRNAseq/ongoing/
 
 # create the simulated disk location
-mkdir -p sim_disk
+mkdir -p ${sim_disk}
 
 # move to the location to store the image
 cd ${img_folder}
