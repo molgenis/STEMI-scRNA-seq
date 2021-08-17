@@ -58,6 +58,7 @@ Include: vim
   apt --yes install libxml2-dev
   # install cairo and related libraries
   apt --yes install libcairo2-dev #cairo-devel
+  apt --yes install libxt-dev
   apt --yes install libgtk2.0-dev
   apt --yes install xvfb
   apt --yes install xauth
@@ -70,16 +71,13 @@ Include: vim
   ln -s /opt/anaconda3/bind/conda /usr/local/bin/conda
   rm Anaconda3-2019.07-Linux-x86_64.sh
   # install python tools
-  #conda config --add channels defaults
-  #conda config --add channels bioconda
-  #conda config --add channels conda-forge
-  #conda create -n scanpyenv scanpy=1.8.1 python=3.7
-  #conda create -n scvelo_env scvelo=0.2.3 python=3.7
-  #conda create -n scrublet_env python=3.7
-  #conda activate scrublet_env
-  #pip install scrublet=0.2.3
-  #conda deactivate scrublet_env
-  #########################
+  /opt/anaconda3/bin/conda config --add channels defaults
+  /opt/anaconda3/bin/conda config --add channels bioconda
+  /opt/anaconda3/bin/conda config --add channels conda-forge
+  /opt/anaconda3/bin/conda create -n scanpyenv scanpy=1.8.1 python=3.7
+  /opt/anaconda3/bin/conda create -n scvelo_env scvelo=0.2.3 python=3.7
+  /opt/anaconda3/bin/conda create -n scrublet_env scrublet=0.2.3 python=3.7
+  /opt/anaconda3/bin/conda init bash
   # install java tools    #
   #########################
   wget -qO - https://adoptopenjdk.jfrog.io/adoptopenjdk/api/gpg/key/public | apt-key add - # the key for openjdk
@@ -240,5 +238,6 @@ Include: vim
   R --slave -e 'remotes::install_version("locfit", "1.5-9.4", repos="https://mirror.lyrahosting.com/CRAN/")'
   R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/geneplotter_1.70.0.tar.gz", repos=NULL)'
   R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/DESeq2_1.32.0.tar.gz", repos=NULL)'
+  R --slave -e 'devtools::install_github("velocyto-team/velocyto.R", ref="83e6ed92c2d9c9640122dcebf8ebbb5788165a21")'
   #R --slave -e 'devtools::install_github("leeshawn/MetaSKAT", ref="c0b63c1961a8d772842d4a5004330d273a8aeb43")'
   #R --slave -e 'devtools::install_github("weizhouUMICH/SAIGE", ref="648850f38ed8f2d187af6a0587cb078fa3233ec6")'

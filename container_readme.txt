@@ -23,6 +23,7 @@ git clone https://github.com/circulosmeos/gdown.pl.git
 # add an alias to start the container
 echo 'alias Rsing="singularity exec --bind '${sim_disk}':/home/'${USER}${paths}' '${img_folder}'singlecell_container.simg R"' >> /home/${USER}/.bashrc
 echo 'alias Rsingscript="singularity exec --bind '${sim_disk}':/home/'${USER}${paths}' '${img_folder}'singlecell_container.simg Rscript"' >> /home/${USER}/.bashrc
+echo 'alias sccontainer="singularity shell --bind '${sim_disk}':/home/'${USER}${paths}' '${img_folder}'singlecell_container.simg"' >> /home/${USER}/.bashrc
 
 # in case you've never used singularity before
 mkdir -p ./singularity
