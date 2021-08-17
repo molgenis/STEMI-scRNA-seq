@@ -114,12 +114,12 @@ Include: vim
   chmod u+x /opt/plink/plink
   ln -s /opt/plink/plink /usr/local/bin/plink
   rm plink_linux_x86_64_20210606.zip
-  curl -O https://s3.amazonaws.com/plink2-assets/plink2_linux_x86_64_20210804.zip
+  curl -O https://s3.amazonaws.com/plink2-assets/plink2_linux_x86_64_20210816.zip
   mkdir -p /opt/plink2
-  unzip -o plink2_linux_x86_64_20210804.zip -d /opt/plink2/
+  unzip -o plink2_linux_x86_64_20210816.zip -d /opt/plink2/
   chmod u+x /opt/plink2/plink2
   ln -s /opt/plink2/plink2 /usr/local/bin/plink2
-  rm plink2_linux_x86_64_20210804.zip
+  rm plink2_linux_x86_64_20210816.zip
   #########################
   # install bcftools      #
   #########################

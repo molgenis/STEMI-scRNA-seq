@@ -203,6 +203,10 @@ chat.all.loc <- paste(object_loc, 'cardio.chat.all.20210301.rds', sep = '')
 
 # read object
 cardio.integrated <- readRDS(cardio.integrated.loc)
+# use only our major cell types
+cardio.integrated <- cardio.integrated[ , cardio.integrated@meta.data$cell_type_lowerres %in% c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')]
+cardio.integrated@meta.data$cell_type_lowerres <- droplevels(cardio.integrated@meta.data$cell_type_lowerres)
+
 # subset to specific timepoint and timepoint
 cardio.stemi_v2.baseline <- cardio.integrated[, cardio.integrated@meta.data$orig.ident == 'stemi_v2' & cardio.integrated@meta.data$timepoint.final == 'Baseline']
 # create cell type
