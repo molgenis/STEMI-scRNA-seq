@@ -124,6 +124,8 @@ Include: yum
     #sudo subscription-manager repos --enable "rhel-*-optional-rpms"
     yum -y install yum-utils
     #sudo yum-config-manager --enable "rhel-*-optional-rpms"
+    # install boost
+    yum -y install boost boost-thread boost-devel
     # install fontconfig
     yum -y install fontconfig
     # install cairo
@@ -202,7 +204,7 @@ Include: yum
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/zlibbioc_1.38.0.tar.gz", repos=NULL)'
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/XVector_0.32.0.tar.gz", repos=NULL)'
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/GenomicRanges_1.44.0.tar.gz", repos=NULL)'
-    R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.4.1.tar.gz", repos=NULL)'
+    #R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.4.1.tar.gz", repos=NULL)'
     R --slave -e 'remotes::install_version("metafor", "3.0-2", repos="https://mirror.lyrahosting.com/CRAN/")'
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/topconfects_1.8.0.tar.gz", repos=NULL)'
     R --slave -e 'remotes::install_version("plotly", "4.9.4.1", repos="https://mirror.lyrahosting.com/CRAN/")'
@@ -253,6 +255,16 @@ Include: yum
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/SingleCellExperiment_1.14.1.tar.gz", repos=NULL)'
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/MAST_1.18.0.tar.gz", repos=NULL)'
     R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/limma_3.48.3.tar.gz", repos=NULL)'
+    R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/GenomicAlignments_1.28.0.tar.gz", repos=NULL)'
+    R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BiocIO_1.2.0.tar.gz", repos=NULL)'
+    R --slave -e 'remotes::install_version("restfulr", "0.0.13", repos="https://mirror.lyrahosting.com/CRAN/")'
+    R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/rtracklayer_1.52.1.tar.gz", repos=NULL)'
+    R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BSgenome_1.60.0.tar.gz", repos=NULL)'
+    R --slave -e 'remotes::install_version("filelock", "1.0.2", repos="https://mirror.lyrahosting.com/CRAN/")'
+    R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BiocFileCache_2.0.0.tar.gz", repos=NULL)'
+    R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/biomaRt_2.48.3.tar.gz", repos=NULL)'
+    R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/GenomicFeatures_1.44.1.tar.gz", repos=NULL)'
+    R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.38.0.tar.gz", repos=NULL)'
     R --slave -e 'devtools::install_github("sqjin/CellChat", ref="eb959d5fc45df9920116f90644fe0b5e155e304b")'
     R --slave -e 'devtools::install_github("saeyslab/nichenetr", ref="2136a7260fbbe9ef5e9b4af0fd4c9101a3bc9a78")'
     R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/KEGGREST_1.32.0.tar.gz", repos=NULL)'
@@ -262,6 +274,7 @@ Include: yum
     R --slave -e 'remotes::install_version("locfit", "1.5-9.4", repos="https://mirror.lyrahosting.com/CRAN/")'
     R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/geneplotter_1.70.0.tar.gz", repos=NULL)'
     R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/DESeq2_1.32.0.tar.gz", repos=NULL)'
+    R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/pcaMethods_1.84.0.tar.gz", repos=NULL)'
     R --slave -e 'devtools::install_github("velocyto-team/velocyto.R", ref="83e6ed92c2d9c9640122dcebf8ebbb5788165a21")'
     #R --slave -e 'devtools::install_github("leeshawn/MetaSKAT", ref="c0b63c1961a8d772842d4a5004330d273a8aeb43")'
     #R --slave -e 'devtools::install_github("weizhouUMICH/SAIGE", ref="648850f38ed8f2d187af6a0587cb078fa3233ec6")'

@@ -210,24 +210,30 @@ get_lfc_celltype <- function (celltype_oi, seurat_obj, condition_colname, condit
   return(DE_table_sender)
 }
 
-create_dotplot_per_ct_and_tp <- function(seurat_object, features_per_ct, condition_1, condition_2, output_loc, cell_type_column='cell_type_lowerres', condition_column='timepoint.final'){
+create_dotplot_per_ct_and_tp <- function(seurat_object, features_per_ct, condition_1, condition_2, output_loc, cell_type_column='cell_type_lowerres', condition_column='timepoint.final', split_condition=F){
   Idents(seurat_object) <- cell_type_column
   # subset the Seurat object to these conditions
   seurat_object_tps <- seurat_object[, as.character(seurat_object@meta.data[[condition_column]]) == condition_1 | as.character(seurat_object@meta.data[[condition_column]]) == condition_2]
+  if(split_condition){
+    seurat_object_tps@meta.data$cell_type_condition <- paste(seurat_object_tps@meta.data[[condition_column]], seurat_object_tps@meta.data[[cell_type_column]], sep = '.')
+    Idents(seurat_object_tps) <- 'cell_type_condition'
+  }
   # check each cell type
   for(cell_type in names(features_per_ct)){
-    # get the features
-    features <- features_per_ct[[as.character(cell_type)]][['best_upstream_ligands']]
-    print(head(features))
-    print(seurat_object_tps)
-    # subset the Seurat object to this cell type
-    #seurat_object_tps_ct <- seurat_object_tps[, as.character(seurat_object_tps@meta.data[[cell_type_column]]) == cell_type]
-    # make the plot
-    p <- DotPlot(seurat_object_tps, features = features %>% rev(), cols = "RdYlBu") + RotatedAxis() + ggtitle(paste(cell_type, ' ', condition_1, ' vs ', condition_2, sep = ''))
-    p
-    # paste the output location together
-    output_loc_full <- paste(output_loc, 'nichent_dotplot_', condition_1, '_vs_', condition_2, '_', cell_type, '.pdf', sep = '')
-    ggsave(output_loc_full, width = 10, height = 10)
+    try({
+      # get the features
+      features <- features_per_ct[[as.character(cell_type)]][['best_upstream_ligands']]
+      print(head(features))
+      print(seurat_object_tps)
+      # subset the Seurat object to this cell type
+      #seurat_object_tps_ct <- seurat_object_tps[, as.character(seurat_object_tps@meta.data[[cell_type_column]]) == cell_type]
+      # make the plot
+      p <- DotPlot(seurat_object_tps, features = features %>% rev(), cols = "RdYlBu") + RotatedAxis() + ggtitle(paste(cell_type, ' ', condition_1, ' vs ', condition_2, sep = ''))
+      p
+      # paste the output location together
+      output_loc_full <- paste(output_loc, 'nichent_dotplot_', condition_1, '_vs_', condition_2, '_', cell_type, '.pdf', sep = '')
+      ggsave(output_loc_full, width = 10, height = 10)
+    })
   }
 }
 
@@ -258,15 +264,16 @@ weighted_networks = readRDS(weighted_networks_loc)
 
 # read the object
 combined_v2 <- readRDS(combined_v2_loc)
+combined_v2 <- combined_v2[, combined_v2@meta.data$cell_type_lowerres %in% c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')]
 # compare Baseline to t24h
 v2_Baseline_vs_t24h <- do_nichenet_analysis_per_celltype(combined_v2, 'timepoint.final', 't24h', 'Baseline', lr_network, weighted_networks, ligand_target_matrix)
-saveRDS(v2_Baseline_vs_t24h, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_Baseline_vs_t24h_nichenet.rds')
+saveRDS(v2_Baseline_vs_t24h, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_Baseline_vs_t24h_nichenet_onlymajors.rds')
 # compare Baseline to t8w
 v2_Baseline_vs_t8w <- do_nichenet_analysis_per_celltype(combined_v2, 'timepoint.final', 't8w', 'Baseline', lr_network, weighted_networks, ligand_target_matrix)
-saveRDS(v2_Baseline_vs_t8w, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_Baseline_vs_t8w_nichenet.rds')
+saveRDS(v2_Baseline_vs_t8w, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_Baseline_vs_t8w_nichenet_onlymajor.rds')
 # compare HC to Baseline
 v2_UT_vs_Baseline <- do_nichenet_analysis_per_celltype(combined_v2, 'timepoint.final', 'Baseline', 'UT', lr_network, weighted_networks, ligand_target_matrix)
-saveRDS(v2_UT_vs_Baseline, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_UT_vs_Baseline_nichenet.rds')
+saveRDS(v2_UT_vs_Baseline, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_UT_vs_Baseline_nichenet_onlymajor.rds')
 
 # trying to create the plots
 v2_Baseline_vs_t24h_plots <- nichenet_output_to_plot(v2_Baseline_vs_t24h)
@@ -275,27 +282,28 @@ v2_UT_vs_Baseline_plots <- nichenet_output_to_plot(v2_UT_vs_Baseline)
 
 # save plots
 for(plot_name in names(v2_Baseline_vs_t24h_plots)){
-  ggsave(paste('./', 'nichenet_', 'Baseline_vs_t24h_', plot_name, '.pdf', sep = ''), width = 10, heigh = 10, plot=v2_Baseline_vs_t24h_plots[[plot_name]])
+  ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_combined_onlymajor/', 'nichenet_', 'Baseline_vs_t24h_', plot_name, '._onlymajorpdf', sep = ''), width = 20, heigh = 20, plot=v2_Baseline_vs_t24h_plots[[plot_name]])
 }
 for(plot_name in names(v2_Baseline_vs_t8w_plots)){
-  ggsave(paste('./', 'nichenet_', 'Baseline_vs_t8w_', plot_name, '.pdf', sep = ''), width = 10, heigh = 10, plot=v2_Baseline_vs_t8w_plots[[plot_name]])
+  ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_combined_onlymajor/', 'nichenet_', 'Baseline_vs_t8w_', plot_name, '_onlymajor.pdf', sep = ''), width = 20, heigh = 20, plot=v2_Baseline_vs_t8w_plots[[plot_name]])
 }
 for(plot_name in names(v2_UT_vs_Baseline_plots)){
-  ggsave(paste('./', 'nichenet_', 'UT_vs_Baseline_', plot_name, '.pdf', sep = ''), width = 10, heigh = 10, plot=v2_UT_vs_Baseline_plots[[plot_name]])
+  ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_combined_onlymajor/', 'nichenet_', 'UT_vs_Baseline_', plot_name, '_onlymajor.pdf', sep = ''), width = 20, heigh = 20, plot=v2_UT_vs_Baseline_plots[[plot_name]])
 }
 
 
 # read the object
 combined_v3 <- readRDS(combined_v3_loc)
+combined_v3 <- combined_v3[, combined_v3@meta.data$cell_type_lowerres %in% c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')]
 # compare Baseline to t24h
 v3_Baseline_vs_t24h <- do_nichenet_analysis_per_celltype(combined_v3, 'timepoint.final', 't24h', 'Baseline', lr_network, weighted_networks, ligand_target_matrix)
-saveRDS(v3_Baseline_vs_t24h, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_Baseline_vs_t24h_nichenet.rds')
+saveRDS(v3_Baseline_vs_t24h, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_Baseline_vs_t24h_nichenet_onlymajor.rds')
 # compare Baseline to t8w
 v3_Baseline_vs_t8w <- do_nichenet_analysis_per_celltype(combined_v3, 'timepoint.final', 't8w', 'Baseline', lr_network, weighted_networks, ligand_target_matrix)
-saveRDS(v3_Baseline_vs_t8w, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_Baseline_vs_t8w_nichenet.rds')
+saveRDS(v3_Baseline_vs_t8w, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_Baseline_vs_t8w_nichenet_onlymajor.rds')
 # compare HC to Baseline
 v3_UT_vs_Baseline <- do_nichenet_analysis_per_celltype(combined_v3, 'timepoint.final', 'Baseline', 'UT', lr_network, weighted_networks, ligand_target_matrix)
-saveRDS(v3_UT_vs_Baseline, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_UT_vs_Baseline_nichenet.rds')
+saveRDS(v3_UT_vs_Baseline, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_UT_vs_Baseline_nichenet_onlymajor.rds')
 
 # trying to create the plots
 v3_Baseline_vs_t24h_plots <- nichenet_output_to_plot(v3_Baseline_vs_t24h)
@@ -304,20 +312,20 @@ v3_UT_vs_Baseline_plots <- nichenet_output_to_plot(v3_UT_vs_Baseline)
 
 # save plots
 for(plot_name in names(v3_Baseline_vs_t24h_plots)){
-  ggsave(paste('./', 'nichenet_', 'Baseline_vs_t24h_', plot_name, '.pdf', sep = ''), width = 10, heigh = 10, plot=v3_Baseline_vs_t24h_plots[[plot_name]])
+  ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined/', 'nichenet_', 'Baseline_vs_t24h_', plot_name, '_onlymajor.pdf', sep = ''), width = 20, heigh = 20, plot=v3_Baseline_vs_t24h_plots[[plot_name]])
 }
 for(plot_name in names(v3_Baseline_vs_t8w_plots)){
-  ggsave(paste('./', 'nichenet_', 'Baseline_vs_t8w_', plot_name, '.pdf', sep = ''), width = 10, heigh = 10, plot=v3_Baseline_vs_t8w_plots[[plot_name]])
+  ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined/', 'nichenet_', 'Baseline_vs_t8w_', plot_name, '_onlymajor.pdf', sep = ''), width = 20, heigh = 20, plot=v3_Baseline_vs_t8w_plots[[plot_name]])
 }
 for(plot_name in names(v3_UT_vs_Baseline_plots)){
-  ggsave(paste('./', 'nichenet_', 'UT_vs_Baseline_', plot_name, '.pdf', sep = ''), width = 10, heigh = 10, plot=v3_UT_vs_Baseline_plots[[plot_name]])
+  ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined/', 'nichenet_', 'UT_vs_Baseline_', plot_name, '_onlymajor.pdf', sep = ''), width = 20, heigh = 20, plot=v3_UT_vs_Baseline_plots[[plot_name]])
 }
 
-create_dotplot_per_ct_and_tp(combined_v3, v3_Baseline_vs_t24h, 'Baseline', 't24h', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined/')
-create_dotplot_per_ct_and_tp(combined_v3, v3_Baseline_vs_t8w, 'Baseline', 't8w', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined/')
-create_dotplot_per_ct_and_tp(combined_v3, v3_UT_vs_Baseline, 'UT', 'Baseline', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined/')
-create_dotplot_per_ct_and_tp(combined_v2, v2_Baseline_vs_t24h, 'Baseline', 't24h', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_combined/')
-create_dotplot_per_ct_and_tp(combined_v2, v2_Baseline_vs_t8w, 'Baseline', 't8w', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_combined/')
-create_dotplot_per_ct_and_tp(combined_v2, v2_UT_vs_Baseline, 'UT', 'Baseline', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_combined/')
+create_dotplot_per_ct_and_tp(combined_v3, v3_Baseline_vs_t24h, 'Baseline', 't24h', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined/', split_condition = T)
+create_dotplot_per_ct_and_tp(combined_v3, v3_Baseline_vs_t8w, 'Baseline', 't8w', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined/', split_condition = T)
+create_dotplot_per_ct_and_tp(combined_v3, v3_UT_vs_Baseline, 'UT', 'Baseline', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined/', split_condition = T)
+create_dotplot_per_ct_and_tp(combined_v2, v2_Baseline_vs_t24h, 'Baseline', 't24h', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_combined/', split_condition = T)
+create_dotplot_per_ct_and_tp(combined_v2, v2_Baseline_vs_t8w, 'Baseline', 't8w', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_combined/', split_condition = T)
+create_dotplot_per_ct_and_tp(combined_v2, v2_UT_vs_Baseline, 'UT', 'Baseline', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_combined/', split_condition = T)
 
 
