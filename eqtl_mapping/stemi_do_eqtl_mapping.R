@@ -224,15 +224,20 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
       # go through each permutable category
       for(group in unique(covariates_ct_cond[[permute_in_covar_group]])){
         # get the samples with this group
-        partipants_group <- covariates_ct_cond[covariates_ct_cond[[permute_in_covar_group]] == group, 1]
+        #partipants_group <- covariates_ct_cond[covariates_ct_cond[[permute_in_covar_group]] == group, 1]
+        # get the variables in this row (group)
+        vars_in_group <- as.vector(unlist(covariates_ct_cond[covariates_ct_cond == group, 2:ncol(covariates_ct_cond)]))
         # get the location of these participants in the expression file
-        participant_locations <- match(partipants_group, colnames(covariates_ct_cond))
+        #participant_locations <- match(partipants_group, colnames(covariates_ct_cond))
+        participant_locations <- which(vars_in_group == group)
         # randomly shuffle these positions
         participant_locations_shuffled <- sample(x = participant_locations, size = length(participant_locations))
         # now replace the entries we have for this group, with the ones we sampled
         expressions_ct_cond_permuted[, participant_locations] <- expressions_ct_cond_permuted[, participant_locations_shuffled]
         # permute the covariates in the same way so they are still matched to the expression (actually permuting genotype)
         covariates_ct_cond_permuted[, participant_locations] <- covariates_ct_cond_permuted[, participant_locations_shuffled]
+        print(expressions_ct_cond[1:5])
+        print(expressions_ct_cond_permuted[1:5])
       }
       # and in the end, set the colnames like nothing happened
       colnames(expressions_ct_cond_permuted) <- colnames(expressions_ct_cond)
@@ -506,7 +511,7 @@ if(do_all_ut_stemi_unconfined){
   permutation_rounds <- 20
   
   cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
-  conditions <- c('UT_Baseline', 'UT_t24h', 'UT_t8w', 'UT')
+  conditions <- c('UT_Baseline', 'UT_t24h', 'UT_t8w')
   
   permute_in_covar_group <- 'chem'
   #snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append
