@@ -236,8 +236,8 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
         expressions_ct_cond_permuted[, participant_locations] <- expressions_ct_cond_permuted[, participant_locations_shuffled]
         # permute the covariates in the same way so they are still matched to the expression (actually permuting genotype)
         covariates_ct_cond_permuted[, participant_locations] <- covariates_ct_cond_permuted[, participant_locations_shuffled]
-        print(expressions_ct_cond[1:5])
-        print(expressions_ct_cond_permuted[1:5])
+        print(expressions_ct_cond[1:5, 1:5])
+        print(expressions_ct_cond_permuted[1:5, 1:5])
       }
       # and in the end, set the colnames like nothing happened
       colnames(expressions_ct_cond_permuted) <- colnames(expressions_ct_cond)
