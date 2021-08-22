@@ -203,6 +203,9 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
     covariates_file_name=covariates_file_name_ct_cond, # Covariates file name
     cisDist = 100000
   )
+  # convert data tables to data frames
+  expressions_ct_cond <- data.frame(expressions_ct_cond)
+  covariates_ct_cond <- data.frame(covariates_ct_cond)
   # do permuted mappings as well
   for(i in 1:permutation_rounds){
   #cl <- parallel::makeCluster(4)
@@ -217,27 +220,24 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
     output_file_name_cis_ct_cond_permuted <- paste(output_file_name_cis_ct_cond, '.permuted.', i, sep = '')
     # do label swapping per covariate group, if requested
     if(!is.null(permute_in_covar_group)){
+      print(paste('doing grouped permutations with', permute_in_covar_group, sep = ' '))
       # start with the unpermuted file
       expressions_ct_cond_permuted <- expressions_ct_cond
       # covariates as well
       covariates_ct_cond_permuted <- covariates_ct_cond
+      # get the groups to permute in
+      vars_in_group <- as.vector(unlist(covariates_ct_cond[covariates_ct_cond[['id']] == permute_in_covar_group, 2:ncol(covariates_ct_cond)])) # skipping column one, because that is the 'row name'
       # go through each permutable category
-      for(group in unique(covariates_ct_cond[[permute_in_covar_group]])){
+      for(group in unique(vars_in_group)){
+        print(paste('permuting for group', group, sep = ' '))
         # get the samples with this group
-        #partipants_group <- covariates_ct_cond[covariates_ct_cond[[permute_in_covar_group]] == group, 1]
-        # get the variables in this row (group)
-        vars_in_group <- as.vector(unlist(covariates_ct_cond[covariates_ct_cond == group, 2:ncol(covariates_ct_cond)]))
-        # get the location of these participants in the expression file
-        #participant_locations <- match(partipants_group, colnames(covariates_ct_cond))
-        participant_locations <- which(vars_in_group == group)
+        participant_locations <- which(vars_in_group == group) + 1 # adding one to shift right, to account for skipping the 'row name' column
         # randomly shuffle these positions
         participant_locations_shuffled <- sample(x = participant_locations, size = length(participant_locations))
         # now replace the entries we have for this group, with the ones we sampled
         expressions_ct_cond_permuted[, participant_locations] <- expressions_ct_cond_permuted[, participant_locations_shuffled]
         # permute the covariates in the same way so they are still matched to the expression (actually permuting genotype)
         covariates_ct_cond_permuted[, participant_locations] <- covariates_ct_cond_permuted[, participant_locations_shuffled]
-        print(expressions_ct_cond[1:5, 1:5])
-        print(expressions_ct_cond_permuted[1:5, 1:5])
       }
       # and in the end, set the colnames like nothing happened
       colnames(expressions_ct_cond_permuted) <- colnames(expressions_ct_cond)
@@ -248,6 +248,7 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
     }
     # do it all at once
     else{
+      print('doing ungrouped permutations')
       # grab randomly from the column names (all after the first), which should be the participants
       random_sampling <- c(1 , sample(x = 2:ncol(expressions_ct_cond), size = ncol(expressions_ct_cond) - 1))
       # grab participants 
@@ -458,7 +459,7 @@ if(do_all_ut_stemi){
 all_env <- NULL
 
 
-do_all_ut_stemi_eqtlgen <- F
+do_all_ut_stemi_eqtlgen <- T
 if(do_all_ut_stemi_eqtlgen){
   confinement_file_name <- NULL
   #confinement_file_name <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/confinements/harst_2017_SNPs.txt'
@@ -482,7 +483,7 @@ if(do_all_ut_stemi_eqtlgen){
   permutation_rounds <- 20
   
   cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
-  conditions <- c('UT_Baseline', 'UT_t24h', 'UT_t8w', 'UT')
+  conditions <- c('UT_Baseline', 'UT_t24h', 'UT_t8w')
   
   permute_in_covar_group <- 'chem'
   #snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append
@@ -496,7 +497,9 @@ if(do_all_ut_stemi_unconfined){
   #confinement_file_name <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/confinements/eqtl_v1013_lead_snp_gene.txt'
   
   snps_loc<-'/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/genotype/hc_and_stemi_numeric.tsv'
+  #snps_loc<-'/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/genotype/hc_and_stemi_numeric_firstfour.tsv'
   snps_location_file_name<-'/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/metadata/snp_pos.tsv'
+  #snps_location_file_name<-'/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/metadata/snp_pos_firstfour.tsv'
   gene_location_file_name<-'/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/metadata/gene_positions.tsv'
   
   features_loc_prepend<-'/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/features/stemi_and_1mut_lowerres_20210629_metaqtl/'
@@ -513,7 +516,7 @@ if(do_all_ut_stemi_unconfined){
   cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
   conditions <- c('UT_Baseline', 'UT_t24h', 'UT_t8w')
   
-  permute_in_covar_group <- 'chem'
+  permute_in_covar_group <- 'chem_V3'
   #snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append
   perform_qtl_mapping(snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append, output_file_name_cis_append, covariates_file_name_append, confinement_file_name, permutation_rounds = permutation_rounds, permute_in_covar_group=permute_in_covar_group, cell_typers=cell_typers, conditions=conditions)
 }
