@@ -140,6 +140,35 @@ do_nichenet_analysis_per_celltype <- function(seurat_object, condition.column, c
 }
 
 
+do_nichenet_analysis_versus_each_celltype <- function(seurat_object, condition.column, condition.1, condition.2, lr_network, weighted_networks, ligand_target_matrix, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), cell_type_column='cell_type_lowerres', pct=0.1, min_avg_log2FC=0.25, top_n=20, max_active_ligand_target_links=200, active_ligand_target_links_cutoff=0.33, only_documented_lr=F){
+  # confine to cell types that we have in our dataset
+  cell_types_to_use <- intersect(cell_types, unique(seurat_object@meta.data[[cell_type_column]]))
+  # set cell type as the ident
+  Idents(seurat_object) <- cell_type_column
+  # and add as separate column
+  seurat_object@meta.data[['celltype']] <- seurat_object@meta.data[[cell_type_column]]
+  # store per cell type
+  result_per_cell_type <- list()
+  # check each cell type
+  for(cell_type1 in cell_types_to_use){
+    # store for this cell type
+    result_against_cell_type <- list()
+    # against each other cell type
+    for(cell_type2 in setdiff(cell_types_to_use, cell_type1)){
+      # subset to those cell types
+      seurat_object_cell_types <- seurat_object[, seurat_object@meta.data$celltype %in% c(cell_type1, cell_type2)]
+      # do the analysis for these two
+      results <- do_nichenet_analysis(seurat_object=seurat_object_cell_types, cell_type=cell_type1, cell_types_other=c(cell_type2), condition.column=condition.column, condition.1=condition.1, condition.2=condition.2, lr_network=lr_network, weighted_networks=weighted_networks, ligand_target_matrix=ligand_target_matrix, cell_type_column=cell_type_column, pct=pct, min_avg_log2FC=min_avg_log2FC, top_n=top_n, max_active_ligand_target_links=max_active_ligand_target_links, active_ligand_target_links_cutoff=active_ligand_target_links_cutoff, only_documented_lr=only_documented_lr)
+      # store the result
+      result_against_cell_type[[cell_type2]] <- results
+    }
+    # store every result
+    result_per_cell_type[[cell_type]] <- result_against_cell_type
+  }
+  return(result_per_cell_type)
+}
+
+
 nichenet_output_to_plot <- function(output_list, output_loc){
   # store per celltype the resulting plot
   combined_plots <- list()
