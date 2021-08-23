@@ -769,7 +769,7 @@ fitGLM_mc <- function(res, condition, subject_effect = TRUE, pairwise = TRUE, fi
 ####################################################################################
 
 # read Seurat file
-cardio.integrated <- readRDS('/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/cardio.integrated.20201209.rds')
+cardio.integrated <- readRDS('/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/cardio.integrated.20210301.rds')
 # grab metadata
 metadata <- cardio.integrated@meta.data
 # grab all the cell counts
@@ -794,12 +794,12 @@ pairs[['t24h_t8w']] <- t24h_t8w
 # get the results
 diff_all <- test_two_class_mt(cell_count_all, null_dist_all, pairs)
 # write results
-write.table(diff_all[['ut_baseline']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_baseline_20201209.tsv', sep = '\t', row.names=T)
-write.table(diff_all[['ut_t24h']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_t24h_20201209.tsv', sep = '\t', row.names=T)
-write.table(diff_all[['ut_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_t8w_20201209.tsv', sep = '\t', row.names=T)
-write.table(diff_all[['baseline_t24h']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_baseline_t24h_20201209.tsv', sep = '\t', row.names=T)
-write.table(diff_all[['baseline_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_baseline_t8w_20201209.tsv', sep = '\t', row.names=T)
-write.table(diff_all[['t24h_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_t24h_t8w_20201209.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['ut_baseline']], '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_baseline_20210301.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['ut_t24h']], '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_t24h_20210301.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['ut_t8w']], '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_ut_t8w_20210301.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['baseline_t24h']], '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_baseline_t24h_20210301.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['baseline_t8w']], '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_baseline_t8w_20210301.tsv', sep = '\t', row.names=T)
+write.table(diff_all[['t24h_t8w']], '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/all_t24h_t8w_20210301.tsv', sep = '\t', row.names=T)
 
 
 metadata_v2 <- metadata[metadata$chem == 'V2', ]
@@ -809,9 +809,9 @@ null_dist_v2 <- get_null_distributions_mt(cell_count_v2)
 # get the results
 diff_v2 <- test_two_class_mt(cell_count_v2, null_dist_v2, pairs)
 # write results
-write.table(diff_v2[['ut_baseline']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v2_ut_baseline_20201209.tsv', sep = '\t', row.names=T)
-write.table(diff_v2[['ut_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v2_ut_t8w_20201209.tsv', sep = '\t', row.names=T)
-write.table(diff_v2[['baseline_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v2_baseline_t8w_20201209.tsv', sep = '\t', row.names=T)
+write.table(diff_v2[['ut_baseline']], '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v2_ut_baseline_20201209.tsv', sep = '\t', row.names=T)
+write.table(diff_v2[['ut_t8w']], '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v2_ut_t8w_20201209.tsv', sep = '\t', row.names=T)
+write.table(diff_v2[['baseline_t8w']], '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v2_baseline_t8w_20201209.tsv', sep = '\t', row.names=T)
 
 metadata_v3 <- metadata[metadata$chem == 'V3', ]
 cell_count_v3 <- get_cell_counts(metadata_v3)
@@ -820,9 +820,9 @@ null_dist_v3 <- get_null_distributions_mt(cell_count_v3)
 # get the results
 diff_v3 <- test_two_class_mt(cell_count_v3, null_dist_v3, pairs)
 # write results
-write.table(diff_v3[['ut_baseline']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v3_ut_baseline_20201209.tsv', sep = '\t', row.names=T)
-write.table(diff_v3[['ut_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v3_ut_t8w_20201209.tsv', sep = '\t', row.names=T)
-write.table(diff_v3[['baseline_t8w']], '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v3_baseline_t8w_20201209.tsv', sep = '\t', row.names=T)
+write.table(diff_v3[['ut_baseline']], '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v3_ut_baseline_20201209.tsv', sep = '\t', row.names=T)
+write.table(diff_v3[['ut_t8w']], '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v3_ut_t8w_20201209.tsv', sep = '\t', row.names=T)
+write.table(diff_v3[['baseline_t8w']], '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_type_composition/elife_2020/v3_baseline_t8w_20201209.tsv', sep = '\t', row.names=T)
 
 
 

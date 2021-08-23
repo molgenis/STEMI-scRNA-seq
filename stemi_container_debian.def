@@ -1,0 +1,257 @@
+# getting singularity working on mac: https://sylabs.io/guides/3.8/admin-guide/installation.html#installation-on-windows-or-mac
+# update container apt-get update && apt-get upgrade
+# sudo apt-get install debootstrap
+# sudo apt-get install debian-archive-keyring
+#Place the following lines into the '.rpmmacros' file:
+#%_var /var
+#%_dbpath %{_var}/lib/rpm
+# add to sudo nano /etc/yum.conf
+# assumeyes=1
+
+Bootstrap: debootstrap
+OSVersion: buster
+MirrorURL: http://deb.debian.org/debian
+Include: vim
+
+%setup
+
+%files
+
+%environment
+
+%runscript
+
+%post
+  # update everything
+  apt --yes update && apt --yes --force-yes upgrade
+  # install tools required for building from source or installation without apt
+  apt --yes install build-essential
+  apt --yes install gdebi-core
+  apt --yes install curl
+  apt --yes install wget
+  # install R: https://docs.rstudio.com/resources/install-r/#optional-install-recommended-packages
+  export R_VERSION=4.1.1
+  curl -O https://cdn.rstudio.com/r/debian-10/pkgs/r-${R_VERSION}_1_amd64.deb
+  gdebi -n r-${R_VERSION}_1_amd64.deb
+  ln -s /opt/R/${R_VERSION}/bin/R /usr/local/bin/R
+  ln -s /opt/R/${R_VERSION}/bin/Rscript /usr/local/bin/Rscript
+  # install system libraries we need for R
+  apt --yes install qt5-default
+  apt --yes install libgl1-mesa-dev
+  apt --yes install libsdl2-dev
+  apt --yes install libqtwebkit-dev
+  apt --yes install qtbase5-dev
+  apt --yes install libgmp-dev
+  apt --yes install libmpfr-dev
+  apt --yes install postgresql
+  # install openssl
+  apt --yes install libssl-dev #openssl-devel
+  # install libpng
+  apt --yes install libpng-dev
+  # install hdf5
+  apt --yes install libhdf5-dev
+  # install a zip library
+  apt --yes install bzip2
+  # fontconfig we might need later
+  apt --yes install fontconfig
+  # libxml2
+  apt --yes install libxml2-dev
+  # install cairo and related libraries
+  apt --yes install libcairo2-dev #cairo-devel
+  apt --yes install libxt-dev
+  apt --yes install libgtk2.0-dev
+  apt --yes install xvfb
+  apt --yes install xauth
+  apt --yes install xfonts-base
+  apt --yes install libblas-dev
+  apt --yes install liblapack-dev
+  apt --yes install libboost-all-dev
+  ########################
+  # install conda #
+  ########################
+  wget https://repo.anaconda.com/archive/Anaconda3-2019.07-Linux-x86_64.sh
+  bash Anaconda3-2019.07-Linux-x86_64.sh -b -p /opt/anaconda3
+  ln -s /opt/anaconda3/bind/conda /usr/local/bin/conda
+  rm Anaconda3-2019.07-Linux-x86_64.sh
+  # install python tools
+  /opt/anaconda3/bin/conda config --add channels defaults
+  /opt/anaconda3/bin/conda config --add channels bioconda
+  /opt/anaconda3/bin/conda config --add channels conda-forge
+  /opt/anaconda3/bin/conda create -n scanpyenv scanpy=1.8.1 python=3.7
+  /opt/anaconda3/bin/conda create -n scvelo_env scvelo=0.2.3 python=3.7
+  /opt/anaconda3/bin/conda create -n scrublet_env scrublet=0.2.3 python=3.7
+  /opt/anaconda3/bin/conda init bash
+  # install java tools    #
+  #########################
+  wget -qO - https://adoptopenjdk.jfrog.io/adoptopenjdk/api/gpg/key/public | apt-key add - # the key for openjdk
+  # we need this package to allow adding of repositories
+  apt --yes install software-properties-common
+  apt --yes update
+  # we need to add a repository for this one
+  add-apt-repository --yes https://adoptopenjdk.jfrog.io/adoptopenjdk/deb/
+  apt --yes update && apt --yes install adoptopenjdk-8-hotspot
+  # openjdk 11 however, is in the standard repos
+  apt --yes install openjdk-11-jdk
+  apt --yes install maven
+  apt --yes install git
+  git clone https://github.com/molgenis/systemsgenetics.git
+  cd ./systemsgenetics
+  git checkout 34096bdbaae723d438d9167d962806efeb0b63e1
+  # increase memory for maven
+  export MAVEN_OPTS="-Xmx4096m -XX:MaxPermSize=4096m"
+  # build the projects
+  mvn package -DskipTests
+  mkdir -p /opt/systemsgenetics/GenotypeHarmonizer/
+  cp ./Genotype-Harmonizer/target/GenotypeHarmonizer-1.4.23-SNAPSHOT.jar /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.jar
+  echo "#/bin/bash" > /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.sh
+  echo "java -jar /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.jar" >> /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.sh
+  chmod u+x /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.sh
+  ln -s /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.sh /usr/local/bin/GenotypeHarmonizer.sh
+  mkdir -p /opt/systemsgenetics/eqtl-mapping-pipeline/
+  cp ./eqtl-mapping-pipeline/target/eqtl-mapping-pipeline-1.4.9a-SNAPSHOT.jar /opt/systemsgenetics/eqtl-mapping-pipeline/eqtl-mapping-pipeline.jar
+  echo "#/bin/bash" > /opt/systemsgenetics/eqtl-mapping-pipeline/eqtl-mapping-pipeline.sh
+  echo "java -jar /opt/systemsgenetics/eqtl-mapping-pipeline/eqtl-mapping-pipeline.jar" >> /opt/systemsgenetics/eqtl-mapping-pipeline/eqtl-mapping-pipeline.sh
+  chmod u+x /opt/systemsgenetics/eqtl-mapping-pipeline/eqtl-mapping-pipeline.sh
+  ln -s /opt/systemsgenetics/eqtl-mapping-pipeline/qtl-mapping-pipeline.sh /usr/local/bin/qtl-mapping-pipeline.sh
+  cd ../
+  rm -r systemsgenetics
+  #########################
+  # install plink         #
+  #########################
+  apt --yes install unzip
+  curl -O https://s3.amazonaws.com/plink1-assets/plink_linux_x86_64_20210606.zip
+  mkdir -p /opt/plink
+  unzip -o plink_linux_x86_64_20210606.zip -d /opt/plink/
+  chmod u+x /opt/plink/plink
+  ln -s /opt/plink/plink /usr/local/bin/plink
+  rm plink_linux_x86_64_20210606.zip
+  curl -O https://s3.amazonaws.com/plink2-assets/plink2_linux_x86_64_20210816.zip
+  mkdir -p /opt/plink2
+  unzip -o plink2_linux_x86_64_20210816.zip -d /opt/plink2/
+  chmod u+x /opt/plink2/plink2
+  ln -s /opt/plink2/plink2 /usr/local/bin/plink2
+  rm plink2_linux_x86_64_20210816.zip
+  #########################
+  # install bcftools      #
+  #########################
+  apt --yes install bcftools
+  #########################
+  # install R libraries   #
+  #########################
+  # set the repo
+  echo 'local({r <- getOption("repos");r["CRAN"] <- "https://mirror.lyrahosting.com/";options(repos = r)})' > ~/Rprofile.site
+  # first install biocmanager and remotes
+  R --slave -e 'install.packages(c("BiocManager", "remotes"), repos="https://mirror.lyrahosting.com/CRAN/")'
+  # some other stuff
+  R --slave -e 'BiocManager::install("BiocGenerics")'
+  R --slave -e 'BiocManager::install("Biobase")'
+  # which allows us to install devtools
+  R --slave -e 'remotes::install_version("rversions", "2.1.1", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("roxygen2", "7.1.1", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'BiocManager::install(c("devtools"))'
+  # which allows us to install specific versions of software
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/multtest_2.48.0.tar.gz", repos=NULL)'
+  R --slave -e 'remotes::install_version("data.table", "1.14.0", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("ggplot2", "3.3.5", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("ggpubr", "0.4.0", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("Matrix", "1.3-4", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("Matrix.utils", "0.9.8", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("metap", "1.4", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("stringr", "1.4.0", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("RColorBrewer", "1.1-2", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("VennDiagram", "1.6.20", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("Rcpp", "1.0.7", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("foreach", "1.5.1", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("doMC", "1.3.7", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("gridExtra", "2.3", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("lattice", "0.20-44", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("plyr", "1.8.6", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("dplyr", "1.0.7", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("UpSetR", "1.4.0", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("scales", "1.1.1", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("broom", "0.7.9", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("tidyverse", "1.3.1", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.4.2.tar.gz", repos=NULL)'
+  R --slave -e 'remotes::install_version("MatrixEQTL", "2.3", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/S4Vectors_0.30.0.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/IRanges_2.26.0.tar.gz", repos=NULL)'
+  R --slave -e 'remotes::install_version("RCurl", "1.98-1.3", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/data/annotation/src/contrib/GenomeInfoDbData_1.2.6.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/GenomeInfoDb_1.28.1.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/zlibbioc_1.38.0.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/XVector_0.32.0.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/GenomicRanges_1.44.0.tar.gz", repos=NULL)'
+  #R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.4.1.tar.gz", repos=NULL)'
+  R --slave -e 'remotes::install_version("metafor", "3.0-2", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/topconfects_1.8.0.tar.gz", repos=NULL)'
+  R --slave -e 'remotes::install_version("plotly", "4.9.4.1", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("htmlwidgets", "1.5.3", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/MetaVolcanoR_1.6.0.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/Biostrings_2.60.2.tar.gz", repos=NULL)'
+  R --slave -e 'remotes::install_version("snow", "0.4-3", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("BH", "1.75.0-0", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BiocParallel_1.26.1.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/Rhtslib_1.24.0.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/Rsamtools_2.8.0.tar.gz", repos=NULL)'
+  R --slave -e 'remotes::install_version("RSQLite", "2.2.7", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("png", "0.1-7", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/KEGGREST_1.32.0.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/AnnotationDbi_1.54.1.tar.gz", repos=NULL)'
+  R --slave -e 'remotes::install_version("XML", "3.99-0.6", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/GenomicAlignments_1.28.0.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BiocIO_1.2.0.tar.gz", repos=NULL)'
+  R --slave -e 'remotes::install_version("restfulr", "0.0.13", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/rtracklayer_1.52.1.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BSgenome_1.60.0.tar.gz", repos=NULL)'
+  R --slave -e 'remotes::install_version("filelock", "1.0.2", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BiocFileCache_2.0.0.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/biomaRt_2.48.3.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/GenomicFeatures_1.44.1.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.38.0.tar.gz", repos=NULL)'
+  #R --slave -e 'remotes::install_version("hdf5r", "1.3.3", repos="https://mirror.lyrahosting.com/CRAN/")'
+  #R --slave -e 'remotes::install_version("hdf5r", "1.3.3", repos="https://mirror.lyrahosting.com/CRAN/", build_opts=c("--no-resave-data", "--no-manual", "--no-build-vignettes", "--with-hdf5=/usr/local/hdf5/bin/h5cc"))'
+  # this package is a nightmare
+  #wget https://cran.r-project.org/src/contrib/Archive/hdf5r/hdf5r_1.3.2.tar.gz
+  #R --slave -e 'install.packages("./hdf5r_1.3.2.tar.gz")'
+  R --slave -e 'remotes::install_version("hdf5r", "1.3.2", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("Seurat", "4.0.3", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'devtools::install_github("thomasp85/patchwork@v1.1.0")'
+  R --slave -e 'devtools::install_github("mojaveazure/seurat-disk", ref="163f1aade5bac38ed1e9e9c912283a7e74781610")'
+  R --slave -e 'remotes::install_version("harmony", "0.1.0", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'devtools::install_github("JinmiaoChenLab/Rphenograph", ref="0298487f0ee13aac55eb77d19992f6bd878ba2fc")'
+  R --slave -e 'remotes::install_version("systemfonts", "1.0.2", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("svglite", "2.0.0", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("clue", "0.3-59", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("GetoptLong", "1.0.5", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("Cairo", "1.5-12.2", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("circlize", "0.4.13", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'remotes::install_version("doParallel", "1.0.16", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/ComplexHeatmap_2.8.0.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/DelayedArray_0.18.0.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/SummarizedExperiment_1.22.0.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/SingleCellExperiment_1.14.1.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/MAST_1.18.0.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/limma_3.48.3.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/GenomicAlignments_1.28.0.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BiocIO_1.2.0.tar.gz", repos=NULL)'
+  R --slave -e 'remotes::install_version("restfulr", "0.0.13", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/rtracklayer_1.52.1.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BSgenome_1.60.0.tar.gz", repos=NULL)'
+  R --slave -e 'remotes::install_version("filelock", "1.0.2", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BiocFileCache_2.0.0.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/biomaRt_2.48.3.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/GenomicFeatures_1.44.1.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.38.0.tar.gz", repos=NULL)'
+  R --slave -e 'devtools::install_github("sqjin/CellChat", ref="eb959d5fc45df9920116f90644fe0b5e155e304b")'
+  R --slave -e 'devtools::install_github("saeyslab/nichenetr", ref="2136a7260fbbe9ef5e9b4af0fd4c9101a3bc9a78")'
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/KEGGREST_1.32.0.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/AnnotationDbi_1.54.1.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/annotate_1.70.0.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/genefilter_1.74.0.tar.gz", repos=NULL)'
+  R --slave -e 'remotes::install_version("locfit", "1.5-9.4", repos="https://mirror.lyrahosting.com/CRAN/")'
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/geneplotter_1.70.0.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/DESeq2_1.32.0.tar.gz", repos=NULL)'
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/pcaMethods_1.84.0.tar.gz", repos=NULL)'
+  R --slave -e 'devtools::install_github("velocyto-team/velocyto.R", ref="83e6ed92c2d9c9640122dcebf8ebbb5788165a21")'
+  #R --slave -e 'devtools::install_github("leeshawn/MetaSKAT", ref="c0b63c1961a8d772842d4a5004330d273a8aeb43")'
+  #R --slave -e 'devtools::install_github("weizhouUMICH/SAIGE", ref="648850f38ed8f2d187af6a0587cb078fa3233ec6")'

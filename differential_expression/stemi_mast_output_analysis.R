@@ -245,6 +245,67 @@ get_pathway_table <- function(pathway_output_loc, sig_val_to_use = 'q.value.FDR.
   return(pathway_df)
 }
 
+get_pathways <- function(pathway_output_loc, append='_sig_pathways.txt', sig_val_to_use = 'q.value.FDR.B.H', sig_pval=0.05, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), stims=c('UT', 'Baseline', 't24h', 't8w')){
+  # set up per cell type
+  pathways_per_ct <- list()
+  # check each cell type
+  for(cell_type in cell_types){
+    # set up per stim combination
+    pathways_per_condition_combination <- list()
+    # check each stim
+    for(stim in stims){
+      for(stim2 in stims){
+        try({
+          if(stim != stim2){
+            print(paste(cell_type, stim, stim2, sep = ' '))
+            # paste the filepath together
+            filepath <- paste(pathway_output_loc, cell_type, stim,stim2, append, sep = '')
+            # read the file
+            pathways <- read.table(filepath, sep = '\t', header = T, quote="", fill = F, comment.char = "", colClasses = c('character', 'character', 'character', 'character', 'double', 'double', 'double', 'double', 'integer', 'integer', 'character'))
+            # filter to only the significant rows
+            pathways <- pathways[pathways[[sig_val_to_use]] < sig_pval, ]
+            # grab the combined names
+            pathway_names <- paste(pathways$ID, pathways$Name, sep = '_')
+            # put in the list
+            pathways_per_condition_combination[[paste(stim, stim2, sep='')]] <- pathway_names
+          }
+        })
+      }
+    }
+    # put in the list per cell type
+    pathways_per_ct[[cell_type]] <- pathways_per_condition_combination
+  }
+  return(pathways_per_ct)
+}
+
+
+pathway_numbers_to_table <- function(pathway_output_loc, append='_sig_pathways.txt', sig_val_to_use = 'q.value.FDR.B.H', sig_pval=0.05, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), stims=c('UT', 'Baseline', 't24h', 't8w'), remove_na_cols=T){
+  # get the DE genes
+  pathways_per_ct <- get_pathways(pathway_output_loc=pathway_output_loc, append=append, sig_val_to_use=sig_val_to_use, sig_pval=sig_pval, cell_types=cell_types, stims=stims)
+  # make all possible combinations of stims
+  combs <- paste(rep(stims, each = length(stims)), stims, sep = '')
+  # create matrix to store results
+  number_table <- matrix(, ncol=length(combs), nrow=length(cell_types), dimnames = list(cell_types, combs))
+  # check each cell type
+  for(cell_type in intersect(cell_types, names(pathways_per_ct))){
+    # get for specific cell type
+    pathways_per_conditin <- pathways_per_ct[[cell_type]]
+    # check each condition combination
+    for(comb in intersect(combs, names(pathways_per_conditin))){
+      # get the number of genes
+      nr_of_pathways <- length(pathways_per_conditin[[comb]])
+      # add to matrix
+      number_table[cell_type, comb] <- nr_of_pathways
+    }
+  }
+  # remove na column
+  if(remove_na_cols){
+    number_table <- number_table[, colSums(is.na(number_table)) < nrow(number_table)]
+  }
+  # i like dataframes
+  number_table <- data.frame(number_table)
+  return(number_table)
+}
 
 get_de_genes <- function(mast_output_loc, pval_column='metap_bonferroni', sig_pval=0.05, max=NULL, max_by_pval=T, only_positive=F, only_negative=F, lfc_column='metafc', to_ens=F, symbols.to.ensg.mapping='genes.tsv', cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), stims=c('UT', 'Baseline', 't24h', 't8w')){
   # set up per cell type
@@ -309,6 +370,172 @@ get_de_genes <- function(mast_output_loc, pval_column='metap_bonferroni', sig_pv
   return(de_per_ct)
 }
 
+
+de_genes_number_to_table <- function(mast_output_loc, pval_column='metap_bonferroni', sig_pval=0.05, max=NULL, max_by_pval=T, only_positive=F, only_negative=F, lfc_column='metafc', to_ens=F, symbols.to.ensg.mapping='genes.tsv', cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), stims=c('UT', 'Baseline', 't24h', 't8w'), remove_na_cols=T){
+  # get the DE genes
+  de_genes_per_ct <- get_de_genes(mast_output_loc, pval_column=pval_column, sig_pval=sig_pval, max=max, max_by_pval=max_by_pval, only_positive=only_positive, only_negative=only_negative, lfc_column=lfc_column, to_ens=to_ens, symbols.to.ensg.mapping=symbols.to.ensg.mapping, cell_types=cell_types, stims=stims)
+  # make all possible combinations of stims
+  combs <- paste(rep(stims, each = length(stims)), stims, sep = '')
+  # create matrix to store results
+  number_table <- matrix(, ncol=length(combs), nrow=length(cell_types), dimnames = list(cell_types, combs))
+  # check each cell type
+  for(cell_type in intersect(cell_types, names(de_genes_per_ct))){
+    # get for specific cell type
+    de_genes_per_conditin <- de_genes_per_ct[[cell_type]]
+    # check each condition combination
+    for(comb in intersect(combs, names(de_genes_per_conditin))){
+      # get the number of genes
+      nr_of_de_genes <- length(de_genes_per_conditin[[comb]])
+      # add to matrix
+      number_table[cell_type, comb] <- nr_of_de_genes
+    }
+  }
+  # remove na column
+  if(remove_na_cols){
+    number_table <- number_table[, colSums(is.na(number_table)) < nrow(number_table)]
+  }
+  # i like dataframes
+  number_table <- data.frame(number_table)
+  return(number_table)
+}
+
+numbers_table_to_plot <- function(numbers_table, cols_include=NULL, use_label_dict=T, use_groups_dict=T, title=NULL, pointless=F, legendless=F, grid_single=T, paper_style=F, angle_x_labels=F, colour_top_label=F){
+  numbers_table_to_do <- numbers_table
+  if(!is.null(cols_include)){
+    numbers_table_to_do <- numbers_table_to_do[, cols_include, drop = F]
+  }
+  plot_data <- NULL
+  for(cell_type in rownames(numbers_table_to_do)){
+    for(condition_comb in colnames(numbers_table_to_do)){
+      val <- numbers_table_to_do[cell_type, condition_comb]
+      if(is.na(val)){
+        val <- 0
+      }
+      # set labels to use in plot
+      conditions_label <- condition_comb
+      cell_type_label <- cell_type
+      # create nicer labels if requested
+      if(use_label_dict){
+        conditions_label <- label_dict()[[conditions_label]]
+        cell_type_label <- label_dict()[[cell_type]]
+      }
+      # create the row
+      row_plot_data <- data.frame(de_genes=val, cell_type=cell_type_label, conditions=conditions_label)
+      if(use_groups_dict){
+        row_plot_data$comparison <- groups_dict()[[condition_comb]]
+      }
+      if(is.null(plot_data)){
+        plot_data <- row_plot_data
+      }
+      else{
+        plot_data <- rbind(plot_data, row_plot_data)
+      }
+    }
+  }
+  # create the ylim
+  ylims <- c(0, max(plot_data$de_genes*1.1))
+  # make the plots
+  p <- NULL
+  if(use_groups_dict){
+    p <- ggplot(data=plot_data, aes(x=comparison, y=de_genes)) + geom_point(aes(color=conditions), size=6) + facet_grid(. ~ cell_type) + scale_color_manual(name = 'condition\ncombination', values = unlist(get_color_coding_dict()[unique(plot_data$conditions)])) + ylim(ylims)
+  }
+  else if(length(unique(plot_data$conditions))==1){
+    p <- NULL
+    if(grid_single){
+      p <- ggplot(data=plot_data, aes(x=conditions, y=de_genes)) + geom_point(aes(color=cell_type), size=6) + facet_grid(. ~ cell_type)  + scale_color_manual(values = unlist(get_color_coding_dict()[unique(plot_data$cell_type)]))
+    }
+    else{
+      p <- ggplot(data=plot_data, aes(x=cell_type, y=de_genes)) + geom_point(aes(color=cell_type), size=6) + scale_color_manual(name = 'cell type', values = unlist(get_color_coding_dict()[unique(plot_data$cell_type)]))
+    }
+    #
+    p <- p +
+      xlab('cell type') + 
+      ylab('number of DE genes') +
+      theme(legend.title = element_text(size=14), 
+            legend.text = element_text(size=12),
+            axis.title.x = element_text(size=14),
+            axis.title.y = element_text(size=14),
+            axis.text.y = element_text(size=12),
+            strip.text.x = element_text(size=12)) +
+      ylim(ylims)
+  }
+  else{
+    #ggplot(data=plot_data, aes(x=conditions, y=de_genes)) + geom_point(aes(color=conditions), size=6) + facet_grid(. ~ cell_type)  + scale_color_manual(name = 'condition\ncombination', values = unlist(get_color_coding_dict()[unique(plot_data$conditions)])) + theme(legend.position = 'none') +
+    p <- ggplot(data=plot_data, aes(x=conditions, y=de_genes)) + geom_point(aes(color=conditions), size=6) + facet_grid(. ~ cell_type)  + scale_color_manual(name = 'condition\ncombination', values = unlist(get_color_coding_dict()[unique(plot_data$conditions)])) +
+      xlab('condition combination') + 
+      ylab('number of DE genes') +
+      theme(#axis.text.x=element_blank(), 
+            #axis.ticks = element_blank(), 
+            legend.title = element_text(size=14), 
+            legend.text = element_text(size=12),
+            axis.title.x = element_text(size=14),
+            axis.title.y = element_text(size=14),
+            axis.text.y = element_text(size=12),
+            strip.text.x = element_text(size=12)) + ylim(ylims)
+  }
+  if(!is.null(title)){
+    p <- p + ggtitle(title)
+  }
+  if(pointless){
+    p <- p + theme(axis.text.x=element_blank(), 
+                   axis.ticks = element_blank(),
+                   axis.title.x = element_blank())
+  }
+  if(legendless){
+    p <- p + theme(legend.position = 'none')
+  }
+  if(paper_style){
+    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  if(angle_x_labels){
+    p <- p + theme(axis.text.x = element_text(angle = 90))
+  }
+  if(colour_top_label){
+    striprt <- which( grepl('strip-r', p$layout$name) | grepl('strip-t', p$layout$name) )
+    fills <- unlist(get_color_coding_dict()[unique(plot_data$cell_type)])
+    k <- 1
+    for (i in striprt) {
+      j <- which(grepl('rect', p$grobs[[i]]$grobs[[1]]$childrenOrder))
+      p$grobs[[i]]$grobs[[1]]$children[[j]]$gp$fill <- fills[k]
+      k <- k+1
+    }
+  }
+  return(p)
+}
+
+split_label_dict <- function(){
+  label_dict <- list()
+  #label_dict[['UTBaseline']] <- 'UT\nBaseline'
+  #label_dict[['UTt24h']] <- 'UT\nt24h'
+  #label_dict[['UTt8w']] <- 'UT\nt8w'
+  #label_dict[['Baselinet24h']] <- 'Baseline\nt24h'
+  #label_dict[['Baselinet8w']] <- 'Baseline\nt8w'
+  #label_dict[['t24ht8w']] <- 't24h\nt8w'
+  label_dict[['UTBaseline']] <- 'UT-Baseline'
+  label_dict[['UTt24h']] <- 'UT-t24h'
+  label_dict[['UTt8w']] <- 'UT-t8w'
+  label_dict[['Baselinet24h']] <- 'Baseline-t24h'
+  label_dict[['Baselinet8w']] <- 'Baseline-t8w'
+  label_dict[['t24ht8w']] <- 't24h-t8w'
+  label_dict[['UTBaseline']] <- 'HC-t0'
+  label_dict[['UTt24h']] <- 'HC-t24h'
+  label_dict[['UTt8w']] <- 'HC-t8w'
+  label_dict[['Baselinet24h']] <- 't0-t24h'
+  label_dict[['Baselinet8w']] <- 't0-t8w'
+  return(label_dict)
+}
+
+groups_dict <- function(){
+  groups_dict <- list()
+  groups_dict[['UTBaseline']] <- 'HC'
+  groups_dict[['UTt24h']] <- 'HC'
+  groups_dict[['UTt8w']] <- 'HC'
+  groups_dict[['Baselinet24h']] <- 'STEMI'
+  groups_dict[['Baselinet8w']] <- 'STEMI'
+  groups_dict[['t24ht8w']] <- 'STEMI'
+  return(groups_dict)
+}
+
 get_top_pathways <- function(pathway_table, nr_of_top_genes, is_ranked=F){
   # init pathways list
   pathways <- c()
@@ -337,6 +564,38 @@ get_color_coding_dict <- function(){
   color_coding[["Baselinet24h"]] <- "paleturquoise3"
   color_coding[["Baselinet8w"]] <- "rosybrown1"
   color_coding[["t24ht8w"]] <- "rosybrown3"
+  color_coding[["UT\nBaseline"]] <- "khaki2"
+  color_coding[["UT\nt24h"]] <- "khaki4"
+  color_coding[["UT\nt8w"]] <- "paleturquoise1"
+  color_coding[["Baseline\nt24h"]] <- "paleturquoise3"
+  color_coding[["Baseline\nt8w"]] <- "rosybrown1"
+  color_coding[["t24h\nt8w"]] <- "rosybrown3"
+  color_coding[["UT-Baseline"]] <- "khaki2"
+  color_coding[["UT-t24h"]] <- "khaki4"
+  color_coding[["UT-t8w"]] <- "paleturquoise1"
+  color_coding[["Baseline-t24h"]] <- "paleturquoise3"
+  color_coding[["Baseline-t8w"]] <- "rosybrown1"
+  color_coding[["t24h-t8w"]] <- "rosybrown3"
+  color_coding[["UT-t0"]] <- "khaki2"
+  color_coding[["UT-t24h"]] <- "khaki4"
+  color_coding[["UT-t8w"]] <- "paleturquoise1"
+  color_coding[["HC-t0"]] <- "khaki2"
+  color_coding[["t0-HC"]] <- "khaki2"
+  color_coding[["HC-t24h"]] <- "khaki4"
+  color_coding[["t24h-HC"]] <- "khaki4"
+  color_coding[["HC-t8w"]] <- "paleturquoise1"
+  color_coding[["t8w-HC"]] <- "paleturquoise1"
+  color_coding[["t0-t24h"]] <- "#FF6066" #"paleturquoise3"
+  color_coding[["t24h-t0"]] <- "#FF6066" #"paleturquoise3"
+  color_coding[["t0-t8w"]] <- "#C060A6" #"rosybrown1"
+  color_coding[["t8w-t0"]] <- "#C060A6" #"rosybrown1"
+  color_coding[["t24h-t8w"]] <- "#C00040" #"rosybrown3"
+  color_coding[["t8w-t24h"]] <- "#C00040" #"rosybrown3"
+  # set condition colors
+  color_coding[["HC"]] <- "grey"
+  color_coding[["t0"]] <- "pink"
+  color_coding[["t24h"]] <- "red"
+  color_coding[["t8w"]] <- "purple"
   # set the cell type colors
   color_coding[["Bulk"]] <- "black"
   color_coding[["CD4T"]] <- "#153057"
@@ -345,8 +604,120 @@ get_color_coding_dict <- function(){
   color_coding[["NK"]] <- "#E64B50"
   color_coding[["B"]] <- "#71BC4B"
   color_coding[["DC"]] <- "#965EC8"
+  color_coding[["CD4+ T"]] <- "#153057"
+  color_coding[["CD8+ T"]] <- "#009DDB"
+  # other cell type colors
+  color_coding[["HSPC"]] <- "#009E94"
+  color_coding[["platelet"]] <- "#9E1C00"
+  color_coding[["plasmablast"]] <- "#DB8E00"
+  color_coding[["other T"]] <- "#FF63B6"
   return(color_coding)
 }
+
+label_dict <- function(){
+  label_dict <- list()
+  # condition combinations
+  label_dict[['UTBaseline']] <- 'UT-Baseline'
+  label_dict[['UTt24h']] <- 'UT-t24h'
+  label_dict[['UTt8w']] <- 'UT-t8w'
+  label_dict[['Baselinet24h']] <- 'Baseline-t24h'
+  label_dict[['Baselinet8w']] <- 'Baseline-t8w'
+  label_dict[['t24ht8w']] <- 't24h-t8w'
+  label_dict[['UTBaseline']] <- 'HC-t0'
+  label_dict[['UTt24h']] <- 'HC-t24h'
+  label_dict[['UTt8w']] <- 'HC-t8w'
+  label_dict[['Baselinet24h']] <- 't0-t24h'
+  label_dict[['Baselinet8w']] <- 't0-t8w'
+  # conditions
+  label_dict[['UT']] <- 'HC'
+  label_dict[['Baseline']] <- 't0'
+  label_dict[['t24h']] <- 't24h'
+  label_dict[['t8w']] <- 't8w'
+  # major cell types
+  label_dict[["Bulk"]] <- "bulk-like"
+  label_dict[["CD4T"]] <- "CD4+ T"
+  label_dict[["CD8T"]] <- "CD8+ T"
+  label_dict[["monocyte"]] <- "monocyte"
+  label_dict[["NK"]] <- "NK"
+  label_dict[["B"]] <- "B"
+  label_dict[["DC"]] <- "DC"
+  label_dict[["HSPC"]] <- "HSPC"
+  label_dict[["plasmablast"]] <- "plasmablast"
+  label_dict[["platelet"]] <- "platelet"
+  label_dict[["T_other"]] <- "other T"
+  # minor cell types
+  label_dict[["CD4_TCM"]] <- "CD4 TCM"
+  label_dict[["Treg"]] <- "T regulatory"
+  label_dict[["CD4_Naive"]] <- "CD4 naive"
+  label_dict[["CD4_CTL"]] <- "CD4 CTL"
+  label_dict[["CD8_TEM"]] <- "CD8 TEM"
+  label_dict[["cMono"]] <- "cMono"
+  label_dict[["CD8_TCM"]] <- "CD8 TCM"
+  label_dict[["ncMono"]] <- "ncMono"
+  label_dict[["cDC2"]] <- "cDC2"
+  label_dict[["B_intermediate"]] <- "B intermediate"
+  label_dict[["NKdim"]] <- "NK dim"
+  label_dict[["pDC"]] <- "pDC"
+  label_dict[["ASDC"]] <- "ASDC"
+  label_dict[["CD8_Naive"]] <- "CD8 naive"
+  label_dict[["MAIT"]] <- "MAIT"
+  label_dict[["CD8_Proliferating"]] <- "CD8 proliferating"
+  label_dict[["CD4_TEM"]] <- "CD4 TEM"
+  label_dict[["B_memory"]] <- "B memory"
+  label_dict[["NKbright"]] <- "NK bright"
+  label_dict[["B_naive"]] <- "B naive"
+  label_dict[["gdT"]] <- "gamma delta T"
+  label_dict[["CD4_Proliferating"]] <- "CD4 proliferating"
+  label_dict[["NK_Proliferating"]] <- "NK proliferating"
+  label_dict[["cDC1"]] <- "cDC1"
+  label_dict[["ILC"]] <- "ILC"
+  label_dict[["dnT"]] <- "double negative T"
+  return(label_dict)
+}
+
+
+get_top_de_genes_per_cond_and_ct <- function(mast_output_loc, pval_column='metap_bonferroni', sig_pval=0.05, max=5, max_by_pval=T, lfc_column='metafc', to_ens=F, symbols.to.ensg.mapping='genes.tsv', cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), stims=c('UT', 'Baseline', 't24h', 't8w')){
+  # create dataframe for cell type
+  df_top_genes <- NULL
+  # make all possible combinations of stims
+  combs <- paste(rep(stims, each = length(stims)), stims, sep = '')
+  # check each cell type
+  for(cell_type in cell_types){
+    # check each combination
+    for(comb in combs){
+      # paste the output location together
+      output_loc_full <- paste(mast_output_loc, cell_type, comb, '.tsv', sep = '')
+      # get the up genes
+      up_de_genes <- get_de_genes_from_mast_file(mast_full_file_path = output_loc_full, pval_column = pval_column, sig_pval = sig_pval, max = max, max_by_pval = max_by_pval, lfc_column = lfc_column, to_ens = to_ens, symbols.to.ensg.mapping = symbols.to.ensg.mapping, only_positive = T)
+      down_de_genes <- get_de_genes_from_mast_file(mast_full_file_path = output_loc_full, pval_column = pval_column, sig_pval = sig_pval, max = max, max_by_pval = max_by_pval, lfc_column = lfc_column, to_ens = to_ens, symbols.to.ensg.mapping = symbols.to.ensg.mapping, only_negative = T)
+      # add to top genes if possible
+      if(!is.null(up_de_genes)){
+        # turn into df
+        up_de_genes_df <- data.frame(a = up_de_genes)
+        colnames(up_de_genes_df) <- paste(cell_type, comb, 'up', sep='_')
+        if(is.null(df_top_genes)){
+          df_top_genes <- up_de_genes_df
+        }
+        else{
+          df_top_genes <- cbind(df_top_genes, up_de_genes_df)
+        }
+      }
+      if(!is.null(down_de_genes)){
+        # turn into df
+        down_de_genes_df <- data.frame(a = down_de_genes)
+        colnames(down_de_genes_df) <- paste(cell_type, comb, 'down', sep='_')
+        if(is.null(df_top_genes)){
+          df_top_genes <- down_de_genes_df
+        }
+        else{
+          df_top_genes <- cbind(df_top_genes, down_de_genes_df)
+        }
+      }
+    }
+  }
+  return(df_top_genes)
+}
+
 
 get_top_vary_genes <- function(de_table, use_tp=T, use_ct=T, sd_cutoff=0.5, use_dynamic_sd=F, top_so_many=10, must_be_positive_once=F, timepoints=c("Baselinet24h", "Baselinet8w", "t24ht8w"), cell_types=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK")){
   top_vary_de <- c()
@@ -454,7 +825,7 @@ get_combined_meta_de_table <- function(meta_output_loc, must_be_positive_once=F,
 }
 
 
-plot_de_vs_cell_type_numbers <- function(mast_output_loc, metadata, timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', "Baselinet24h", "Baselinet8w", "t24ht8w"), cell_types_to_use=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK"), pval_column='metap_bonferroni', sig_pval=0.05, plot_separately=T, proportion=F){
+plot_de_vs_cell_type_numbers <- function(mast_output_loc, metadata, timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', 'Baselinet24h', 'Baselinet8w', 't24ht8w'), cell_types_to_use=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK"), pval_column='metap_bonferroni', sig_pval=0.05, plot_separately=F, proportion=F, use_label_dict=T, paper_style=F){
   # init table
   table <- NULL
   for(timepoint in timepoints){
@@ -492,9 +863,15 @@ plot_de_vs_cell_type_numbers <- function(mast_output_loc, metadata, timepoints=c
         table <- rbind(table, c(timepoint, cell_type, nr_of_cells, sig_gene_number))
       }
     }
+    
     if(plot_separately){
-      ggplot(table[table$timepoint==timepoint, ], aes(x=nr_of_cells, y=sig_gene_number, shape=timepoint, color=cell_type)) +
-        geom_point()
+      p <- ggplot(table[table$timepoint==timepoint, ], aes(x=nr_of_cells, y=sig_gene_number, shape=timepoint, color=cell_type)) +
+        geom_point() +
+        labs(x = xlab, y = 'nr of DE genes', title = 'cells vs nr of DE genes', shape='condition combination', color='cell type')
+      if(paper_style){
+        p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+      }
+      p
     }
   }
   print(table)
@@ -504,14 +881,23 @@ plot_de_vs_cell_type_numbers <- function(mast_output_loc, metadata, timepoints=c
     if(proportion){
       xlab <- 'proportion of cells'
     }
+    if(use_label_dict){
+      label_dict <- split_label_dict()
+      table$timepoint <- as.vector(unlist(label_dict[table$timepoint]))
+    }
+    # get color coding
     cc <- get_color_coding_dict()
-    colScale <- scale_colour_manual(name = "cell_type",values = unlist(cc[cell_types_to_use]))
-    ggplot(table, aes(x=as.numeric(nr_of_cells), y=as.numeric(sig_gene_number), shape=timepoint, color=cell_type)) +
+    colScale <- scale_colour_manual(name = "cell type",values = unlist(cc[cell_types_to_use]))
+    p <- ggplot(table, aes(x=as.numeric(nr_of_cells), y=as.numeric(sig_gene_number), shape=timepoint, color=cell_type)) +
       #scale_x_discrete(breaks = seq(0, 1, by = 0.1)) +
       #scale_y_discrete(breaks = seq(0, 1000, by = 100)) +
       geom_point(size=3) +
-      labs(x = xlab, y = 'nr of DE genes', title = 'cells vs nr of DE genes') +
+      labs(x = xlab, y = 'nr of DE genes', title = 'cells vs nr of DE genes', shape='condition combination') +
       colScale
+    if(paper_style){
+      p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+    }
+    p
   }
 }
 
@@ -633,7 +1019,7 @@ plot_de_number_vs_subcell_population <- function(mast_output_loc, cell_type_larg
 }
 
 
-plot_DE_sharing_per_celltype <- function(condition_combination, mast_output_loc, cell_types_to_use=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK"), pval_column='metap_bonferroni', sig_pval=0.05, only_positive=F, only_negative=F, lfc_column='metafc'){
+plot_DE_sharing_per_celltype <- function(condition_combination, mast_output_loc, cell_types_to_use=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK"), pval_column='metap_bonferroni', sig_pval=0.05, only_positive=F, only_negative=F, lfc_column='metafc', use_label_dict=T, use_color_dict=T){
   DE_genes_per_ct <- list()
   # get the DE genes for each cell type
   for(cell_type in cell_types_to_use){
@@ -659,8 +1045,1131 @@ plot_DE_sharing_per_celltype <- function(condition_combination, mast_output_loc,
       DE_genes_per_ct[[cell_type]] <- sig_genes
     })
   }
-  upset(fromList(DE_genes_per_ct), order.by = 'freq', nsets = length(DE_genes_per_ct))
+  if(use_label_dict){
+    names(DE_genes_per_ct) <- label_dict()[names(DE_genes_per_ct)]
+  }
+  queries <- list()
+  sets.bar.color <- 'black'
+  if(use_color_dict){
+    # create df to store the number of each set, so we know how to order
+    nrs_df <- NULL
+    # add the colors for the cell types
+    for(i in 1:length(names(DE_genes_per_ct))){
+      cell_type <- names(DE_genes_per_ct)[i]
+      # add for the singles in the intersection sizes
+      ct_list <- list(
+        query = intersects,
+        params = list(cell_type),
+        color = get_color_coding_dict()[[cell_type]],
+        active = T)
+      queries[[i]] <- ct_list
+      # add for the DF to order the set sizes
+      numbers_row <- data.frame(ct=c(cell_type), nr=c(length(DE_genes_per_ct[[cell_type]])), stringsAsFactors = F)
+      if(is.null(nrs_df)){
+        nrs_df <- numbers_row
+      }
+      else{
+        nrs_df <- rbind(nrs_df, numbers_row)
+      }
+    }
+    # get the order of the sets
+    ordered_cts <- nrs_df[order(nrs_df$nr, decreasing = T), 'ct']
+    # add the colors for the sets
+    sets.bar.color <- unlist(get_color_coding_dict()[ordered_cts])
+  }
+  upset(fromList(DE_genes_per_ct), order.by = 'freq', nsets = length(DE_genes_per_ct), queries = queries, sets.bar.color=sets.bar.color	)
   #return(DE_genes_per_ct)
+}
+
+plot_DE_sharing_per_celltype_meh <- function(condition_combination, mast_output_loc, cell_types_to_use=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK"), pval_column='metap_bonferroni', sig_pval=0.05, only_positive=F, only_negative=F, lfc_column='metafc', use_label_dict=T, use_color_dict=T, flip_shared_unique=F){
+  DE_genes_per_ct <- list()
+  # get the DE genes for each cell type
+  for(cell_type in cell_types_to_use){
+    # build the full path
+    full_mast_path <- paste(mast_output_loc, cell_type, condition_combination, '.tsv', sep = '')
+    # grab the significant genes
+    try({
+      # read the mast output
+      mast <- read.table(full_mast_path, header=T, row.names = 1, sep = '\t')
+      # filter to only include the significant results
+      mast <- mast[mast[[pval_column]] <= 0.05, ]
+      # filter for only the positive lfc if required
+      if(only_positive){
+        mast <- mast[mast[[lfc_column]] < 0, ]
+      }
+      # filter for only the positive lfc if required
+      if(only_negative){
+        mast <- mast[mast[[lfc_column]] > 0, ]
+      }
+      # we just care about the gene names
+      sig_genes <- rownames(mast)
+      # store these for the cell type
+      DE_genes_per_ct[[cell_type]] <- sig_genes
+    })
+  }
+  if(use_label_dict){
+    names(DE_genes_per_ct) <- label_dict()[names(DE_genes_per_ct)]
+  }
+  # init the dataframe
+  numbers <- NULL
+  for(cell_type in names(DE_genes_per_ct)){
+    # make a copy of everything
+    DE_genes_per_ct_not_this_ct <- DE_genes_per_ct
+    # remove this specific cell type from the copy
+    DE_genes_per_ct_not_this_ct[[cell_type]] <- NULL
+    # combine all the genes (which dont containt this cell type specific genes anymore)
+    DE_genes_not_this_ct <- unique(as.vector(unlist(DE_genes_per_ct_not_this_ct)))
+    # get the genes specific for this cell type
+    DE_genes_ct <- DE_genes_per_ct[[cell_type]]
+    # check which are unique to the cell type
+    DE_genes_ct_unique <- setdiff(DE_genes_ct, DE_genes_not_this_ct)
+    # put it into numbers
+    DE_genes_ct_unique_number <- length(DE_genes_ct_unique)
+    DE_genes_ct_shared_number <- length(DE_genes_ct) - DE_genes_ct_unique_number
+    # turn into rows
+    rows <- data.frame(cell_type=c(cell_type, cell_type), unique=c(cell_type, 'shared'), number=c(DE_genes_ct_unique_number, DE_genes_ct_shared_number), stringsAsFactors = F)
+    # add to dataframe
+    if(is.null(numbers)){
+      numbers <- rows
+    }
+    else{
+      numbers <- rbind(numbers, rows)
+    }
+  }
+  # set the order I like for the legend, but setting the factor order
+  numbers$unique <- factor(numbers$unique, levels=c('shared', names(DE_genes_per_ct)))
+  if(flip_shared_unique){
+    numbers$unique <- factor(numbers$unique, levels=c(names(DE_genes_per_ct), 'shared'))
+  }
+  # grab the colours
+  cc <- get_color_coding_dict()
+  # add the 'mixed' condition
+  cc[['shared']] <- 'gray'
+  fillScale <- scale_fill_manual(name = "cell type",values = unlist(cc[c('shared', names(DE_genes_per_ct))]))
+  # get a nice label for the condition combination
+  condition_combination_label <- label_dict()[[condition_combination]]
+  # make the plot finally
+  p <- ggplot(numbers, aes(fill=unique, y=number, x=cell_type)) +
+    geom_bar(position='stack', stat='identity') +
+    labs(x='cell type', y='number of DE genes') +
+    ggtitle(paste('DE genes and cell type specificity in', condition_combination_label)) +
+    labs(fill = "Found in") +
+    fillScale
+  return(p)
+}
+
+pathway_mapping_filtered_childless <- function(list_of_pathways_and_parents, pathway_mapping){
+  # full list of terms
+  all_terms <- c()
+  for(start in names(list_of_pathways_and_parents)){
+    # get all the terms
+    all_terms <- c(all_terms, start, list_of_pathways_and_parents[[start]])
+  }
+  # make the unique terms
+  all_terms <- unique(all_terms)
+  # iteratively remove parents with no children in our data
+  keep_going <- T
+  if(keep_going == T){
+    # get the childless entries
+    child_less_parents <- setdiff(pathway_mapping$V2, pathway_mapping$V1)
+    # check if any of those are not in our set
+    child_less_parents_filtered <- setdiff(child_less_parents, all_terms)
+    # if there are none left, stop working
+    if(length(child_less_parents_filtered) == 0){
+      keep_going <- F
+    }
+    else{
+      # remove these children without children that we don't care about
+      pathway_mapping <- pathway_mapping[!(pathway_mapping$V2 %in% child_less_parents_filtered), ]
+    }
+    
+  }
+  return(pathway_mapping)
+}
+
+# Function for getting mama and parents
+get_filtered_pathway_names <- function(relation_table, starting_id){
+  # get all of the parents of the starting ID
+  all_parents <- get_parents(relation_table, starting_id)
+  return(all_parents)
+}
+get_parents <- function(relation_table, starting_id){
+  # get all of the parents of the starting ID
+  parents <- as.character(relation_table[!is.na(relation_table$V2) & !is.na(relation_table$V1) & relation_table$V2 == starting_id, 'V1'])
+  # these parents are all family
+  family <- parents
+  # see if there were any parents
+  if(length(parents) > 0){
+    # if there were parents, we need to get their parents as well
+    for(parent in parents){
+      # get the grandparents and add these to the family
+      grand_parents <- get_parents(relation_table, parent)
+      family <- c(family, grand_parents)
+    }
+  }
+  return(family)
+}
+
+pathways_to_trees <- function(relation_table){
+  # first get the biggest parents, the terms which don't are not children
+  super_parents <- child_less_parents <- setdiff(as.character(relation_table$V1), as.character(relation_table$V2))
+  # we must do a tree per super parent
+  super_parent_tree_list <- list()
+  # put in the work for each super parent
+  for(super_parent in super_parents){
+    # fetch complete list with attribute
+    super_parent_node <- get_children_lists(relation_table, super_parent, 10)
+    # set attributes for super parent itself
+    class(super_parent_node) <- 'dendrogram'
+    # add to list of superparents
+    super_parent_tree_list[[super_parent]] <- super_parent_node
+  }
+  return(super_parent_tree_list)
+}
+
+get_children_lists <- function(relation_table, term, height){
+  # get the children of the term
+  child_rows <- relation_table[as.character(relation_table$V1) == as.character(term), ]
+  # set up the node
+  node <- list()
+  # if there are no children, this is a leaf
+  if(nrow(child_rows) == 0){
+    # set up as leaf
+    attributes(node) <- list(members=1, h=0, edgetext=term, label=term, leaf=T)
+  }
+  else{
+    children <- child_rows$V2
+    # put in a list the results
+    i <- 1
+    for(child in children){
+      # grab the child lists
+      child_node <- get_children_lists(relation_table, child, height-1)
+      # add this to the node
+      node[[i]] <- child_node
+      i <- i + 1
+    }
+    # add attributes to non-leaf node
+    attributes(node) <- list(members=length(children),height=height,edgetext=term)
+  }
+  return(node)
+}
+
+add_pathway_levels <- function(relation_table){
+  # first get the biggest parents, the terms which don't are not children
+  super_parents <- child_less_parents <- setdiff(as.character(relation_table$V1), as.character(relation_table$V2))
+  # we must do a tree per super parent
+  super_parent_tree_list <- list()
+  # put in the work for each super parent
+  for(super_parent in super_parents){
+    # fetch complete list with attribute
+    super_parent_node <- get_children_pathway_levels(relation_table, super_parent, 0)
+    # add to list of superparents
+    super_parent_tree_list[[super_parent]] <- super_parent_node
+  }
+  return(super_parent_tree_list)
+}
+
+get_children_pathway_levels <- function(relation_table, term, level){
+  # get the children of the term
+  child_rows <- relation_table[as.character(relation_table$V1) == as.character(term), ]
+  # set up the 
+  current_level <- data.frame(term=c(term), level=c(level))
+  # if there are no children, this is a leaf
+  if(nrow(child_rows) > 0){
+    children <- child_rows$V2
+    for(child in children){
+      # grab the child lists
+      child_node <- get_children_pathway_levels(relation_table, child, level+1)
+      # add to our level
+      current_level <- rbind(current_level, child_node)
+    }
+  }
+  return(current_level)
+}
+
+plot_de_gene_uniqueness_condition <- function(base_mast_output_path, marked_singles=T, condition_combinations=c('UTBaseline', 'UTt24h', 'UTt8w', 'Baselinet24h', 'Baselinet8w', 't24ht8w'), cell_types_to_use=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK"), pval_column='metap_bonferroni', sig_pval=0.05, max=NULL, max_by_pval=T, only_positive=F, only_negative=F, lfc_column='metafc', to_ens=F, symbols.to.ensg.mapping='genes.tsv'){
+  # we want to get all the DE and where they were significant
+  gene_conditions_df <- NULL
+  # so, check each condition
+  for(condition in condition_combinations){
+    # we'll store the genes
+    genes_condition <- c()
+    # then check each cell type
+    for(cell_type in cell_types_to_use){
+      # paste together the filename
+      full_mast_path <- paste(base_mast_output_path, cell_type, condition, '.tsv', sep = '')
+      # get the genes
+      genes_cell_type <- get_de_genes_from_mast_file(full_mast_path, pval_column=pval_column, sig_pval=sig_pval, max=max, max_by_pval=max_by_pval, only_positive=only_positive, only_negative=only_negative, lfc_column=lfc_column, to_ens=to_ens, symbols.to.ensg.mapping=symbols.to.ensg.mapping)
+      # add to the list of genes for this condition
+      genes_condition <- c(genes_condition, genes_cell_type)
+    }
+    # make the genes unique, as the cell types have overlap
+    genes_condition <- unique(genes_condition)
+    # set as a dataframe
+    condition_df <- data.frame(genes_condition, rep(T, times=length(genes_condition)), stringsAsFactors = F)
+    # set the condition as the column name
+    colnames(condition_df) <- c('gene', condition)
+    # merge with existing gene and conditions
+    if(is.null(gene_conditions_df)){
+      gene_conditions_df <- condition_df
+    }
+    else{
+      gene_conditions_df <- merge(gene_conditions_df, condition_df, by = 'gene', all = T)
+    }
+  }
+  # genes that were not found before merging, will be NA, those are not found and thus of course F
+  gene_conditions_df[is.na(gene_conditions_df)] <- F
+  # disregard the gene column (makes the applies easier)
+  gene_conditions_df <- gene_conditions_df[, condition_combinations]
+  # get for each genes how many conditions it was significant in
+  number_of_times_sig <- apply(gene_conditions_df, 1, sum)
+  # turn into plot df
+  plot_df <- NULL
+  # we need a bar for unique number that the DE genes were unique
+  for(number_sig in unique(number_of_times_sig)){
+    # get the number of times this was the case
+    number_times_this_sig <- sum(number_of_times_sig == number_sig)
+    # create appropriate row
+    row <- data.frame(number_sig=number_sig, number_times_this_sig=number_times_this_sig, stringsAsFactors = F)
+    # add or set
+    if(is.null(plot_df)){
+      plot_df <- row
+    }
+    else{
+      plot_df <- rbind(plot_df, row)
+    }
+  }
+  # set the condition of the numbers
+  plot_df$condition <- 'mixed'
+  # for the singles, so in one condition only, we might want to see the proportions
+  if(marked_singles){
+    # remove the singles, as we're overwriting those
+    plot_df <- plot_df[plot_df$number_sig != 1, ]
+    # subset to the singles
+    gene_conditions_df_singles <- gene_conditions_df[number_of_times_sig == 1, ]
+    # now that we have only the singles, we can sum over the columns, to get the number of genes unique to the condition
+    number_unique_per_condition <- apply(gene_conditions_df_singles, 2, sum)
+    # make that into a df
+    plot_df_uniques <- data.frame(number_sig=rep(1, times=length(condition_combinations)), number_times_this_sig=number_unique_per_condition, condition=condition_combinations)
+    # add to the current plot
+    plot_df <- rbind(plot_df, plot_df_uniques)
+  }
+  # set the order I like for the legend, but setting the factor order
+  plot_df$condition <- factor(plot_df$condition, levels=c('mixed', condition_combinations))
+  # grab the colours
+  cc <- get_color_coding_dict()
+  # add the 'mixed' condition
+  cc[['mixed']] <- 'gray'
+  fillScale <- scale_fill_manual(name = "condition",values = unlist(cc[c(condition_combinations, 'mixed')]))
+  # make the plot finally
+  p <- ggplot(plot_df, aes(fill=condition, y=number_times_this_sig, x=number_sig)) +
+    geom_bar(position='stack', stat='identity') +
+    labs(x='number of conditions a gene is differentially expressed in', y='Number of significant DE genes') +
+    ggtitle('overlap of DE genes in condition combinations') +
+    labs(fill = "Found in") +
+    fillScale
+
+  return(p)
+}
+
+plot_de_gene_uniqueness_celltype <- function(base_mast_output_path, marked_singles=T, condition_combinations=c('UTBaseline', 'UTt24h', 'UTt8w', 'Baselinet24h', 'Baselinet8w', 't24ht8w'), cell_types_to_use=c("B", "CD4T", "CD8T", "DC", "monocyte", "NK"), pval_column='metap_bonferroni', sig_pval=0.05, max=NULL, max_by_pval=T, only_positive=F, only_negative=F, lfc_column='metafc', to_ens=F, symbols.to.ensg.mapping='genes.tsv', paper_style=F){
+  # we want to get all the DE and where they were significant
+  gene_cell_type_df <- NULL
+  # so, check each condition
+  for(cell_type in cell_types_to_use){
+    # we'll store the genes
+    genes_cell_type <- c()
+    # then check each cell type
+    for(condition in condition_combinations){
+      # paste together the filename
+      full_mast_path <- paste(base_mast_output_path, cell_type, condition, '.tsv', sep = '')
+      # get the genes
+      genes_condition <- get_de_genes_from_mast_file(full_mast_path, pval_column=pval_column, sig_pval=sig_pval, max=max, max_by_pval=max_by_pval, only_positive=only_positive, only_negative=only_negative, lfc_column=lfc_column, to_ens=to_ens, symbols.to.ensg.mapping=symbols.to.ensg.mapping)
+      # add to the list of genes for this condition
+      genes_cell_type <- c(genes_cell_type, genes_condition)
+    }
+    # make the genes unique, as the cell types have overlap
+    genes_cell_type <- unique(genes_cell_type)
+    # set as a dataframe
+    cell_type_df <- data.frame(genes_cell_type, rep(T, times=length(genes_cell_type)), stringsAsFactors = F)
+    # set the condition as the column name
+    colnames(cell_type_df) <- c('gene', cell_type)
+    # merge with existing gene and conditions
+    if(is.null(gene_cell_type_df)){
+      gene_cell_type_df <- cell_type_df
+    }
+    else{
+      gene_cell_type_df <- merge(gene_cell_type_df, cell_type_df, by = 'gene', all = T)
+    }
+  }
+  # genes that were not found before merging, will be NA, those are not found and thus of course F
+  gene_cell_type_df[is.na(gene_cell_type_df)] <- F
+  # disregard the gene column (makes the applies easier)
+  gene_cell_type_df <- gene_cell_type_df[, cell_types_to_use]
+  # get for each genes how many conditions it was significant in
+  number_of_times_sig <- apply(gene_cell_type_df, 1, sum)
+  # turn into plot df
+  plot_df <- NULL
+  # we need a bar for unique number that the DE genes were unique
+  for(number_sig in unique(number_of_times_sig)){
+    # get the number of times this was the case
+    number_times_this_sig <- sum(number_of_times_sig == number_sig)
+    # create appropriate row
+    row <- data.frame(number_sig=number_sig, number_times_this_sig=number_times_this_sig, stringsAsFactors = F)
+    # add or set
+    if(is.null(plot_df)){
+      plot_df <- row
+    }
+    else{
+      plot_df <- rbind(plot_df, row)
+    }
+  }
+  # set the condition of the numbers
+  plot_df$cell_type <- 'mixed'
+  # for the singles, so in one condition only, we might want to see the proportions
+  if(marked_singles){
+    # remove the singles, as we're overwriting those
+    plot_df <- plot_df[plot_df$number_sig != 1, ]
+    # subset to the singles
+    gene_cell_type_df_singles <- gene_cell_type_df[number_of_times_sig == 1, ]
+    # now that we have only the singles, we can sum over the columns, to get the number of genes unique to the condition
+    number_unique_per_cell_type <- apply(gene_cell_type_df_singles, 2, sum)
+    # make that into a df
+    plot_df_uniques <- data.frame(number_sig=rep(1, times=length(cell_types_to_use)), number_times_this_sig=number_unique_per_cell_type, cell_type=cell_types_to_use)
+    # add to the current plot
+    plot_df <- rbind(plot_df, plot_df_uniques)
+  }
+  # set the order I like for the legend, but setting the factor order
+  plot_df$cell_type <- factor(plot_df$cell_type, levels=c('mixed', cell_types_to_use))
+  # grab the colours
+  cc <- get_color_coding_dict()
+  # add the 'mixed' condition
+  cc[['mixed']] <- 'gray'
+  fillScale <- scale_fill_manual(name = "cell type",values = unlist(cc[c(cell_types_to_use, 'mixed')]))
+  # make the plot finally
+  p <- ggplot(plot_df, aes(fill=cell_type, y=number_times_this_sig, x=number_sig)) +
+    geom_bar(position='stack', stat='identity') +
+    labs(x='number of cell types a gene is differentially expressed in', y='Number of significant DE genes') +
+    ggtitle('overlap of DE genes in cell types') +
+    labs(fill = "Found in") +
+    fillScale
+  if(paper_style){
+    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  return(p)
+}
+
+
+get_de_genes_from_mast_file <- function(mast_full_file_path, pval_column='metap_bonferroni', sig_pval=0.05, max=NULL, max_by_pval=T, only_positive=F, only_negative=F, lfc_column='metafc', to_ens=F, symbols.to.ensg.mapping='genes.tsv'){
+  significant_genes <- c()
+  try({
+    # read the mast output
+    mast <- read.table(mast_full_file_path, header=T, row.names = 1)
+    # filter to only include the significant results
+    mast <- mast[mast[[pval_column]] <= 0.05, ]
+    # filter for only the positive lfc if required
+    if(only_positive){
+      mast <- mast[mast[[lfc_column]] < 0, ]
+    }
+    # filter for only the positive lfc if required
+    if(only_negative){
+      mast <- mast[mast[[lfc_column]] > 0, ]
+    }
+    # confine in some way if reporting a max number of genes
+    if(!is.null(max)){
+      # by p if required
+      if(max_by_pval){
+        mast <- mast[order(mast[[pval_column]]), ]
+      }
+      # by lfc otherwise
+      else{
+        mast <- mast[order(mast[[lfc_column]], decreasing = T), ]
+        # if we only have the upregulated genes, order the other way around
+        if(only_positive){
+          mast <- mast[order(mast[[lfc_column]], decreasing = F), ]
+        }
+      }
+      # subset to the number we requested if max was set
+      mast <- mast[1:max,]
+    }
+    # grab the genes from the column names
+    genes <- rownames(mast)
+    # convert the symbols to ensemble IDs
+    if (to_ens) {
+      mapping <- read.table(symbols.to.ensg.mapping, header = F, stringsAsFactors = F)
+      mapping$V2 <- gsub("_", "-", make.unique(mapping$V2))
+      genes <- mapping[match(genes, mapping$V2),"V1"]
+    }
+    # otherwise change the Seurat replacement back
+    else{
+      #genes <- gsub("-", "_", genes)
+    }
+    significant_genes <- genes
+  })
+  return(significant_genes)
+}
+
+get_average_gene_expression_per_ct_and_tp <- function(seurat_object, condition.column = 'timepoint.final', cell.type.column = 'cell_type_lowerres', cell_types_to_use=c("CD4T", "CD8T", "monocyte", "NK", "B", "DC"), conditions=c('UT', 'Baseline', 't24h', 't8w'), assay='RNA'){
+  exp_df <- NULL
+  # calculate for each condition
+  for(condition in conditions){
+    # subset to just the cells of this condition
+    seurat_object_condition <- seurat_object[,seurat_object@meta.data[condition.column] == condition]
+    # calculate for each cell_type
+    for(cell_type in cell_types_to_use){
+      # subset to just the cells of the cell type
+      seurat_object_cell_type <- seurat_object_condition[,seurat_object_condition@meta.data[cell.type.column] == cell_type]
+      # calculate the relevant matrix from the relevant assay
+      exp_df_ct_cond <- NULL
+      if(assay == 'RNA'){
+        DefaultAssay(seurat_object_cell_type) <- 'RNA'
+        averages <- apply(seurat_object_cell_type$RNA@data, 1, mean)
+        pct_exp <- apply(seurat_object_cell_type$RNA@data, 1, function(x){sum(x != 0)/length(x)})
+        exp_df_ct_cond <- data.frame(condition=rep(condition, times = length(averages)), cell_type=rep(cell_type, times = length(averages)), gene=rownames(seurat_object_cell_type$RNA@data), average=averages, pct_exp=pct_exp)
+      }
+      else if(assay == 'SCT'){
+        DefaultAssay(seurat_object_cell_type) <- 'SCT'
+        averages <- apply(seurat_object_cell_type$SCT@counts, 1, mean)
+        pct_exp <- apply(seurat_object_cell_type$SCT@counts, 1, function(x){sum(x != 0)/length(x)})
+        exp_df_ct_cond <- data.frame(condition=rep(condition, times = length(averages)), cell_type=rep(cell_type, times = length(averages)), gene=rownames(seurat_object_cell_type$SCT@counts), average=averages, pct_exp=pct_exp)
+      }
+      else if(assay == 'CBT'){
+        DefaultAssay(seurat_object_cell_type) <- 'CBT'
+        averages <- apply(seurat_object_cell_type$CBT@data, 1, mean)
+        pct_exp <- apply(seurat_object_cell_type$CBT@data, 1, function(x){sum(x != 0)/length(x)})
+        exp_df_ct_cond <- data.frame(condition=rep(condition, times = length(averages)), cell_type=rep(cell_type, times = length(averages)), gene=rownames(seurat_object_cell_type$CBT@data), average=averages, pct_exp=pct_exp)
+      }
+      # paste to the overall df
+      if(is.null(exp_df)){
+        exp_df <- exp_df_ct_cond
+      }
+      else{
+        exp_df <- rbind(exp_df, exp_df_ct_cond)
+      }
+    }
+  }
+  return(exp_df)
+}
+
+avg_exp_table_to_hm_table <- function(expression_table){
+  # initialise table
+  hm_table <- NULL
+  # go through the conditions
+  for(condition in unique(expression_table$condition)){
+    # get the expression for that table
+    expression_table_cond <- expression_table[expression_table$condition == condition, c('gene', 'average')]
+    # set colnames so that we can merge these later
+    colnames(expression_table_cond) <- c('gene', condition)
+    # convert to data.table for efficient merging
+    expression_table_cond <- data.table(expression_table_cond)
+    # try to merge if necessary
+    if(is.null(hm_table)){
+      hm_table <- expression_table_cond
+    }
+    else{
+      hm_table <- merge(hm_table, expression_table_cond, by='gene')
+    }
+  }
+  # convert back to regular dataframe
+  hm_table <- data.frame(hm_table)
+  # set rownames
+  rownames(hm_table) <- hm_table$gene
+  # remove the old gene column
+  hm_table$gene <- NULL
+  return(hm_table)
+}
+
+pathways_to_hm_colors <- function(expression_heatmap, pathways_named_lists){
+  colors_df <- NULL
+  for(pathway_name in names(pathways_named_lists)){
+    # get the pathway genes
+    pathway.genes <- read.table(pathways_named_lists[[pathway_name]], header=F)
+    pathway.genes <- as.character(pathway.genes$V1)
+    pathway.genes <- pathway.genes[pathway.genes %in% rownames(expression_heatmap)]
+    pathway.annotation <- rep("gray97", nrow(expression_heatmap))
+    pathway.annotation[rownames(expression_heatmap) %in% pathway.genes] <- "gray55"
+    # add to colors df
+    if(is.null(colors_df)){
+      colors_df <- data.frame(pathway.annotation)
+      colnames(colors_df) <- pathway_name
+    }
+    else{
+      colors_df[[pathway_name]] <- pathway.annotation
+    }
+  }
+  # transform to matrix
+  colors_m <- as.matrix(colors_df)
+  return(colors_m)
+}
+
+get_pathway_tables <- function(pathway_output_loc, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), condition_combinations=c('UTBaseline', 'UTt24h', 'UTt8w', 'Baselinet24h', 'Baselinet8w', 't24ht8w')){
+  # put all results in a list
+  pathways_analysis <- list()
+  # put all results in a shared DF
+  pathway_df <- NULL
+  # check each cell type
+  for(cell_type in cell_types){
+    # check each stim
+    for(condition_combination in condition_combinations){
+      try({
+        print(paste(cell_type, condition_combinations, sep = ' '))
+        # paste the filepath together
+        filepath <- paste(pathway_output_loc, cell_type, condition_combination, '_sig_up_pathways.txt', sep = '')
+        # read the file
+        pathways <- read.table(filepath, sep = '\t', header = T, quote="", fill = F, comment.char = "", colClasses = c('character', 'character', 'character', 'character', 'double', 'double', 'double', 'double', 'integer', 'integer', 'character'))
+        # put in in the list
+        pathways_analysis[[paste(cell_type, condition_combination, sep='')]] <- pathways
+      })
+    }
+  }
+  return(pathways_analysis)
+}
+
+
+heatmap.3 <- function(x,
+                      Rowv = TRUE, Colv = if (symm) "Rowv" else TRUE,
+                      distfun = dist,
+                      hclustfun = hclust,
+                      dendrogram = c("both","row", "column", "none"),
+                      symm = FALSE,
+                      scale = c("none","row", "column"),
+                      na.rm = TRUE,
+                      revC = identical(Colv,"Rowv"),
+                      add.expr,
+                      breaks,
+                      symbreaks = max(x < 0, na.rm = TRUE) || scale != "none",
+                      col = "heat.colors",
+                      colsep,
+                      rowsep,
+                      sepcolor = "white",
+                      sepwidth = c(0.05, 0.05),
+                      cellnote,
+                      notecex = 1,
+                      notecol = "cyan",
+                      na.color = par("bg"),
+                      trace = c("none", "column","row", "both"),
+                      tracecol = "cyan",
+                      hline = median(breaks),
+                      vline = median(breaks),
+                      linecol = tracecol,
+                      margins = c(5,5),
+                      ColSideColors,
+                      RowSideColors,
+                      side.height.fraction=0.3,
+                      cexRow = 0.2 + 1/log10(nr),
+                      cexCol = 0.2 + 1/log10(nc),
+                      labRow = NULL,
+                      labCol = NULL,
+                      key = TRUE,
+                      keysize = 1.5,
+                      density.info = c("none", "histogram", "density"),
+                      denscol = tracecol,
+                      symkey = max(x < 0, na.rm = TRUE) || symbreaks,
+                      densadj = 0.25,
+                      main = NULL,
+                      xlab = NULL,
+                      ylab = NULL,
+                      lmat = NULL,
+                      lhei = NULL,
+                      lwid = NULL,
+                      ColSideColorsSize = 1,
+                      RowSideColorsSize = 1,
+                      to_na=NULL,
+                      KeyValueName="Value",...){
+  
+  invalid <- function (x) {
+    if (missing(x) || is.null(x) || length(x) == 0)
+      return(TRUE)
+    if (is.list(x))
+      return(all(sapply(x, invalid)))
+    else if (is.vector(x))
+      return(all(is.na(x)))
+    else return(FALSE)
+  }
+  
+  x <- as.matrix(x)
+  retval <- list()
+  scale <- if (symm && missing(scale))
+    "none"
+  else match.arg(scale)
+  dendrogram <- match.arg(dendrogram)
+  trace <- match.arg(trace)
+  density.info <- match.arg(density.info)
+  if (length(col) == 1 && is.character(col))
+    col <- get(col, mode = "function")
+  if (!missing(breaks) && (scale != "none"))
+    warning("Using scale=\"row\" or scale=\"column\" when breaks are",
+            "specified can produce unpredictable results.", "Please consider using only one or the other.")
+  if (is.null(Rowv) || is.na(Rowv))
+    Rowv <- FALSE
+  if (is.null(Colv) || is.na(Colv))
+    Colv <- FALSE
+  else if (Colv == "Rowv" && !isTRUE(Rowv))
+    Colv <- FALSE
+  if (length(di <- dim(x)) != 2 || !is.numeric(x))
+    stop("`x' must be a numeric matrix")
+  nr <- di[1]
+  nc <- di[2]
+  if (nr <= 1 || nc <= 1)
+    stop("`x' must have at least 2 rows and 2 columns")
+  if (!is.numeric(margins) || length(margins) != 2)
+    stop("`margins' must be a numeric vector of length 2")
+  if (missing(cellnote))
+    cellnote <- matrix("", ncol = ncol(x), nrow = nrow(x))
+  if (!inherits(Rowv, "dendrogram")) {
+    if (((!isTRUE(Rowv)) || (is.null(Rowv))) && (dendrogram %in%
+                                                 c("both", "row"))) {
+      if (is.logical(Colv) && (Colv))
+        dendrogram <- "column"
+      else dedrogram <- "none"
+      warning("Discrepancy: Rowv is FALSE, while dendrogram is `",
+              dendrogram, "'. Omitting row dendogram.")
+    }
+  }
+  if (!inherits(Colv, "dendrogram")) {
+    if (((!isTRUE(Colv)) || (is.null(Colv))) && (dendrogram %in%
+                                                 c("both", "column"))) {
+      if (is.logical(Rowv) && (Rowv))
+        dendrogram <- "row"
+      else dendrogram <- "none"
+      warning("Discrepancy: Colv is FALSE, while dendrogram is `",
+              dendrogram, "'. Omitting column dendogram.")
+    }
+  }
+  if (inherits(Rowv, "dendrogram")) {
+    ddr <- Rowv
+    rowInd <- order.dendrogram(ddr)
+  }
+  else if (is.integer(Rowv)) {
+    hcr <- hclustfun(distfun(x))
+    ddr <- as.dendrogram(hcr)
+    ddr <- reorder(ddr, Rowv)
+    rowInd <- order.dendrogram(ddr)
+    if (nr != length(rowInd))
+      stop("row dendrogram ordering gave index of wrong length")
+  }
+  else if (isTRUE(Rowv)) {
+    Rowv <- rowMeans(x, na.rm = na.rm)
+    hcr <- hclustfun(distfun(x))
+    ddr <- as.dendrogram(hcr)
+    ddr <- reorder(ddr, Rowv)
+    rowInd <- order.dendrogram(ddr)
+    if (nr != length(rowInd))
+      stop("row dendrogram ordering gave index of wrong length")
+  }
+  else {
+    rowInd <- nr:1
+  }
+  if (inherits(Colv, "dendrogram")) {
+    ddc <- Colv
+    colInd <- order.dendrogram(ddc)
+  }
+  else if (identical(Colv, "Rowv")) {
+    if (nr != nc)
+      stop("Colv = \"Rowv\" but nrow(x) != ncol(x)")
+    if (exists("ddr")) {
+      ddc <- ddr
+      colInd <- order.dendrogram(ddc)
+    }
+    else colInd <- rowInd
+  }
+  else if (is.integer(Colv)) {
+    hcc <- hclustfun(distfun(if (symm)
+      x
+      else t(x)))
+    ddc <- as.dendrogram(hcc)
+    ddc <- reorder(ddc, Colv)
+    colInd <- order.dendrogram(ddc)
+    if (nc != length(colInd))
+      stop("column dendrogram ordering gave index of wrong length")
+  }
+  else if (isTRUE(Colv)) {
+    Colv <- colMeans(x, na.rm = na.rm)
+    hcc <- hclustfun(distfun(if (symm)
+      x
+      else t(x)))
+    ddc <- as.dendrogram(hcc)
+    ddc <- reorder(ddc, Colv)
+    colInd <- order.dendrogram(ddc)
+    if (nc != length(colInd))
+      stop("column dendrogram ordering gave index of wrong length")
+  }
+  else {
+    colInd <- 1:nc
+  }
+  if(!is.null(to_na)){
+    x[x == to_na] <- NA
+  }
+  scale01 <- function(x, low = min(x), high = max(x)) {
+    x <- (x - low)/(high - low)
+    x
+  }
+  retval$rowInd <- rowInd
+  retval$colInd <- colInd
+  retval$call <- match.call()
+  x <- x[rowInd, colInd]
+  x.unscaled <- x
+  cellnote <- cellnote[rowInd, colInd]
+  if (is.null(labRow))
+    labRow <- if (is.null(rownames(x)))
+      (1:nr)[rowInd]
+  else rownames(x)
+  else labRow <- labRow[rowInd]
+  if (is.null(labCol))
+    labCol <- if (is.null(colnames(x)))
+      (1:nc)[colInd]
+  else colnames(x)
+  else labCol <- labCol[colInd]
+  if (scale == "row") {
+    retval$rowMeans <- rm <- rowMeans(x, na.rm = na.rm)
+    x <- sweep(x, 1, rm)
+    retval$rowSDs <- sx <- apply(x, 1, sd, na.rm = na.rm)
+    x <- sweep(x, 1, sx, "/")
+  }
+  else if (scale == "column") {
+    retval$colMeans <- rm <- colMeans(x, na.rm = na.rm)
+    x <- sweep(x, 2, rm)
+    retval$colSDs <- sx <- apply(x, 2, sd, na.rm = na.rm)
+    x <- sweep(x, 2, sx, "/")
+  }
+  if (missing(breaks) || is.null(breaks) || length(breaks) < 1) {
+    if (missing(col) || is.function(col))
+      breaks <- 16
+    else breaks <- length(col) + 1
+  }
+  if (length(breaks) == 1) {
+    if (!symbreaks)
+      breaks <- seq(min(x, na.rm = na.rm), max(x, na.rm = na.rm),
+                    length = breaks)
+    else {
+      extreme <- max(abs(x), na.rm = TRUE)
+      breaks <- seq(-extreme, extreme, length = breaks)
+    }
+  }
+  nbr <- length(breaks)
+  ncol <- length(breaks) - 1
+  if (class(col) == "function")
+    col <- col(ncol)
+  min.breaks <- min(breaks)
+  max.breaks <- max(breaks)
+  x[x < min.breaks] <- min.breaks
+  x[x > max.breaks] <- max.breaks
+  if (missing(lhei) || is.null(lhei))
+    lhei <- c(keysize, 4)
+  if (missing(lwid) || is.null(lwid))
+    lwid <- c(keysize, 4)
+  if (missing(lmat) || is.null(lmat)) {
+    lmat <- rbind(4:3, 2:1)
+    
+    if (!missing(ColSideColors)) {
+      #if (!is.matrix(ColSideColors))
+      #stop("'ColSideColors' must be a matrix")
+      if (!is.character(ColSideColors) || nrow(ColSideColors) != nc)
+        stop("'ColSideColors' must be a matrix of nrow(x) rows")
+      lmat <- rbind(lmat[1, ] + 1, c(NA, 1), lmat[2, ] + 1)
+      #lhei <- c(lhei[1], 0.2, lhei[2])
+      lhei=c(lhei[1], side.height.fraction*ColSideColorsSize/2, lhei[2])
+    }
+    
+    if (!missing(RowSideColors)) {
+      #if (!is.matrix(RowSideColors))
+      #stop("'RowSideColors' must be a matrix")
+      if (!is.character(RowSideColors) || ncol(RowSideColors) != nr)
+        stop("'RowSideColors' must be a matrix of ncol(x) columns")
+      lmat <- cbind(lmat[, 1] + 1, c(rep(NA, nrow(lmat) - 1), 1), lmat[,2] + 1)
+      #lwid <- c(lwid[1], 0.2, lwid[2])
+      lwid <- c(lwid[1], side.height.fraction*RowSideColorsSize/2, lwid[2])
+    }
+    lmat[is.na(lmat)] <- 0
+  }
+  
+  if (length(lhei) != nrow(lmat))
+    stop("lhei must have length = nrow(lmat) = ", nrow(lmat))
+  if (length(lwid) != ncol(lmat))
+    stop("lwid must have length = ncol(lmat) =", ncol(lmat))
+  op <- par(no.readonly = TRUE)
+  on.exit(par(op))
+  
+  layout(lmat, widths = lwid, heights = lhei, respect = FALSE)
+  
+  if (!missing(RowSideColors)) {
+    if (!is.matrix(RowSideColors)){
+      par(mar = c(margins[1], 0, 0, 0.5))
+      image(rbind(1:nr), col = RowSideColors[rowInd], axes = FALSE)
+    } else {
+      par(mar = c(margins[1], 0, 0, 0.5))
+      rsc = t(RowSideColors[,rowInd, drop=F])
+      rsc.colors = matrix()
+      rsc.names = names(table(rsc))
+      rsc.i = 1
+      for (rsc.name in rsc.names) {
+        rsc.colors[rsc.i] = rsc.name
+        rsc[rsc == rsc.name] = rsc.i
+        rsc.i = rsc.i + 1
+      }
+      rsc = matrix(as.numeric(rsc), nrow = dim(rsc)[1])
+      image(t(rsc), col = as.vector(rsc.colors), axes = FALSE)
+      if (length(rownames(RowSideColors)) > 0) {
+        axis(1, 0:(dim(rsc)[2] - 1)/max(1,(dim(rsc)[2] - 1)), rownames(RowSideColors), las = 2, tick = FALSE)
+      }
+    }
+  }
+  
+  if (!missing(ColSideColors)) {
+    
+    if (!is.matrix(ColSideColors)){
+      par(mar = c(0.5, 0, 0, margins[2]))
+      image(cbind(1:nc), col = ColSideColors[colInd], axes = FALSE)
+    } else {
+      par(mar = c(0.5, 0, 0, margins[2]))
+      csc = ColSideColors[colInd, , drop=F]
+      csc.colors = matrix()
+      csc.names = names(table(csc))
+      csc.i = 1
+      for (csc.name in csc.names) {
+        csc.colors[csc.i] = csc.name
+        csc[csc == csc.name] = csc.i
+        csc.i = csc.i + 1
+      }
+      csc = matrix(as.numeric(csc), nrow = dim(csc)[1])
+      image(csc, col = as.vector(csc.colors), axes = FALSE)
+      if (length(colnames(ColSideColors)) > 0) {
+        axis(2, 0:(dim(csc)[2] - 1)/max(1,(dim(csc)[2] - 1)), colnames(ColSideColors), las = 2, tick = FALSE)
+      }
+    }
+  }
+  
+  par(mar = c(margins[1], 0, 0, margins[2]))
+  x <- t(x)
+  cellnote <- t(cellnote)
+  if (revC) {
+    iy <- nr:1
+    if (exists("ddr"))
+      ddr <- rev(ddr)
+    x <- x[, iy]
+    cellnote <- cellnote[, iy]
+  }
+  else iy <- 1:nr
+  image(1:nc, 1:nr, x, xlim = 0.5 + c(0, nc), ylim = 0.5 + c(0, nr), axes = FALSE, xlab = "", ylab = "", col = col, breaks = breaks, ...)
+  retval$carpet <- x
+  if (exists("ddr"))
+    retval$rowDendrogram <- ddr
+  if (exists("ddc"))
+    retval$colDendrogram <- ddc
+  retval$breaks <- breaks
+  retval$col <- col
+  if (!invalid(na.color) & any(is.na(x))) { # load library(gplots)
+    mmat <- ifelse(is.na(x), 1, NA)
+    image(1:nc, 1:nr, mmat, axes = FALSE, xlab = "", ylab = "",
+          col = na.color, add = TRUE)
+  }
+  axis(1, 1:nc, labels = labCol, las = 2, line = -0.5, tick = 0,
+       cex.axis = cexCol)
+  if (!is.null(xlab))
+    mtext(xlab, side = 1, line = margins[1] - 1.25)
+  axis(4, iy, labels = labRow, las = 2, line = -0.5, tick = 0,
+       cex.axis = cexRow)
+  if (!is.null(ylab))
+    mtext(ylab, side = 4, line = margins[2] - 1.25)
+  if (!missing(add.expr))
+    eval(substitute(add.expr))
+  if (!missing(colsep))
+    for (csep in colsep) rect(xleft = csep + 0.5, ybottom = rep(0, length(csep)), xright = csep + 0.5 + sepwidth[1], ytop = rep(ncol(x) + 1, csep), lty = 1, lwd = 1, col = sepcolor, border = sepcolor)
+  if (!missing(rowsep))
+    for (rsep in rowsep) rect(xleft = 0, ybottom = (ncol(x) + 1 - rsep) - 0.5, xright = nrow(x) + 1, ytop = (ncol(x) + 1 - rsep) - 0.5 - sepwidth[2], lty = 1, lwd = 1, col = sepcolor, border = sepcolor)
+  min.scale <- min(breaks)
+  max.scale <- max(breaks)
+  x.scaled <- scale01(t(x), min.scale, max.scale)
+  if (trace %in% c("both", "column")) {
+    retval$vline <- vline
+    vline.vals <- scale01(vline, min.scale, max.scale)
+    for (i in colInd) {
+      if (!is.null(vline)) {
+        abline(v = i - 0.5 + vline.vals, col = linecol,
+               lty = 2)
+      }
+      xv <- rep(i, nrow(x.scaled)) + x.scaled[, i] - 0.5
+      xv <- c(xv[1], xv)
+      yv <- 1:length(xv) - 0.5
+      lines(x = xv, y = yv, lwd = 1, col = tracecol, type = "s")
+    }
+  }
+  if (trace %in% c("both", "row")) {
+    retval$hline <- hline
+    hline.vals <- scale01(hline, min.scale, max.scale)
+    for (i in rowInd) {
+      if (!is.null(hline)) {
+        abline(h = i + hline, col = linecol, lty = 2)
+      }
+      yv <- rep(i, ncol(x.scaled)) + x.scaled[i, ] - 0.5
+      yv <- rev(c(yv[1], yv))
+      xv <- length(yv):1 - 0.5
+      lines(x = xv, y = yv, lwd = 1, col = tracecol, type = "s")
+    }
+  }
+  if (!missing(cellnote))
+    text(x = c(row(cellnote)), y = c(col(cellnote)), labels = c(cellnote),
+         col = notecol, cex = notecex)
+  par(mar = c(margins[1], 0, 0, 0))
+  if (dendrogram %in% c("both", "row")) {
+    plot(ddr, horiz = TRUE, axes = FALSE, yaxs = "i", leaflab = "none")
+  }
+  else plot.new()
+  par(mar = c(0, 0, if (!is.null(main)) 5 else 0, margins[2]))
+  if (dendrogram %in% c("both", "column")) {
+    plot(ddc, axes = FALSE, xaxs = "i", leaflab = "none")
+  }
+  else plot.new()
+  if (!is.null(main))
+    title(main, cex.main = 1.5 * op[["cex.main"]])
+  if (key) {
+    par(mar = c(5, 4, 2, 1), cex = 0.75)
+    tmpbreaks <- breaks
+    if (symkey) {
+      max.raw <- max(abs(c(x, breaks)), na.rm = TRUE)
+      min.raw <- -max.raw
+      tmpbreaks[1] <- -max(abs(x), na.rm = TRUE)
+      tmpbreaks[length(tmpbreaks)] <- max(abs(x), na.rm = TRUE)
+    }
+    else {
+      min.raw <- min(x, na.rm = TRUE)
+      max.raw <- max(x, na.rm = TRUE)
+    }
+    
+    z <- seq(min.raw, max.raw, length = length(col))
+    image(z = matrix(z, ncol = 1), col = col, breaks = tmpbreaks,
+          xaxt = "n", yaxt = "n")
+    par(usr = c(0, 1, 0, 1))
+    lv <- pretty(breaks)
+    xv <- scale01(as.numeric(lv), min.raw, max.raw)
+    axis(1, at = xv, labels = lv)
+    if (scale == "row")
+      mtext(side = 1, "Row Z-Score", line = 2)
+    else if (scale == "column")
+      mtext(side = 1, "Column Z-Score", line = 2)
+    else mtext(side = 1, KeyValueName, line = 2)
+    if (density.info == "density") {
+      dens <- density(x, adjust = densadj, na.rm = TRUE)
+      omit <- dens$x < min(breaks) | dens$x > max(breaks)
+      dens$x <- dens$x[-omit]
+      dens$y <- dens$y[-omit]
+      dens$x <- scale01(dens$x, min.raw, max.raw)
+      lines(dens$x, dens$y/max(dens$y) * 0.95, col = denscol,
+            lwd = 1)
+      axis(2, at = pretty(dens$y)/max(dens$y) * 0.95, pretty(dens$y))
+      title("Color Key\nand Density Plot")
+      par(cex = 0.5)
+      mtext(side = 2, "Density", line = 2)
+    }
+    else if (density.info == "histogram") {
+      h <- hist(x, plot = FALSE, breaks = breaks)
+      hx <- scale01(breaks, min.raw, max.raw)
+      hy <- c(h$counts, h$counts[length(h$counts)])
+      lines(hx, hy/max(hy) * 0.95, lwd = 1, type = "s",
+            col = denscol)
+      axis(2, at = pretty(hy)/max(hy) * 0.95, pretty(hy))
+      title("Color Key\nand Histogram")
+      par(cex = 0.5)
+      mtext(side = 2, "Count", line = 2)
+    }
+    else title("Color Key")
+  }
+  else plot.new()
+  retval$colorTable <- data.frame(low = retval$breaks[-length(retval$breaks)],
+                                  high = retval$breaks[-1], color = retval$col)
+  invisible(retval)
+  return(retval)
+}
+
+filter_pathway_on_category <- function(pathway_table, filtered_names){
+  pathway_table_filtered <- pathway_table[pathway_table$Name %in% filtered_names, ]
+  return(pathway_table_filtered)
+}
+
+filter_pathways_on_category <- function(pathway_list, filtered_names){
+  # new list for filtered pathway
+  filtered_pathway_list <- list()
+  # check each pathway df in the result list
+  for(key in names(pathway_list)){
+    pathway_df <- pathway_list[[key]]
+    filtered_pathway_df <- filter_pathway_on_category(pathway_df, filtered_names)
+    # put in the filtered list
+    filtered_pathway_list[[key]] <- filtered_pathway_df
+  }
+  return(filtered_pathway_list)
+}
+
+get_filtered_pathway_names <- function(pathway_table, relation_table, starting_id){
+  # get all of the children of the starting ID
+  all_children <- get_children(relation_table, starting_id)
+  # get the names of the pathways that are children
+  pathway_names <- as.character(pathway_table[pathway_table$V1 %in% all_children, ]$V2)
+  return(pathway_names)
+}
+
+get_children <- function(relation_table, starting_id){
+  # get all of the children of the starting ID
+  children <- as.character(relation_table[relation_table$V1 == starting_id, 'V2'])
+  # these children are all family
+  family <- children
+  # see if there were any children
+  if(length(children) > 0){
+    # if there were children, we need to get their children as well
+    for(child in children){
+      # get the grandchildren and add these to the family
+      grand_children <- get_children(relation_table, child)
+      family <- c(family, grand_children)
+    }
+  }
+  return(family)
+}
+
+get_genes_pathways_lists <- function(pathway_list, sig_col='q.value.Bonferroni', sig_cutoff=0.05){
+  # create list to put everything in
+  genes_lists <- list()
+  # check each pathway
+  for(key in names(pathway_list)){
+    pathway_df <- pathway_list[[key]]
+    print(key)
+    # get the genes
+    genes_pathways <- get_genes_pathways(pathway_df, sig_col, sig_cutoff)
+    # put result in gene list
+    genes_lists[[key]] <- genes_pathways
+  }
+  return(genes_lists)
+}
+
+get_genes_pathways <- function(pathway_table, sig_col='q.value.Bonferroni', sig_cutoff=0.05){
+  # init
+  genes <- c()
+  # we can only check if there is something
+  if(nrow(pathway_table) > 0){
+    # check each row
+    genes <- apply(pathway_table, 1, function(x){
+      # get the P we want
+      sig_val <- as.numeric(as.vector(unlist(x[sig_col])))
+      # get the gene list
+      genes_line <- x['Hit.in.Query.List']
+      # check if below the cutoff
+      if(sig_val < sig_cutoff){
+        # flatten value
+        genes_line <- as.vector(unlist(genes_line))
+        # remove the quotes
+        genes_line <- gsub('\"','', genes_line)
+        # split by comma
+        genes_in_line <- strsplit(genes_line, ',')
+        return(genes_in_line[[1]])
+      }
+      else{
+        return(c())
+      }
+    })
+    # turn into flat vector
+    genes <- unlist(as.vector(genes))
+    # get only the unique ones
+    genes <- unique(genes)
+  }
+  return(genes)
 }
 
 
@@ -672,13 +2181,13 @@ plot_DE_sharing_per_celltype <- function(condition_combination, mast_output_loc,
 #mast_output_prepend <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/differential_expression/MAST/results/stemi_v'
 mast_output_prepend <- '/data/cardiology/differential_expression/MAST/results/stemi_v'
 #mast_output_append <- '_paired_lores_20200707/rna/'
-mast_output_append <- '_paired_lores_lfc025minpct01ncountrna_20201209/rna/'
-mast_output_append_lfc01 <- '_paired_lores_lfc01minpct01ncountrna_20201209/rna/'
+mast_output_append <- '_paired_lores_lfc025minpct01ncountrna_20210301/rna/'
+mast_output_append_lfc01 <- '_paired_lores_lfc01minpct01ncountrna_20210301/rna/'
 # write the location of the combined output
 #mast_meta_output_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/differential_expression/MAST/results/stemi_meta_paired_lores_20200707/rna/'
 #mast_meta_output_loc <- '/data/cardiology/differential_expression/MAST/results/stemi_meta_paired_lores_20200707/rna/'
 #mast_meta_output_loc <- '/data/cardiology/differential_expression/MAST/results/stemi_meta_paired_lores_lfc025minpct01ncountrna_20200707/rna/'
-mast_meta_output_loc_lfc01 <- '/data/cardiology/differential_expression/MAST/results/stemi_meta_paired_lores_lfc01minpct01ncountrna_20201209/rna/'
+mast_meta_output_loc_lfc01 <- '/data/cardiology/differential_expression/MAST/results/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/rna/'
 
 # write meta output
 write_meta_mast(mast_output_prepend, mast_output_append, mast_meta_output_loc)
@@ -709,27 +2218,27 @@ sig_down_output_loc_gs <- '/data/cardiology/differential_expression/sigs_neg/met
 get_significant_genes(mast_meta_output_loc, sig_down_output_loc, only_negative = T, to_ens = T, symbols.to.ensg.mapping = gene_to_ens_mapping)
 get_significant_genes(mast_meta_output_loc, sig_down_output_loc_gs, only_negative = T, to_ens = F, symbols.to.ensg.mapping = gene_to_ens_mapping)
 # for the lfc01 output as well
-sig_output_loc_lfc01 <- '/data/cardiology/differential_expression/sigs/meta_paired_lores_lfc01minpct01_20201209_ensid/rna/'
-sig_output_loc_gs_lfc01 <- '/data/cardiology/differential_expression/sigs/meta_paired_lores_lfc01minpct01_20201209/rna/'
+sig_output_loc_lfc01 <- '/data/cardiology/differential_expression/sigs/meta_paired_lores_lfc01minpct01_20210301_ensid/rna/'
+sig_output_loc_gs_lfc01 <- '/data/cardiology/differential_expression/sigs/meta_paired_lores_lfc01minpct01_20210301/rna/'
 # write the significant genes
 get_significant_genes(mast_meta_output_loc_lfc01, sig_output_loc_lfc01, to_ens = T, symbols.to.ensg.mapping = gene_to_ens_mapping)
 get_significant_genes(mast_meta_output_loc_lfc01, sig_output_loc_gs_lfc01, to_ens = F, symbols.to.ensg.mapping = gene_to_ens_mapping)
 # set the location for the significant genes that were upregulated
-sig_up_output_loc_lfc01 <- '/data/cardiology/differential_expression/sigs_pos/meta_paired_lores_lfc01minpct01_20201209_ensid/rna/'
-sig_up_output_loc_gs_lfc01 <- '/data/cardiology/differential_expression/sigs_pos/meta_paired_lores_lfc01minpct01_20201209/rna/'
+sig_up_output_loc_lfc01 <- '/data/cardiology/differential_expression/sigs_pos/meta_paired_lores_lfc01minpct01_20210301_ensid/rna/'
+sig_up_output_loc_gs_lfc01 <- '/data/cardiology/differential_expression/sigs_pos/meta_paired_lores_lfc01minpct01_20210301/rna/'
 # write the significantly upregulated genes
 get_significant_genes(mast_meta_output_loc_lfc01, sig_up_output_loc_lfc01, only_positive = T, to_ens = T, symbols.to.ensg.mapping = gene_to_ens_mapping)
 get_significant_genes(mast_meta_output_loc_lfc01, sig_up_output_loc_gs_lfc01, only_positive = T, to_ens = F, symbols.to.ensg.mapping = gene_to_ens_mapping)
 # set the location for the significant genes that were upregulated
-sig_down_output_loc_lfc01 <- '/data/cardiology/differential_expression/sigs_neg/meta_paired_lores_lfc01minpct01_20201209_ensid/rna/'
-sig_down_output_loc_gs_lfc01 <- '/data/cardiology/differential_expression/sigs_neg/meta_paired_lores_lfc01minpct01_20201209/rna/'
+sig_down_output_loc_lfc01 <- '/data/cardiology/differential_expression/sigs_neg/meta_paired_lores_lfc01minpct01_20210301_ensid/rna/'
+sig_down_output_loc_gs_lfc01 <- '/data/cardiology/differential_expression/sigs_neg/meta_paired_lores_lfc01minpct01_20210301/rna/'
 # write the significantly upregulated genes
 get_significant_genes(mast_meta_output_loc_lfc01, sig_down_output_loc_lfc01, only_negative = T, to_ens = T, symbols.to.ensg.mapping = gene_to_ens_mapping)
 get_significant_genes(mast_meta_output_loc_lfc01, sig_down_output_loc_gs_lfc01, only_negative = T, to_ens = F, symbols.to.ensg.mapping = gene_to_ens_mapping)
 
 # set the location for the significant genes that were upregulated
-sig_up_output_loc_lfc01_v2 <- '/data/cardiology/differential_expression/sigs_pos/v2_paired_lores_lfc01minpct01_20201209_ensid/rna/'
-sig_up_output_loc_gs_lfc01_v2 <- '/data/cardiology/differential_expression/sigs_pos/v2_paired_lores_lfc01minpct01_20201209/rna/'
+sig_up_output_loc_lfc01_v2 <- '/data/cardiology/differential_expression/sigs_pos/v2_paired_lores_lfc01minpct01_20210301_ensid/rna/'
+sig_up_output_loc_gs_lfc01_v2 <- '/data/cardiology/differential_expression/sigs_pos/v2_paired_lores_lfc01minpct01_20210301/rna/'
 # write the significantly upregulated genes
 get_significant_genes(paste(mast_output_prepend, '2', mast_output_append_lfc01, sep = ''), sig_up_output_loc_lfc01_v2, only_positive = T, to_ens = T, symbols.to.ensg.mapping = gene_to_ens_mapping, pval_column='p_val_adj', lfc_column = 'avg_logFC')
 get_significant_genes(paste(mast_output_prepend, '2', mast_output_append_lfc01, sep = ''), sig_up_output_loc_gs_lfc01_v2, only_positive = T, to_ens = F, symbols.to.ensg.mapping = gene_to_ens_mapping, pval_column='p_val_adj', lfc_column = 'avg_logFC')
@@ -1068,16 +2577,149 @@ heatmap.3(t(as.matrix(pathway_up_df_filtered)),
 
 
 # grab the metadata
-meta.data <- read.table('/data/cardiology/metadata/cardio.integrated_meta.data.tsv', sep='\t', header=T, row.names=1)
+meta.data <- read.table('/data/cardiology/metadata/cardio.integrated.20210301.metadata.tsv', sep='\t', header=T, row.names=1)
 plot_de_vs_cell_type_numbers(mast_meta_output_loc_lfc01, meta.data, plot_separately = F, proportion = T)
 plot_de_vs_cell_type_numbers(mast_meta_output_loc_lfc01, meta.data, plot_separately = F, proportion = F)
 plot_de_vs_cell_type_numbers(mast_meta_output_loc_lfc01, meta.data, plot_separately = F, proportion = F, cell_types_to_use = c('monocyte'))
+plot_de_vs_cell_type_numbers(mast_meta_output_loc_lfc01, meta.data, plot_separately = F, proportion = F, timepoints = c('UTBaseline', 'Baselinet24h', 'Baselinet8w'), paper_style = T)
 
+# get a table of the number of DE genes
+de_numbers_table <- de_genes_number_to_table(mast_meta_output_loc_lfc01)
+de_numbers_table_up <- de_genes_number_to_table(mast_meta_output_loc_lfc01, only_positive = T)
+de_numbers_table_down <- de_genes_number_to_table(mast_meta_output_loc_lfc01, only_negative = T)
+# plot the number of DE genes
+numbers_table_to_plot(de_numbers_table)
+numbers_table_to_plot(de_numbers_table, use_groups_dict = F, cols_include = c('UTBaseline', 'UTt24h', 'UTt8w'))
+numbers_table_to_plot(de_numbers_table, use_groups_dict = F, cols_include = c('Baselinet24h', 'Baselinet8w'), pointless = F, paper_style = T, title = 'Number of DE genes per cell type in STEMI over time', legendless = T, angle_x_labels = T) + xlab('Timepoints')
+# only HC vs t0
+numbers_table_to_plot(de_numbers_table, use_groups_dict = F, cols_include = c('UTBaseline'), pointless = T, title = 'Number of DE genes per cell type in HC vs STEMI t0', legendless = T, paper_style = T)
 
 # specifically for monocytes, check the number of DE genes and the fractional differences of their sub-celltype populations
-plot_de_number_vs_subcell_population(mast_meta_output_loc_lfc01, 'monocyte', 'mono 1', meta.data, timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', "Baselinet24h", "Baselinet8w", "t24ht8w"), cell_type_column_higherres='cell_type', cell_type_column_lowerres='cell_type_lowerres', make_absolute=F)
-plot_de_number_vs_subcell_population(mast_meta_output_loc_lfc01, 'monocyte', 'mono 1', meta.data[meta.data$chem=='V2',], timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', "Baselinet24h", "Baselinet8w", "t24ht8w"), cell_type_column_higherres='cell_type', cell_type_column_lowerres='cell_type_lowerres', make_absolute=F)
-plot_de_number_vs_subcell_population(mast_meta_output_loc_lfc01, 'monocyte', 'mono 1', meta.data[meta.data$chem=='V3',], timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', "Baselinet24h", "Baselinet8w", "t24ht8w"), cell_type_column_higherres='cell_type', cell_type_column_lowerres='cell_type_lowerres', make_absolute=F)
+plot_de_number_vs_subcell_population(mast_meta_output_loc_lfc01, 'monocyte', 'cMono', meta.data, timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', "Baselinet24h", "Baselinet8w", "t24ht8w"), cell_type_column_higherres='cell_type', cell_type_column_lowerres='cell_type_lowerres', make_absolute=F)
+plot_de_number_vs_subcell_population(mast_meta_output_loc_lfc01, 'monocyte', 'cMono', meta.data[meta.data$chem=='V2',], timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', "Baselinet24h", "Baselinet8w", "t24ht8w"), cell_type_column_higherres='cell_type', cell_type_column_lowerres='cell_type_lowerres', make_absolute=F)
+plot_de_number_vs_subcell_population(mast_meta_output_loc_lfc01, 'monocyte', 'cMono', meta.data[meta.data$chem=='V3',], timepoints=c('UTBaseline', 'UTt24h', 'UTt8w', "Baselinet24h", "Baselinet8w", "t24ht8w"), cell_type_column_higherres='cell_type', cell_type_column_lowerres='cell_type_lowerres', make_absolute=F)
+
+
+# get the top five for each cell type and cell type and condition in terms of up/down regulated genes
+top_fives_de_genes <- get_top_de_genes_per_cond_and_ct(mast_meta_output_loc_lfc01, max_by_pval = F, stims = c('Baseline', 't24h', 't8w'))
+# get the monocyte genes
+mono_up_or_down_genes <- as.vector(unlist(top_fives_de_genes[, colnames(top_fives_de_genes)[grep('monocyte', colnames(top_fives_de_genes))]]))
+
+# plotting the expression instead of the LFC
+v2_exp_loc <- '/data/cardiology/differential_expression/cardio.integrated.v2.20210301.avg.exp.rna.tsv'
+v3_exp_loc <- '/data/cardiology/differential_expression/cardio.integrated.v3.20210301.avg.exp.rna.tsv'
+# get expression
+v2_exp <- read.table(v2_exp_loc, sep = '\t', header = T)
+v3_exp <- read.table(v3_exp_loc, sep = '\t', header = T)
+
+
+# this is the reactome ID for the immune system
+immune_system_reactome_id <- 'R-HSA-168256'
+# load the pathways
+pathways <- read.table('/data/scRNA/pathways/ReactomePathways.tsv', sep='\t')
+# subset to just human to speed up the search
+pathways <- pathways[pathways$V3 == 'Homo sapiens', ]
+# load the pathway mapping
+pathway_mappings <- read.table('/data/scRNA/pathways/ReactomePathwaysRelation.tsv', sep = '\t')
+# get the filtered names
+filtered_names <- get_filtered_pathway_names(pathways, pathway_mappings, 'R-HSA-168256')
+
+# grab some pathway genes to use for annotation
+pathways_list <- list()
+pathways_list[['IL17 Signalling']] <- '/data/cardiology/pathways/pathway_genes/il17-pathway-reactome.txt'
+pathways_list[['IL10 Signalling']] <- '/data/cardiology/pathways/pathway_genes/il10-pathway-reactome.txt'
+pathways_list[['IL4 and IL13 Signalling']] <- '/data/cardiology/pathways/pathway_genes/il4il13-pathway-reactome.txt'
+pathways_list[['IL1 Signalling']] <- '/data/cardiology/pathways/pathway_genes/il1-pathway-reactome.txt'
+#pathways_list[['IL6 signalling']] <- '/data/cardiology/pathways/pathway_genes/il6-pathway-reactome.txt'
+#pathways_list[['IL23 signalling']] <- '/data/cardiology/pathways/pathway_genes/il23-pathway-reactome.txt'
+pathways_list[['Interferon Signalling']] <- '/data/scRNA/pathways/REACTOME_Interferon_Signaling_genes.txt'
+pathways_list[['TLR Cascades']] <- '/data/scRNA/pathways/REACTOME_Toll-Like_Receptors_Cascades.txt'
+
+# add all the genes from the pathways togeter
+pathway_genes <- c()
+for(pathway in names(pathways_list)){
+  genes_pathway_loc <- pathways_list[[pathway]]
+  genes_pathway <- read.table(genes_pathway_loc, header=F, stringsAsFactors = F)$V1
+  pathway_genes <- c(pathway_genes, genes_pathway)
+}
+pathway_genes <- unique(pathway_genes)
+
+# get all the pathway output
+pathway_list <- get_pathway_tables(pathway_up_output_loc, cell_types = c('monocyte'))
+# filter on immune
+filtered_pathway_list <- filter_pathways_on_category(pathway_list, filtered_names)
+# get the genes in the lists
+pathway_genes_per_cond <- get_genes_pathways_lists(filtered_pathway_list)
+# get just all the genes
+de_pathway_genes <- unique(as.vector(unlist(pathway_genes_per_cond)))
+
+# subset to pathway genes
+v2_exp_pathways <- v2_exp[v2_exp$gene %in% de_pathway_genes, ]
+v3_exp_pathways <- v3_exp[v3_exp$gene %in% de_pathway_genes, ]
+
+# turn into hm
+v2_exp_hm_format <- avg_exp_table_to_hm_table(v2_exp_pathways[v2_exp_pathways$cell_type == 'monocyte', ])
+v3_exp_hm_format <- avg_exp_table_to_hm_table(v3_exp_pathways[v3_exp_pathways$cell_type == 'monocyte', ])
+# replace Baseline with t0
+colnames(v2_exp_hm_format) <- gsub('Baseline', 't0', colnames(v2_exp_hm_format))
+colnames(v3_exp_hm_format) <- gsub('Baseline', 't0', colnames(v3_exp_hm_format))
+# replace UT with HC
+colnames(v2_exp_hm_format) <- gsub('UT', 'HC', colnames(v2_exp_hm_format))
+colnames(v3_exp_hm_format) <- gsub('UT', 'HC', colnames(v3_exp_hm_format))
+
+# transform the pathways to colors
+colors_pathways_v2_de_hm <- pathways_to_hm_colors((v2_exp_hm_format), pathways_list)
+
+# show pathways
+cc <- get_color_coding_dict()
+colors_cond <- rep(c(cc[['HC']],cc[['t0']],cc[['t24h']],cc[['t8w']]), times = 1)
+colors_m <- cbind(colors_cond)
+colnames(colors_m) <- c('condition')
+
+# plot
+heatmap.3(t(v2_exp_hm_format), col=rev(brewer.pal(10,"RdBu")), margins=c(6,8), to_na = 0, dendrogram = 'none', labCol = NA, ColSideColorsSize = 3, main = 'Differentially Expressed Genes', xlab = 'genes', ylab = 'conditions', cexRow = 1.5, side.height.fraction = 0.6, KeyValueName = 'expression', RowSideColors = t(colors_m), ColSideColors = (colors_pathways_v2_de_hm),)
+
+# scale to Baseline
+v2_exp_hm_format_t0scaled <- data.frame(t(apply(v2_exp_hm_format, 1, function(x){x <- log2(x/(x['t0']))})))
+v2_exp_hm_format_t0scaled <- v2_exp_hm_format_t0scaled[, c('HC', 't24h', 't8w')]
+colnames(v2_exp_hm_format_t0scaled) <- c('HC-t0', 't24h-t0', 't8w-t0')
+colors_cond_base_linescaled <- rep(c(cc[['HC-t0']],cc[['t24h-t0']],cc[['t8w-t0']]), times = 1)
+colors_m_baselinescaled <- cbind(colors_cond_base_linescaled)
+colnames(colors_m_baselinescaled) <- c('response')
+v2_exp_hm_format_t0scaled <- na.omit(v2_exp_hm_format_t0scaled)
+colors_pathways_v2_de_hm_baselinescaled <- pathways_to_hm_colors((v2_exp_hm_format_t0scaled), pathways_list)
+heatmap.3(t(v2_exp_hm_format_t0scaled), col=colorRampPalette(c('#000066', 'white', '#800000'))(100), margins=c(6,8), to_na = 0, dendrogram = 'none', labCol = NA, ColSideColorsSize = 3, main = 'Differentially Expressed Genes', xlab = 'genes', ylab = 'conditions', cexRow = 1.5, side.height.fraction = 0.6, KeyValueName = 'LFC', RowSideColors = t(colors_m_baselinescaled), ColSideColors = (colors_pathways_v2_de_hm_baselinescaled),)
+
+
+# get all the pathway output
+pathway_list_nk <- get_pathway_tables(pathway_up_output_loc, cell_types = c('NK'))
+# filter on immune
+filtered_pathway_list_nk <- filter_pathways_on_category(pathway_list_nk, filtered_names)
+# get the genes in the lists
+pathway_genes_per_cond_nk <- get_genes_pathways_lists(filtered_pathway_list_nk)
+# get just all the genes
+de_pathway_genes_nk <- unique(as.vector(unlist(pathway_genes_per_cond_nk)))
+# subset to pathway genes
+v2_exp_pathways_nk <- v2_exp[v2_exp$gene %in% de_pathway_genes_nk, ]
+v3_exp_pathways_nk <- v3_exp[v3_exp$gene %in% de_pathway_genes_nk, ]
+# do for NK as well
+v2_exp_hm_format_nk <- avg_exp_table_to_hm_table(v2_exp_pathways_nk[v2_exp_pathways_nk$cell_type == 'NK', ])
+v3_exp_hm_format_nk <- avg_exp_table_to_hm_table(v3_exp_pathways_nk[v3_exp_pathways_nk$cell_type == 'NK', ])
+# replace Baseline with t0
+colnames(v2_exp_hm_format_nk) <- gsub('Baseline', 't0', colnames(v2_exp_hm_format_nk))
+colnames(v3_exp_hm_format_nk) <- gsub('Baseline', 't0', colnames(v3_exp_hm_format_nk))
+# replace UT with HC
+colnames(v2_exp_hm_format_nk) <- gsub('UT', 'HC', colnames(v2_exp_hm_format_nk))
+colnames(v3_exp_hm_format_nk) <- gsub('UT', 'HC', colnames(v3_exp_hm_format_nk))
+# scale to Baseline
+v2_exp_hm_format_t0scaled_nk <- data.frame(t(apply(v2_exp_hm_format_nk, 1, function(x){x <- log2(x/(x['t0']))})))
+v2_exp_hm_format_t0scaled_nk <- v2_exp_hm_format_t0scaled_nk[, c('HC', 't24h', 't8w')]
+colnames(v2_exp_hm_format_t0scaled_nk) <- c('HC-t0', 't24h-t0', 't8w-t0')
+v2_exp_hm_format_t0scaled_nk <- na.omit(v2_exp_hm_format_t0scaled_nk)
+colors_pathways_v2_de_hm_baselinescaled_nk <- pathways_to_hm_colors((v2_exp_hm_format_t0scaled_nk), pathways_list)
+heatmap.3(t(v2_exp_hm_format_t0scaled_nk), col=colorRampPalette(c('#000066', 'white', '#800000'))(100), margins=c(6,8), to_na = 0, dendrogram = 'none', labCol = NA, ColSideColorsSize = 3, main = 'Differentially Expressed Genes', xlab = 'genes', ylab = 'conditions', cexRow = 1.5, side.height.fraction = 0.6, KeyValueName = 'LFC', RowSideColors = t(colors_m_baselinescaled), ColSideColors = (colors_pathways_v2_de_hm_baselinescaled_nk),)
+
+
 
 # plot the sharing of DE genes
 plot_DE_sharing_per_celltype('UTBaseline', mast_meta_output_loc_lfc01)
@@ -1102,141 +2744,6 @@ mast_lfc01_de_genes_down <- get_de_genes(mast_output_loc = mast_meta_output_loc_
 names(mast_lfc01_de_genes_up[['monocyte']]) <- paste(names(mast_lfc01_de_genes_up[['monocyte']]), '_up')
 names(mast_lfc01_de_genes_down[['monocyte']]) <- paste(names(mast_lfc01_de_genes_down[['monocyte']]), '_down')
 upset(fromList(append(mast_lfc01_de_genes_up[['monocyte']], mast_lfc01_de_genes_down[['monocyte']])), order.by = 'freq', length(append(mast_lfc01_de_genes_up[['monocyte']], mast_lfc01_de_genes_down[['monocyte']])))
-
-
-
-
-pathway_mapping_filtered_childless <- function(list_of_pathways_and_parents, pathway_mapping){
-  # full list of terms
-  all_terms <- c()
-  for(start in names(list_of_pathways_and_parents)){
-    # get all the terms
-    all_terms <- c(all_terms, start, list_of_pathways_and_parents[[start]])
-  }
-  # make the unique terms
-  all_terms <- unique(all_terms)
-  # iteratively remove parents with no children in our data
-  keep_going <- T
-  if(keep_going == T){
-    # get the childless entries
-    child_less_parents <- setdiff(pathway_mapping$V2, pathway_mapping$V1)
-    # check if any of those are not in our set
-    child_less_parents_filtered <- setdiff(child_less_parents, all_terms)
-    # if there are none left, stop working
-    if(length(child_less_parents_filtered) == 0){
-      keep_going <- F
-    }
-    else{
-      # remove these children without children that we don't care about
-      pathway_mapping <- pathway_mapping[!(pathway_mapping$V2 %in% child_less_parents_filtered), ]
-    }
-    
-  }
-  return(pathway_mapping)
-}
-
-# Function for getting mama and parents
-get_filtered_pathway_names <- function(relation_table, starting_id){
-  # get all of the parents of the starting ID
-  all_parents <- get_parents(relation_table, starting_id)
-  return(all_parents)
-}
-get_parents <- function(relation_table, starting_id){
-  # get all of the parents of the starting ID
-  parents <- as.character(relation_table[!is.na(relation_table$V2) & !is.na(relation_table$V1) & relation_table$V2 == starting_id, 'V1'])
-  # these parents are all family
-  family <- parents
-  # see if there were any parents
-  if(length(parents) > 0){
-    # if there were parents, we need to get their parents as well
-    for(parent in parents){
-      # get the grandparents and add these to the family
-      grand_parents <- get_parents(relation_table, parent)
-      family <- c(family, grand_parents)
-    }
-  }
-  return(family)
-}
-
-pathways_to_trees <- function(relation_table){
-  # first get the biggest parents, the terms which don't are not children
-  super_parents <- child_less_parents <- setdiff(as.character(relation_table$V1), as.character(relation_table$V2))
-  # we must do a tree per super parent
-  super_parent_tree_list <- list()
-  # put in the work for each super parent
-  for(super_parent in super_parents){
-    # fetch complete list with attribute
-    super_parent_node <- get_children_lists(relation_table, super_parent, 10)
-    # set attributes for super parent itself
-    class(super_parent_node) <- 'dendrogram'
-    # add to list of superparents
-    super_parent_tree_list[[super_parent]] <- super_parent_node
-  }
-  return(super_parent_tree_list)
-}
-
-get_children_lists <- function(relation_table, term, height){
-  # get the children of the term
-  child_rows <- relation_table[as.character(relation_table$V1) == as.character(term), ]
-  # set up the node
-  node <- list()
-  # if there are no children, this is a leaf
-  if(nrow(child_rows) == 0){
-    # set up as leaf
-    attributes(node) <- list(members=1, h=0, edgetext=term, label=term, leaf=T)
-  }
-  else{
-    children <- child_rows$V2
-    # put in a list the results
-    i <- 1
-    for(child in children){
-      # grab the child lists
-      child_node <- get_children_lists(relation_table, child, height-1)
-      # add this to the node
-      node[[i]] <- child_node
-      i <- i + 1
-    }
-    # add attributes to non-leaf node
-    attributes(node) <- list(members=length(children),height=height,edgetext=term)
-  }
-  return(node)
-}
-
-add_pathway_levels <- function(relation_table){
-  # first get the biggest parents, the terms which don't are not children
-  super_parents <- child_less_parents <- setdiff(as.character(relation_table$V1), as.character(relation_table$V2))
-  # we must do a tree per super parent
-  super_parent_tree_list <- list()
-  # put in the work for each super parent
-  for(super_parent in super_parents){
-    # fetch complete list with attribute
-    super_parent_node <- get_children_pathway_levels(relation_table, super_parent, 0)
-    # add to list of superparents
-    super_parent_tree_list[[super_parent]] <- super_parent_node
-  }
-  return(super_parent_tree_list)
-}
-
-get_children_pathway_levels <- function(relation_table, term, level){
-  # get the children of the term
-  child_rows <- relation_table[as.character(relation_table$V1) == as.character(term), ]
-  # set up the 
-  current_level <- data.frame(term=c(term), level=c(level))
-  # if there are no children, this is a leaf
-  if(nrow(child_rows) > 0){
-    children <- child_rows$V2
-    for(child in children){
-      # grab the child lists
-      child_node <- get_children_pathway_levels(relation_table, child, level+1)
-      # add to our level
-      current_level <- rbind(current_level, child_node)
-    }
-  }
-  return(current_level)
-}
-
-
-
 
 # Load table with pathway
 monoUTBase <- read.table('/data/cardiology/pathways/sigs_pos/meta_paired_lores_lfc01minpct01_20201209_ensid_all/rna/monocyteUTBaseline_sig_up_pathways.txt', sep = '\t', header = T, dec = ",")
@@ -1310,6 +2817,8 @@ my_familytree$nodes$value <- 1 - my_familytree$nodes$value
 #my_familytree$nodes$group <- pathway_levels[['R-HSA-168256']][match(my_familytree$nodes$id, pathway_levels[['R-HSA-168256']]$term), ]$level
 my_familytree$nodes$group <- pathway_levels[['pathways']][match(my_familytree$nodes$id, pathway_levels[['pathways']]$term), ]$level
 
-
+# visualize the network
 visNetwork(my_familytree$nodes, my_familytree$edges) %>%
   visEdges(arrows = "to")
+
+
