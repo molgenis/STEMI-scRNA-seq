@@ -169,7 +169,7 @@ do_nichenet_analysis_versus_each_celltype <- function(seurat_object, condition.c
 }
 
 
-nichenet_output_to_plot <- function(output_list, output_loc){
+nichenet_output_to_plot <- function(output_list){
   # store per celltype the resulting plot
   combined_plots <- list()
   # we have multiple cell types
@@ -208,6 +208,54 @@ nichenet_output_to_plot <- function(output_list, output_loc){
   }
   return(combined_plots)
 }
+
+perct_output_to_plot <- function(output_list){
+  # store per celltype1 the resulting plot
+  combined_plots_ct1 <- list()
+  # we have multiple cell types
+  for(cell_type1 in names(output_list)){
+    # grab that result
+    output_list_celltype1 <- output_list[[cell_type1]]
+    # store per celltype the resulting plot
+    combined_plots_ct2 <- list()
+    #get the cell type the interactions are with
+    for(cell_type2 in names(output_list_celltype1)){
+      output_list_celltype2 <- output_list_celltype1[[cell_type2]]
+      # create a list to store ggplot2 objects
+      plots <- list()
+      
+      if((length(output_list_celltype2) > 0) & ('ligand_target' %in% names(output_list_celltype2))){
+        # fetch data from list
+        vis_ligand_target <- output_list_celltype2[['ligand_target']]
+        if(nrow(vis_ligand_target) > 0){
+          plots[['ligand_target']] <- vis_ligand_target %>% make_heatmap_ggplot("Prioritized ligands","Predicted target genes", color = "purple",legend_position = "top", x_axis_position = "top",legend_title = "Regulatory potential")  + theme(axis.text.x = element_text(face = "italic")) + scale_fill_gradient2(low = "whitesmoke",  high = "purple", breaks = c(0,0.0045,0.0090))
+        }
+      }
+      if(length(output_list_celltype2) > 0 & 'ligand_receptor_network' %in% names(output_list_celltype2)){
+        vis_ligand_receptor_network <- output_list_celltype2[['ligand_receptor_network']]
+        if(nrow(vis_ligand_receptor_network) > 0){
+          plots[['ligand_receptor_network']] <- vis_ligand_receptor_network %>% t() %>% make_heatmap_ggplot("Ligands","Receptors", color = "mediumvioletred", x_axis_position = "top",legend_title = "Prior interaction potential")
+        }
+      }
+      if(length(output_list_celltype2) > 0 & 'ligand_lfc' %in% names(output_list_celltype2)){
+        vis_ligand_lfc <- output_list_celltype2[['ligand_lfc']]
+        if(nrow(vis_ligand_lfc) > 0){
+          plots[['ligand_lfc']] <- vis_ligand_lfc %>% make_threecolor_heatmap_ggplot("Prioritized ligands","LFC in Sender", low_color = "midnightblue",mid_color = "white", mid = median(vis_ligand_lfc), high_color = "red",legend_position = "top", x_axis_position = "top", legend_title = "LFC") + theme(axis.text.y = element_text(face = "italic"))
+        }
+      }
+      # combined the plots of the cell type
+      if(length(plots) > 0){
+        plot_combined <- cowplot::plot_grid(plotlist = plots)
+      }
+      # add resulting plot to list
+      combined_plots_ct2[[cell_type2]] <- plot_combined
+    }
+    # add for cell type1
+    combined_plots_ct1[[cell_type1]] <- combined_plots_ct2 
+  }
+  return(combined_plots_ct1)
+}
+
 
 get_lfc_celltype <- function (celltype_oi, seurat_obj, condition_colname, condition_oi, 
           condition_reference, celltype_col = "celltype", expression_pct = 0.1, logfc.threshold=0.05, test.use='wilcox') 
@@ -349,6 +397,32 @@ for(plot_name in names(v3_Baseline_vs_t8w_plots)){
 for(plot_name in names(v3_UT_vs_Baseline_plots)){
   ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined_onlymajor//', 'nichenet_', 'UT_vs_Baseline_', plot_name, '_onlymajor.pdf', sep = ''), width = 20, heigh = 20, plot=v3_UT_vs_Baseline_plots[[plot_name]])
 }
+
+# do specifically for one cell type now
+v2_Baseline_vs_t24h_perct <- do_nichenet_analysis_versus_each_celltype(combined_v2, 'timepoint.final', 't24h', 'Baseline', lr_network, weighted_networks, ligand_target_matrix)
+v2_Baseline_vs_t8w_perct <- do_nichenet_analysis_versus_each_celltype(combined_v2, 'timepoint.final', 't8w', 'Baseline', lr_network, weighted_networks, ligand_target_matrix)
+v2_t8w_vs_Baseline_perct <- do_nichenet_analysis_versus_each_celltype(combined_v2, 'timepoint.final', 'Baseline', 'UT', lr_network, weighted_networks, ligand_target_matrix)
+
+# save the plots once again
+for(ct1 in names(v2_Baseline_vs_t24h_perct)){
+  for(ct2 in names(v2_Baseline_vs_t24h_perct[[ct1]])){
+    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'nichenet_', 'Baseline_vs_t24h_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, heigh = 20, plot=v2_Baseline_vs_t24h_perct[[ct1]][[ct2]])
+  }
+}
+# save the plots once again
+for(ct1 in names(v2_Baseline_vs_t8wh_perct)){
+  for(ct2 in names(v2_Baseline_vs_t8w_perct[[ct1]])){
+    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'nichenet_', 'Baseline_vs_t8w_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, heigh = 20, plot=v2_Baseline_vs_t8w_perct[[ct1]][[ct2]])
+  }
+}
+# save the plots once again
+for(ct1 in names(v2_Baseline_vs_t8wh_perct)){
+  for(ct2 in names(v2_Baseline_vs_t8w_perct[[ct1]])){
+    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'nichenet_', 'Baseline_vs_t8w_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, heigh = 20, plot=v2_Baseline_vs_t8w_perct[[ct1]][[ct2]])
+  }
+}
+
+
 
 create_dotplot_per_ct_and_tp(combined_v3, v3_Baseline_vs_t24h, 'Baseline', 't24h', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined_onlymajor/', split_condition = T)
 create_dotplot_per_ct_and_tp(combined_v3, v3_Baseline_vs_t8w, 'Baseline', 't8w', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined_onlymajor/', split_condition = T)
