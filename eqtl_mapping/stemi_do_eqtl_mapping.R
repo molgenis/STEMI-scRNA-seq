@@ -160,7 +160,7 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
   if(!is.null(snp_confinement)){
     snps <- snps[!is.na(snps$id) & snps$id %in% snp_confinement, ]
   }
-  if(is.null(snp_gene_confinement)){
+  if(!is.null(snp_gene_confinement)){
     snps <- snps[!is.na(snps$id) & snps$id %in% snp_gene_confinement[[1]], ]
     expressions_ct_cond <- expressions_ct_cond[!is.na(expressions_ct_cond$id) & expressions_ct_cond$id %in% snp_gene_confinement[[2]], ]
   }
@@ -211,7 +211,7 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
     result <- read.table(output_file_name_cis_ct_cond, header = T, sep = '\t', stringsAsFactors = F, check.names = F)
     # pasting SNP and gene together, allows us to filter
     result$snp_probe <- paste(result$SNP, result$gene, sep = '_')
-    result <- result[result$snp_probe %in% paste(snp_gene_confinement$V1, snp_gene_confinement$V2, sep = '_')]
+    result <- result[result$snp_probe %in% paste(snp_gene_confinement[[1]], snp_gene_confinement[[2]], sep = '_')]
     # remove the column used for this filtering
     result$snp_probe <- NULL
     # recalculate the fdr that MatrixEQTL does (n is different after filtering)
@@ -291,7 +291,7 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
       perm_result <- read.table(output_file_name_cis_ct_cond_permuted, header = T, sep = '\t', stringsAsFactors = F, check.names = F)
       # pasting SNP and gene together, allows us to filter
       perm_result$snp_probe <- paste(perm_result$SNP, perm_result$gene, sep = '_')
-      perm_result <- perm_result[perm_result$snp_probe %in% paste(snp_gene_confinement$V1, snp_gene_confinement$V2, sep = '_')]
+      perm_result <- perm_result[perm_result$snp_probe %in% paste(snp_gene_confinement[[1]], snp_gene_confinement[[2]], sep = '_')]
       # remove the column used for this filtering
       perm_result$snp_probe <- NULL
       # recalculate the fdr that MatrixEQTL does (n is different after filtering)
