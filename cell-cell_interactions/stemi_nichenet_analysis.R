@@ -422,6 +422,31 @@ for(ct1 in names(v2_Baseline_vs_t8wh_perct)){
   }
 }
 
+# do specifically for one cell type now
+v3_Baseline_vs_t24h_perct <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 't24h', 'Baseline', lr_network, weighted_networks, ligand_target_matrix)
+v3_Baseline_vs_t8w_perct <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 't8w', 'Baseline', lr_network, weighted_networks, ligand_target_matrix)
+v3_t8w_vs_Baseline_perct <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 'Baseline', 'UT', lr_network, weighted_networks, ligand_target_matrix)
+
+# save the plots once again
+for(ct1 in names(v3_Baseline_vs_t24h_perct)){
+  for(ct2 in names(v3_Baseline_vs_t24h_perct[[ct1]])){
+    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'nichenet_', 'Baseline_vs_t24h_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, heigh = 20, plot=v3_Baseline_vs_t24h_perct[[ct1]][[ct2]])
+  }
+}
+# save the plots once again
+for(ct1 in names(v3_Baseline_vs_t8wh_perct)){
+  for(ct2 in names(v3_Baseline_vs_t8w_perct[[ct1]])){
+    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'nichenet_', 'Baseline_vs_t8w_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, heigh = 20, plot=v3_Baseline_vs_t8w_perct[[ct1]][[ct2]])
+  }
+}
+# save the plots once again
+for(ct1 in names(v3_Baseline_vs_t8wh_perct)){
+  for(ct2 in names(v3_Baseline_vs_t8w_perct[[ct1]])){
+    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'nichenet_', 'Baseline_vs_t8w_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, heigh = 20, plot=v3_Baseline_vs_t8w_perct[[ct1]][[ct2]])
+  }
+}
+
+
 
 
 create_dotplot_per_ct_and_tp(combined_v3, v3_Baseline_vs_t24h, 'Baseline', 't24h', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined_onlymajor/', split_condition = T)

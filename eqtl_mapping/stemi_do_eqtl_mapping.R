@@ -129,7 +129,7 @@ determine_fdr <- function(output_file_name_cis, permutation_rounds, do_smallest_
   # go through each row
   output_file[['permuted_fdr']] <- apply(output_file, 1, function(x){
     # grab the p-value
-    p_real <- x[['p.value']]
+    p_real <- as.numeric(x[['p.value']])
     # get the number of permuted p values
     nr_permuted_p <- nrow(permuted_table)
     # check how many of these p values are smaller than the actual p
@@ -482,7 +482,8 @@ if(do_all_ut_stemi_eqtlgen){
   maf <- 0.1
   permutation_rounds <- 20
   
-  cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
+  #cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
+  cell_typers=c('CD8T', 'DC', 'monocyte', 'NK')
   conditions <- c('UT_Baseline', 'UT_t24h', 'UT_t8w')
   
   permute_in_covar_group <- 'chem_V3'

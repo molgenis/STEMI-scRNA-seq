@@ -26,11 +26,11 @@ echo 'alias Rsingscript="singularity exec --bind '${sim_disk}':/home/'${USER}${p
 echo 'alias sccontainer="singularity shell --bind '${sim_disk}':/home/'${USER}${paths}' '${img_folder}'singlecell_container.simg"' >> /home/${USER}/.bashrc
 
 # in case you've never used singularity before
-mkdir -p ./singularity
-mkdir -p ./.singularity
+mkdir -p ~/singularity
+mkdir -p ~/.singularity
 # move the directories
-mv ./singularity /groups/${GROUP}/tmp01/users/${USER}/
-mv ./.singularity /groups/${GROUP}/tmp01/users/${USER}/
+mv ~/singularity /groups/${GROUP}/tmp01/users/${USER}/
+mv ~/.singularity /groups/${GROUP}/tmp01/users/${USER}/
 # symlink the directories
-ln -s /groups/${GROUP}/tmp01/users/${USER}/.singularity ./.singularity
-ln -s /groups/${GROUP}/tmp01/users/${USER}/singularity ./singularity
+ln -s /groups/${GROUP}/tmp01/users/${USER}/.singularity ~/.singularity
+ln -s /groups/${GROUP}/tmp01/users/${USER}/singularity ~/singularity
