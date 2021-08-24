@@ -206,17 +206,19 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
     covariates_file_name=covariates_file_name_ct_cond, # Covariates file name
     cisDist = 100000
   )
-  # because MatrixEQTL doesn't have snp+gene confinements, we need to do filtering after the fact
-  result <- read.table(output_file_name_cis_ct_cond, header = T, sep = '\t', stringsAsFactors = F, check.names = F)
-  # pasting SNP and gene together, allows us to filter
-  result$snp_probe <- paste(result$SNP, result$gene, sep = '_')
-  result <- result[result$snp_probe %in% paste(snp_gene_confinement$V1, snp_gene_confinement$V2, sep = '\t')]
-  # remove the column used for this filtering
-  result$snp_probe <- NULL
-  # recalculate the fdr that MatrixEQTL does (n is different after filtering)
-  result$fdr <- p.adjust(result[['p-value']], method = 'fdr')
-  # rewrite the result
-  write.table(result, output_file_name_cis_ct_cond, sep = '\t', row.names = F, col.names = T)
+  if(!is.null(snp_gene_confinement)){
+    # because MatrixEQTL doesn't have snp+gene confinements, we need to do filtering after the fact
+    result <- read.table(output_file_name_cis_ct_cond, header = T, sep = '\t', stringsAsFactors = F, check.names = F)
+    # pasting SNP and gene together, allows us to filter
+    result$snp_probe <- paste(result$SNP, result$gene, sep = '_')
+    result <- result[result$snp_probe %in% paste(snp_gene_confinement$V1, snp_gene_confinement$V2, sep = '_')]
+    # remove the column used for this filtering
+    result$snp_probe <- NULL
+    # recalculate the fdr that MatrixEQTL does (n is different after filtering)
+    result$fdr <- p.adjust(result[['p-value']], method = 'fdr')
+    # rewrite the result
+    write.table(result, output_file_name_cis_ct_cond, sep = '\t', row.names = F, col.names = T) 
+  }
   # convert data tables to data frames
   expressions_ct_cond <- data.frame(expressions_ct_cond)
   covariates_ct_cond <- data.frame(covariates_ct_cond)
@@ -284,17 +286,19 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
       covariates_file_name=covariate_file_name_ct_cond_permuted, # Covariates file name
       cisDist = 100000
     )
-    # because MatrixEQTL doesn't have snp+gene confinements, we need to do filtering after the fact
-    perm_result <- read.table(output_file_name_cis_ct_cond_permuted, header = T, sep = '\t', stringsAsFactors = F, check.names = F)
-    # pasting SNP and gene together, allows us to filter
-    perm_result$snp_probe <- paste(perm_result$SNP, perm_result$gene, sep = '_')
-    perm_result <- perm_result[perm_result$snp_probe %in% paste(snp_gene_confinement$V1, snp_gene_confinement$V2, sep = '\t')]
-    # remove the column used for this filtering
-    perm_result$snp_probe <- NULL
-    # recalculate the fdr that MatrixEQTL does (n is different after filtering)
-    perm_result$fdr <- p.adjust(perm_result[['p-value']], method = 'fdr')
-    # rewrite the result
-    write.table(perm_result, output_file_name_cis_ct_cond_permuted, sep = '\t', row.names = F, col.names = T)
+    if(!is.null(snp_gene_confinement)){
+      # because MatrixEQTL doesn't have snp+gene confinements, we need to do filtering after the fact
+      perm_result <- read.table(output_file_name_cis_ct_cond_permuted, header = T, sep = '\t', stringsAsFactors = F, check.names = F)
+      # pasting SNP and gene together, allows us to filter
+      perm_result$snp_probe <- paste(perm_result$SNP, perm_result$gene, sep = '_')
+      perm_result <- perm_result[perm_result$snp_probe %in% paste(snp_gene_confinement$V1, snp_gene_confinement$V2, sep = '_')]
+      # remove the column used for this filtering
+      perm_result$snp_probe <- NULL
+      # recalculate the fdr that MatrixEQTL does (n is different after filtering)
+      perm_result$fdr <- p.adjust(perm_result[['p-value']], method = 'fdr')
+      # rewrite the result
+      write.table(perm_result, output_file_name_cis_ct_cond_permuted, sep = '\t', row.names = F, col.names = T)  
+    }
   }
   #parallel::stopCluster(cl)
   if(permutation_rounds > 0){
@@ -448,7 +452,7 @@ if(do_all_stemi_meta){
   cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
   conditions <- c('Baseline', 't24h', 't8w')
   
-  permute_in_covar_group <- 'chem'
+  permute_in_covar_group <- 'chem_V3'
   
   perform_qtl_mapping(snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append, output_file_name_cis_append, covariates_file_name_append, confinement_file_name, permutation_rounds = permutation_rounds, permute_in_covar_group=permute_in_covar_group, cell_typers=cell_typers, conditions=conditions)
 }
@@ -479,7 +483,7 @@ if(do_all_ut_stemi){
   cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
   conditions <- c('UT_Baseline', 'UT_t24h', 'UT_t8w', 'UT')
   
-  permute_in_covar_group <- 'chem'
+  permute_in_covar_group <- 'chem_V3'
   #snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append
   perform_qtl_mapping(snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append, output_file_name_cis_append, covariates_file_name_append, confinement_file_name, permutation_rounds = permutation_rounds, permute_in_covar_group=permute_in_covar_group, cell_typers=cell_typers, conditions=conditions)
 }
