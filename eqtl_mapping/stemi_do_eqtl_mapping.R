@@ -84,66 +84,177 @@ do_QTL_mapping <- function(
   # release resources for the temporary file
 }
 
-determine_fdr <- function(output_file_name_cis, permutation_rounds, do_smallest_per_gene=T){
+determine_fdr <- function(output_file_name_cis, permutation_rounds, do_smallest_per_gene=T, use_datatable=T, verbose_number=NA){
   # we will add the permutation rounds together
   permutation_table <- NULL
   # we'll store the SNP and gene info separately, that's easier for the rowmeans
   snp_gene <- NULL
   for(i in 1:permutation_rounds){
-    # read the current round
-    #permutation_round <- fread(paste(output_file_name_cis, '.permuted.', i, sep = ''), sep = '\t', header = T)
-    # reset the order
-    permutation_round <- read.table(paste(output_file_name_cis, '.permuted.', i, sep = ''), sep = '\t', header = T, stringsAsFactors = F)
-    rownames(permutation_round) <- paste(permutation_round[['SNP']], permutation_round[['gene']], sep = '_')
-    # paste onto the rest of the output
-    if(is.null(permutation_table)){
-      #permutation_table <- data.frame(perm1 = permutation_round[['p-value']])
-      permutation_table <- permutation_round[, c('p.value'), drop = F]
-      permutation_table[['perm1']] <- permutation_round[['p.value']]
-      permutation_round[['p.value']] <- NULL
-      # set the rownames here as well
-      #rownames(permutation_table) <- rownames(permutation_round)
-      # we'll need this one later
-      snp_gene <- permutation_round[, c('SNP', 'gene')]
+    if(use_datatable){
+      # read the file
+      permutation_round <- fread(paste(output_file_name_cis, '.permuted.', i, sep = ''), sep = '\t', header = T, check.names = T) # check.names T to keep compatibility between data.frame and data.table
+      # remove columns we do not need
+      permutation_round[, beta:=NULL]
+      permutation_round[, t.stat:=NULL]
+      permutation_round[, FDR:=NULL]
+      # rename the p.value column
+      permutation_round[[paste('perm', i, sep='')]] <- permutation_round$p.value
+      permutation_round[, p.value:=NULL]
+      # set the key
+      setkey(permutation_round, SNP, gene)
+      # check if the first round
+      if(is.null(permutation_table)){
+        permutation_table <- permutation_round
+      }
+      else{
+        permutation_table <- merge(permutation_table, permutation_round, by=c('SNP', 'gene'), all=T)
+      }
     }
     else{
-      # grab the same snp-gene pairs
-      permutation_table[[paste('perm', i, sep = '')]] <- permutation_round[rownames(permutation_table), c('p.value'), drop = F]
+      # reset the order
+      permutation_round <- read.table(paste(output_file_name_cis, '.permuted.', i, sep = ''), sep = '\t', header = T, stringsAsFactors = F)
+      rownames(permutation_round) <- paste(permutation_round[['SNP']], permutation_round[['gene']], sep = '_')
+      # paste onto the rest of the output
+      if(is.null(permutation_table)){
+        #permutation_table <- data.frame(perm1 = permutation_round[['p-value']])
+        permutation_table <- permutation_round[, c('p.value'), drop = F]
+        permutation_table[['perm1']] <- permutation_round[['p.value']]
+        permutation_round[['p.value']] <- NULL
+        # we'll need this one later
+        snp_gene <- permutation_round[, c('SNP', 'gene')]
+      }
+      else{
+        # grab the same snp-gene pairs
+        permutation_table[[paste('perm', i, sep = '')]] <- permutation_round[rownames(permutation_table), c('p.value'), drop = F]
+      }
     }
   }
-  # calculate the average p-value
-  mean_p_permuted=rowMeans(permutation_table)
-  # add back the snp and gene info
-  permuted_table <- snp_gene
-  permuted_table[['perm']] <- mean_p_permuted
-  # order by significance
-  permuted_table <- permuted_table[order(permuted_table[['perm']]), ]
+  permuted_table <- NULL
+  print('creating mean permuted p per snp-probe')
+  if(use_datatable){
+    # fetch the SNP and gene columns
+    snps <- permutation_table[['SNP']]
+    genes <- permutation_table[['gene']]
+    # remove columns that interfere with the rownmeans
+    permutation_table[, SNP:=NULL]
+    permutation_table[, gene:=NULL]
+    # calculate the average p-value
+    mean_p_permuted=rowMeans(permutation_table)
+    # create data.table
+    permuted_table <- data.table(SNP=snps, gene=genes, perm=mean_p_permuted)
+    # order by significance
+    print('sorting by mean permuted p')
+    setorder(permuted_table, perm)
+  }
+  else{
+    # calculate the average p-value
+    mean_p_permuted=rowMeans(permutation_table)
+    # add back the snp and gene info
+    permuted_table <- snp_gene
+    permuted_table[['perm']] <- mean_p_permuted
+    # order by significance
+    print('sorting by mean permuted p')
+    permuted_table <- permuted_table[order(permuted_table[['perm']]), ]
+  }
   # filter to the best value per gene, if requested
   if(do_smallest_per_gene){
+    print('selecting lowest permutated p per gene')
     # we ordered the table, so the first entry found for a gene, should always be the most significant one
     permuted_table <- permuted_table[match(unique(permuted_table[['gene']]), permuted_table[['gene']]), ]
   }
   # now read the non-permuted file
-  #output_file <- fread(paste(output_file_name_cis), sep = '\t', header = T)
-  output_file <- read.table(paste(output_file_name_cis), sep = '\t', header = T, stringsAsFactors = F)
+  output_file <- fread(paste(output_file_name_cis), sep = '\t', header = T, check.names = T)
+  setorder(output_file, p.value)
+  #output_file <- read.table(paste(output_file_name_cis), sep = '\t', header = T, stringsAsFactors = F)
   # go through each row
-  output_file[['permuted_fdr']] <- apply(output_file, 1, function(x){
-    # grab the p-value
-    p_real <- as.numeric(x[['p.value']])
-    # get the number of permuted p values
-    nr_permuted_p <- nrow(permuted_table)
-    # check how many of these p values are smaller than the actual p
-    nr_permuted_p_smaller <- nrow(permuted_table[permuted_table[['perm']] < p_real, ])
-    # calculate the fraction of permuted Ps, that are smaller than your actual p
-    perm_fdr <- nr_permuted_p_smaller / nr_permuted_p
-    # that fraction is the chance that your p could come from the permuted distribution
-    return(perm_fdr)
-  })
+  print('determening permuted FDR for each SNP-probe combination')
+  #output_file[['permuted_fdr']] <- apply(output_file, 1, function(x){
+  #  # grab the p-value
+  #  p_real <- as.numeric(x[['p.value']])
+  #  # skip the ones that can't possibly be significant
+  #  if(p_real == 1){
+  #    return(1)
+  #  }
+  #  else{
+  #    # get the number of permuted p values
+  #    nr_permuted_p <- nrow(permuted_table)
+  #    # check how many of these p values are smaller than the actual p
+  #    #nr_permuted_p_smaller <- nrow(permuted_table[permuted_table[['perm']] <= p_real, ])
+  #    # get the first index where a permuted variable is as good or better than the actual p
+  #    first_better_perm_p <- get_first_index_at_cutoff(permuted_table[['perm']], p_real)
+  #    # substract one, because the indexing starts at 1, but that is the first time the evaluation failed
+  #    nr_permuted_p_smaller <- first_better_perm_p - 1
+  #    # calculate the fraction of permuted Ps, that are smaller than your actual p
+  #    perm_fdr <- nr_permuted_p_smaller / nr_permuted_p
+  #    # that fraction is the chance that your p could come from the permuted distribution
+  #    return(perm_fdr)
+  #  }
+  #})
+  # create vector to hold the calculated FDRs
+  permuted_fdr <- vector(mode='numeric', length=nrow(output_file))
+  # grab only the permuted p-values
+  permuted_ps <- permuted_table$perm
+  # get the real ps
+  real_ps <- output_file$p.value
+  # because our actual variables are also sorted, we can keep track of where we were in the permuted set as well
+  index_permuted <- 1
+  # check each variable
+  for(p_real_index in 1:length(real_ps)){
+    # set when to stop
+    found_higher_perm <- F
+    # grab the actual p value
+    p_real <- real_ps[p_real_index]
+    # check each permuted variable whether or not it is better
+    while(found_higher_perm == F & index_permuted <= length(permuted_ps)){
+      # grab the permuted p
+      permuted_p <- permuted_ps[index_permuted]
+      # check if the same
+      if(permuted_p == p_real){
+        # go until you see a new P value
+        if(index_permuted != length(permuted_ps) & permuted_p == permuted_ps[index_permuted+1]){
+          # we can just skip to the next one
+          index_permuted <- index_permuted+1
+        }
+        # if the next is a new value, this is the number that was better or equal
+        nr_permuted_equal_or_better <- index_permuted
+        # stop search here
+        found_higher_perm <- T
+        # add result to the fdrs
+        permuted_fdr[p_real_index] <- nr_permuted_equal_or_better/length(permuted_ps)
+        # stop searching and move on to the next p
+        found_higher_perm <- T
+      }
+      # if the permuted p is worse than the original p
+      if(permuted_p > p_real){
+        # the last p value we saw was the last one that was better
+        nr_permuted_equal_or_better <- index_permuted - 1
+        # stop search here
+        found_higher_perm <- T
+        # add result to the fdrs
+        permuted_fdr[p_real_index] <- nr_permuted_equal_or_better/length(permuted_ps)
+        # stop searching and move on to the next p
+        found_higher_perm <- T
+      }
+      # otherwise we will move on to check the next permuted p
+      else{
+        index_permuted <- index_permuted+1
+      }
+    }
+    if(found_higher_perm == F){
+      permuted_fdr[p_real_index] <- 1
+    }
+    # both vectors are sorted by their size, as such we can keep continueing to search from where we left in the permuted vector, as the next real p will be of equal size or bigger
+  }
+  # add the FDRs we calculated
+  output_file$permuted_fdr <- permuted_fdr
+  # also add bonferoni
+  output_file$bonferroni <- p.adjust(output_file$p.value, method = 'bonferroni')
   # get the file without the extention
   output_file_name_cis_fdred <- sub('\\..[^\\.]*$', '', output_file_name_cis)
   # add new extention
   output_file_name_cis_fdred <- paste(output_file_name_cis_fdred, '.fdr.tsv', sep = '')
   # write the file
+  print('writing results with permuted FDR')
   write.table(output_file, output_file_name_cis_fdred, sep = '\t', row.names = F, col.names = T, quote = F)
 }
 
