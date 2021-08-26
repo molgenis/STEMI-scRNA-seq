@@ -657,7 +657,7 @@ if(do_all_ut_stemi_unconfined){
   maf <- 0.1
   permutation_rounds <- 20
   
-  cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
+  cell_typers=c('CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
   conditions <- c('UT_Baseline', 'UT_t24h', 'UT_t8w')
   
   permute_in_covar_group <- 'chem_V3'

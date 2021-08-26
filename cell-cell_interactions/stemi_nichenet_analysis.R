@@ -432,7 +432,7 @@ for(ct1 in names(v2_UT_vs_Baseline_perct_plots)){
 # do specifically for one cell type now
 v3_Baseline_vs_t24h_perct <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 't24h', 'Baseline', lr_network, weighted_networks, ligand_target_matrix)
 v3_Baseline_vs_t8w_perct <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 't8w', 'Baseline', lr_network, weighted_networks, ligand_target_matrix)
-v3_t8w_vs_Baseline_perct <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 'Baseline', 'UT', lr_network, weighted_networks, ligand_target_matrix)
+v3_UT_vs_Baseline_perct <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 'Baseline', 'UT', lr_network, weighted_networks, ligand_target_matrix)
 saveRDS(v3_Baseline_vs_t24h_perct, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_Baseline_vs_t24h_nichenet_onlymajors_perct.rds')
 saveRDS(v3_Baseline_vs_t8w_perct, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_Baseline_vs_t8w_nichenet_onlymajor_perct.rds')
 saveRDS(v3_UT_vs_Baseline_perct, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_UT_vs_Baseline_nichenet_onlymajor_perct.rds')
@@ -455,7 +455,7 @@ for(ct1 in names(v3_Baseline_vs_t8w_perct_plots)){
 # save the plots once again
 for(ct1 in names(v3_UT_vs_Baseline_perct_plots)){
   for(ct2 in names(v3_UT_vs_Baseline_perct_plots[[ct1]])){
-    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'nichenet_', 'Baseline_vs_t8w_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, heigh = 20, plot=v3_UT_vs_Baseline_perct_plots[[ct1]][[ct2]])
+    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'nichenet_', 'UT_vs_Baseline', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, heigh = 20, plot=v3_UT_vs_Baseline_perct_plots[[ct1]][[ct2]])
   }
 }
 
