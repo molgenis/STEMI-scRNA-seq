@@ -258,6 +258,61 @@ determine_fdr <- function(output_file_name_cis, permutation_rounds, do_smallest_
   write.table(output_file, output_file_name_cis_fdred, sep = '\t', row.names = F, col.names = T, quote = F)
 }
 
+determine_fdr_emp <- function(output_file_name_cis, permutation_rounds, verbose_number=NA){
+  # read the unpermuted file
+  output_file <- fread(paste(output_file_name_cis), sep = '\t', header = T, check.names = T)
+  # sort the p values
+  setorder(output_file, p.value)
+  # get the unique genes, this will be the order we will use when the order matters
+  genes <- unique(output_file[['gene']])
+  # grab the top effect per gene, because it is ordered, the first match is the one with the lowest p
+  ps_real <- as.vector(unlist(output_file[match(genes, output_file[['gene']]), 'p.value']))
+  # now reserve space for the p values
+  ps_permuted <- vector(mode = 'numeric', length = (length(genes) * permutation_rounds))
+  for(i in 1:permutation_rounds){
+    # read the file
+    permutation_round <- fread(paste(output_file_name_cis, '.permuted.', i, sep = ''), sep = '\t', header = T, check.names = T) # check.names T to keep compatibility between data.frame and data.table
+    # sort by p value
+    setorder(permutation_round, p.value)
+    # grab the top effect per gene, because it is ordered, the first match is the one with the lowest p
+    ps_permuted_round <- permutation_round[match(genes, permutation_round[['gene']]), 'p.value']
+    # determine where to fill the vector
+    end_pos <- i*length(genes)
+    start_pos <- ((i-1)*length(genes)) + 1
+  }
+  # sort the permuted p values
+  ps_permuted <- ps_permuted[order(ps_permuted)]
+  # we will have an FDR for each gene, so let's reserve space once again
+  gene_fdrs <- vector(mode = 'numeric', length = length(ps_real))
+  # check each variable
+  for(p_real_index in 1:length(ps_real)){
+    # check the proportion of P values that is better than in the permutations
+    nr_ps_permuted_better <- sum(ps_permuted <= ps_real[p_real_index])
+    # check how many were better than the actual ps, correcting for the number of permutations
+    fdr_gene <- nr_ps_permuted_better/length(genes)/permutation_rounds
+    # put this in our gene-based FDR vector
+    gene_fdrs[p_real_index] <- fdr_gene
+    # report on progress if that makes one happy
+    if(!is.na(verbose_number) & p_real_index %% verbose_number == 0){
+      print(paste('checked', p_real_index, 'genes'))
+    }
+  }
+  # put the gene and FDR in a datatable, remember we did this in the same order
+  fdr_table <- data.table(gene=genes, fdr_gene=gene_fdrs)
+  setkey(fdr_table, gene)
+  # merge with the output file we already have, datatables merge very efficiently
+  #setkey(output_file, cols=c('gene', 'SNP'))
+  output_file$FDR_gene <- as.vector(unlist(fdr_table[match(output_file[['gene']], fdr_table[['gene']]), 'fdr_gene']))
+  # also add bonferoni
+  output_file$bonferroni <- p.adjust(output_file$p.value, method = 'bonferroni')
+  # get the file without the extention
+  output_file_name_cis_fdred <- sub('\\..[^\\.]*$', '', output_file_name_cis)
+  # add new extention
+  output_file_name_cis_fdred <- paste(output_file_name_cis_fdred, '.fdr.tsv', sep = '')
+  # write the file
+  print('writing results with permuted gene FDR')
+  write.table(output_file, output_file_name_cis_fdred, sep = '\t', row.names = F, col.names = T, quote = F)
+}
 
 run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, covariates_file_loc_ct_cond, snps, snpspos, genepos, maf=0.1, permutation_rounds = 0, permute_in_covar_group=NULL, do_smallest_per_gene=T, gene_confinement=NULL, snp_confinement=NULL, snp_gene_confinement=NULL){
   # read covariate data
@@ -413,7 +468,7 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
   }
   #parallel::stopCluster(cl)
   if(permutation_rounds > 0){
-    determine_fdr(output_file_name_cis = output_file_name_cis_ct_cond, permutation_rounds = permutation_rounds, do_smallest_per_gene = do_smallest_per_gene)
+    determine_fdr_emp(output_file_name_cis = output_file_name_cis_ct_cond, permutation_rounds = permutation_rounds, do_smallest_per_gene = do_smallest_per_gene)
   }
 }
 
