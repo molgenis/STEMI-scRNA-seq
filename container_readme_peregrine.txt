@@ -1,13 +1,10 @@
-# set the group where we will store the image and the simulated disk
-GROUP=umcg-wijmenga
 # get the folder to store the image
-img_folder=/groups/${GROUP}/tmp01/users/${USER}/singularity/single_cell_container/
+img_folder=/data/${USER}/singularity/single_cell_container/
 # get the folder to store the simulated disk
-sim_disk=/groups/${GROUP}/tmp01/users/${USER}/singularity/single_cell_container/simulated_disk/
+sim_disk=/data/${USER}/singularity/single_cell_container//simulated_disk/
 
 # the paths accessible to the container, separated by a comma
-paths=,/groups/${GROUP}/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/\
-,/groups/umcg-bios/tmp01/projects/1M_cells_scRNAseq/ongoing/
+paths=,/data/${USER}/
 
 # create the simulated disk location
 mkdir -p ${sim_disk}
@@ -26,11 +23,11 @@ echo 'alias Rsingscript="singularity exec --bind '${sim_disk}':/home/'${USER}${p
 echo 'alias sccontainer="singularity shell --bind '${sim_disk}':/home/'${USER}${paths}' '${img_folder}'singlecell_container.simg"' >> /home/${USER}/.bashrc
 
 # in case you've never used singularity before
-mkdir -p ~/singularity
+#mkdir -p ~/singularity # if you do have this directory already, move everything to /data/${USER}/singularity/
 mkdir -p ~/.singularity
 # move the directories
-mv ~/singularity /groups/${GROUP}/tmp01/users/${USER}/
-mv ~/.singularity /groups/${GROUP}/tmp01/users/${USER}/
+mv ~/singularity /data/${USER}/
+mv ~/.singularity /data/${USER}/
 # symlink the directories
-ln -s /groups/${GROUP}/tmp01/users/${USER}/.singularity ~/.singularity
-ln -s /groups/${GROUP}/tmp01/users/${USER}/singularity ~/singularity
+ln -s /data/${USER}/.singularity ~/.singularity
+ln -s /data/${USER}/singularity ~/singularity

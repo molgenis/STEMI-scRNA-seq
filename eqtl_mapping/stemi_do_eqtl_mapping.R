@@ -84,71 +84,237 @@ do_QTL_mapping <- function(
   # release resources for the temporary file
 }
 
-determine_fdr <- function(output_file_name_cis, permutation_rounds, do_smallest_per_gene=T){
+determine_fdr <- function(output_file_name_cis, permutation_rounds, do_smallest_per_gene=T, use_datatable=T, verbose_number=NA){
   # we will add the permutation rounds together
   permutation_table <- NULL
   # we'll store the SNP and gene info separately, that's easier for the rowmeans
   snp_gene <- NULL
   for(i in 1:permutation_rounds){
-    # read the current round
-    #permutation_round <- fread(paste(output_file_name_cis, '.permuted.', i, sep = ''), sep = '\t', header = T)
-    # reset the order
-    permutation_round <- read.table(paste(output_file_name_cis, '.permuted.', i, sep = ''), sep = '\t', header = T, stringsAsFactors = F)
-    rownames(permutation_round) <- paste(permutation_round[['SNP']], permutation_round[['gene']], sep = '_')
-    # paste onto the rest of the output
-    if(is.null(permutation_table)){
-      #permutation_table <- data.frame(perm1 = permutation_round[['p-value']])
-      permutation_table <- permutation_round[, c('p.value'), drop = F]
-      permutation_table[['perm1']] <- permutation_round[['p.value']]
-      permutation_round[['p.value']] <- NULL
-      # set the rownames here as well
-      #rownames(permutation_table) <- rownames(permutation_round)
-      # we'll need this one later
-      snp_gene <- permutation_round[, c('SNP', 'gene')]
+    if(use_datatable){
+      # read the file
+      permutation_round <- fread(paste(output_file_name_cis, '.permuted.', i, sep = ''), sep = '\t', header = T, check.names = T) # check.names T to keep compatibility between data.frame and data.table
+      # remove columns we do not need
+      permutation_round[, beta:=NULL]
+      permutation_round[, t.stat:=NULL]
+      permutation_round[, FDR:=NULL]
+      # rename the p.value column
+      permutation_round[[paste('perm', i, sep='')]] <- permutation_round$p.value
+      permutation_round[, p.value:=NULL]
+      # set the key
+      setkey(permutation_round, SNP, gene)
+      # check if the first round
+      if(is.null(permutation_table)){
+        permutation_table <- permutation_round
+      }
+      else{
+        permutation_table <- merge(permutation_table, permutation_round, by=c('SNP', 'gene'), all=T)
+      }
     }
     else{
-      # grab the same snp-gene pairs
-      permutation_table[[paste('perm', i, sep = '')]] <- permutation_round[rownames(permutation_table), c('p.value'), drop = F]
+      # reset the order
+      permutation_round <- read.table(paste(output_file_name_cis, '.permuted.', i, sep = ''), sep = '\t', header = T, stringsAsFactors = F)
+      rownames(permutation_round) <- paste(permutation_round[['SNP']], permutation_round[['gene']], sep = '_')
+      # paste onto the rest of the output
+      if(is.null(permutation_table)){
+        #permutation_table <- data.frame(perm1 = permutation_round[['p-value']])
+        permutation_table <- permutation_round[, c('p.value'), drop = F]
+        permutation_table[['perm1']] <- permutation_round[['p.value']]
+        permutation_round[['p.value']] <- NULL
+        # we'll need this one later
+        snp_gene <- permutation_round[, c('SNP', 'gene')]
+      }
+      else{
+        # grab the same snp-gene pairs
+        permutation_table[[paste('perm', i, sep = '')]] <- permutation_round[rownames(permutation_table), c('p.value'), drop = F]
+      }
     }
   }
-  # calculate the average p-value
-  mean_p_permuted=rowMeans(permutation_table)
-  # add back the snp and gene info
-  permuted_table <- snp_gene
-  permuted_table[['perm']] <- mean_p_permuted
-  # order by significance
-  permuted_table <- permuted_table[order(permuted_table[['perm']]), ]
+  permuted_table <- NULL
+  print('creating mean permuted p per snp-probe')
+  if(use_datatable){
+    # fetch the SNP and gene columns
+    snps <- permutation_table[['SNP']]
+    genes <- permutation_table[['gene']]
+    # remove columns that interfere with the rownmeans
+    permutation_table[, SNP:=NULL]
+    permutation_table[, gene:=NULL]
+    # calculate the average p-value
+    mean_p_permuted=rowMeans(permutation_table)
+    # create data.table
+    permuted_table <- data.table(SNP=snps, gene=genes, perm=mean_p_permuted)
+    # order by significance
+    print('sorting by mean permuted p')
+    setorder(permuted_table, perm)
+  }
+  else{
+    # calculate the average p-value
+    mean_p_permuted=rowMeans(permutation_table)
+    # add back the snp and gene info
+    permuted_table <- snp_gene
+    permuted_table[['perm']] <- mean_p_permuted
+    # order by significance
+    print('sorting by mean permuted p')
+    permuted_table <- permuted_table[order(permuted_table[['perm']]), ]
+  }
   # filter to the best value per gene, if requested
   if(do_smallest_per_gene){
+    print('selecting lowest permutated p per gene')
     # we ordered the table, so the first entry found for a gene, should always be the most significant one
     permuted_table <- permuted_table[match(unique(permuted_table[['gene']]), permuted_table[['gene']]), ]
   }
   # now read the non-permuted file
-  #output_file <- fread(paste(output_file_name_cis), sep = '\t', header = T)
-  output_file <- read.table(paste(output_file_name_cis), sep = '\t', header = T, stringsAsFactors = F)
+  output_file <- fread(paste(output_file_name_cis), sep = '\t', header = T, check.names = T)
+  setorder(output_file, p.value)
+  #output_file <- read.table(paste(output_file_name_cis), sep = '\t', header = T, stringsAsFactors = F)
   # go through each row
-  output_file[['permuted_fdr']] <- apply(output_file, 1, function(x){
-    # grab the p-value
-    p_real <- x[['p.value']]
-    # get the number of permuted p values
-    nr_permuted_p <- nrow(permuted_table)
-    # check how many of these p values are smaller than the actual p
-    nr_permuted_p_smaller <- nrow(permuted_table[permuted_table[['perm']] < p_real, ])
-    # calculate the fraction of permuted Ps, that are smaller than your actual p
-    perm_fdr <- nr_permuted_p_smaller / nr_permuted_p
-    # that fraction is the chance that your p could come from the permuted distribution
-    return(perm_fdr)
-  })
+  print('determening permuted FDR for each SNP-probe combination')
+  #output_file[['permuted_fdr']] <- apply(output_file, 1, function(x){
+  #  # grab the p-value
+  #  p_real <- as.numeric(x[['p.value']])
+  #  # skip the ones that can't possibly be significant
+  #  if(p_real == 1){
+  #    return(1)
+  #  }
+  #  else{
+  #    # get the number of permuted p values
+  #    nr_permuted_p <- nrow(permuted_table)
+  #    # check how many of these p values are smaller than the actual p
+  #    #nr_permuted_p_smaller <- nrow(permuted_table[permuted_table[['perm']] <= p_real, ])
+  #    # get the first index where a permuted variable is as good or better than the actual p
+  #    first_better_perm_p <- get_first_index_at_cutoff(permuted_table[['perm']], p_real)
+  #    # substract one, because the indexing starts at 1, but that is the first time the evaluation failed
+  #    nr_permuted_p_smaller <- first_better_perm_p - 1
+  #    # calculate the fraction of permuted Ps, that are smaller than your actual p
+  #    perm_fdr <- nr_permuted_p_smaller / nr_permuted_p
+  #    # that fraction is the chance that your p could come from the permuted distribution
+  #    return(perm_fdr)
+  #  }
+  #})
+  # create vector to hold the calculated FDRs
+  permuted_fdr <- vector(mode='numeric', length=nrow(output_file))
+  # grab only the permuted p-values
+  permuted_ps <- permuted_table$perm
+  # get the real ps
+  real_ps <- output_file$p.value
+  # because our actual variables are also sorted, we can keep track of where we were in the permuted set as well
+  index_permuted <- 1
+  # check each variable
+  for(p_real_index in 1:length(real_ps)){
+    # set when to stop
+    found_higher_perm <- F
+    # grab the actual p value
+    p_real <- real_ps[p_real_index]
+    # check each permuted variable whether or not it is better
+    while(found_higher_perm == F & index_permuted <= length(permuted_ps)){
+      # grab the permuted p
+      permuted_p <- permuted_ps[index_permuted]
+      # check if the same
+      if(permuted_p == p_real){
+        # go until you see a new P value
+        if(index_permuted != length(permuted_ps) & permuted_p == permuted_ps[index_permuted+1]){
+          # we can just skip to the next one
+          index_permuted <- index_permuted+1
+        }
+        # if the next is a new value, this is the number that was better or equal
+        nr_permuted_equal_or_better <- index_permuted
+        # stop search here
+        found_higher_perm <- T
+        # add result to the fdrs
+        permuted_fdr[p_real_index] <- nr_permuted_equal_or_better/length(permuted_ps)
+        # stop searching and move on to the next p
+        found_higher_perm <- T
+      }
+      # if the permuted p is worse than the original p
+      if(permuted_p > p_real){
+        # the last p value we saw was the last one that was better
+        nr_permuted_equal_or_better <- index_permuted - 1
+        # stop search here
+        found_higher_perm <- T
+        # add result to the fdrs
+        permuted_fdr[p_real_index] <- nr_permuted_equal_or_better/length(permuted_ps)
+        # stop searching and move on to the next p
+        found_higher_perm <- T
+      }
+      # otherwise we will move on to check the next permuted p
+      else{
+        index_permuted <- index_permuted+1
+      }
+    }
+    if(found_higher_perm == F){
+      permuted_fdr[p_real_index] <- 1
+    }
+    # both vectors are sorted by their size, as such we can keep continueing to search from where we left in the permuted vector, as the next real p will be of equal size or bigger
+  }
+  # add the FDRs we calculated
+  output_file$permuted_fdr <- permuted_fdr
+  # also add bonferoni
+  output_file$bonferroni <- p.adjust(output_file$p.value, method = 'bonferroni')
   # get the file without the extention
   output_file_name_cis_fdred <- sub('\\..[^\\.]*$', '', output_file_name_cis)
   # add new extention
   output_file_name_cis_fdred <- paste(output_file_name_cis_fdred, '.fdr.tsv', sep = '')
   # write the file
+  print('writing results with permuted FDR')
   write.table(output_file, output_file_name_cis_fdred, sep = '\t', row.names = F, col.names = T, quote = F)
 }
 
+determine_fdr_emp <- function(output_file_name_cis, permutation_rounds, verbose_number=NA){
+  # read the unpermuted file
+  output_file <- fread(paste(output_file_name_cis), sep = '\t', header = T, check.names = T)
+  # sort the p values
+  setorder(output_file, p.value)
+  # get the unique genes, this will be the order we will use when the order matters
+  genes <- unique(output_file[['gene']])
+  # grab the top effect per gene, because it is ordered, the first match is the one with the lowest p
+  ps_real <- as.vector(unlist(output_file[match(genes, output_file[['gene']]), 'p.value']))
+  # now reserve space for the p values
+  ps_permuted <- vector(mode = 'numeric', length = (length(genes) * permutation_rounds))
+  for(i in 1:permutation_rounds){
+    # read the file
+    permutation_round <- fread(paste(output_file_name_cis, '.permuted.', i, sep = ''), sep = '\t', header = T, check.names = T) # check.names T to keep compatibility between data.frame and data.table
+    # sort by p value
+    setorder(permutation_round, p.value)
+    # grab the top effect per gene, because it is ordered, the first match is the one with the lowest p
+    ps_permuted_round <- permutation_round[match(genes, permutation_round[['gene']]), 'p.value']
+    # determine where to fill the vector
+    end_pos <- i*length(genes)
+    start_pos <- ((i-1)*length(genes)) + 1
+  }
+  # sort the permuted p values
+  ps_permuted <- ps_permuted[order(ps_permuted)]
+  # we will have an FDR for each gene, so let's reserve space once again
+  gene_fdrs <- vector(mode = 'numeric', length = length(ps_real))
+  # check each variable
+  for(p_real_index in 1:length(ps_real)){
+    # check the proportion of P values that is better than in the permutations
+    nr_ps_permuted_better <- sum(ps_permuted <= ps_real[p_real_index])
+    # check how many were better than the actual ps, correcting for the number of permutations
+    fdr_gene <- nr_ps_permuted_better/length(genes)/permutation_rounds
+    # put this in our gene-based FDR vector
+    gene_fdrs[p_real_index] <- fdr_gene
+    # report on progress if that makes one happy
+    if(!is.na(verbose_number) & p_real_index %% verbose_number == 0){
+      print(paste('checked', p_real_index, 'genes'))
+    }
+  }
+  # put the gene and FDR in a datatable, remember we did this in the same order
+  fdr_table <- data.table(gene=genes, fdr_gene=gene_fdrs)
+  setkey(fdr_table, gene)
+  # merge with the output file we already have, datatables merge very efficiently
+  #setkey(output_file, cols=c('gene', 'SNP'))
+  output_file$FDR_gene <- as.vector(unlist(fdr_table[match(output_file[['gene']], fdr_table[['gene']]), 'fdr_gene']))
+  # also add bonferoni
+  output_file$bonferroni <- p.adjust(output_file$p.value, method = 'bonferroni')
+  # get the file without the extention
+  output_file_name_cis_fdred <- sub('\\..[^\\.]*$', '', output_file_name_cis)
+  # add new extention
+  output_file_name_cis_fdred <- paste(output_file_name_cis_fdred, '.fdr.tsv', sep = '')
+  # write the file
+  print('writing results with permuted gene FDR')
+  write.table(output_file, output_file_name_cis_fdred, sep = '\t', row.names = F, col.names = T, quote = F)
+}
 
-run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, covariates_file_loc_ct_cond, snps, snpspos, genepos, maf=0.1, permutation_rounds = 0, permute_in_covar_group=NULL, do_smallest_per_gene=T, gene_confinement=NULL, snp_confinement=NULL){
+run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, covariates_file_loc_ct_cond, snps, snpspos, genepos, maf=0.1, permutation_rounds = 0, permute_in_covar_group=NULL, do_smallest_per_gene=T, gene_confinement=NULL, snp_confinement=NULL, snp_gene_confinement=NULL){
   # read covariate data
   covariates_ct_cond <- fread(covariates_file_loc_ct_cond, sep = '\t', header = T, stringsAsFactors=FALSE)
   # read the expression data
@@ -160,7 +326,10 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
   if(!is.null(snp_confinement)){
     snps <- snps[!is.na(snps$id) & snps$id %in% snp_confinement, ]
   }
-
+  if(!is.null(snp_gene_confinement)){
+    snps <- snps[!is.na(snps$id) & snps$id %in% snp_gene_confinement[[1]], ]
+    expressions_ct_cond <- expressions_ct_cond[!is.na(expressions_ct_cond$id) & expressions_ct_cond$id %in% snp_gene_confinement[[2]], ]
+  }
   # get the participants that we have both expression and snps data for
   participants_ct_cond <- intersect(colnames(snps)[2:ncol(snps)], colnames(expressions_ct_cond)[2:ncol(expressions_ct_cond)])
   # get also overlap with the covariates data
@@ -203,6 +372,19 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
     covariates_file_name=covariates_file_name_ct_cond, # Covariates file name
     cisDist = 100000
   )
+  if(!is.null(snp_gene_confinement)){
+    # because MatrixEQTL doesn't have snp+gene confinements, we need to do filtering after the fact
+    result <- read.table(output_file_name_cis_ct_cond, header = T, sep = '\t', stringsAsFactors = F, check.names = F)
+    # pasting SNP and gene together, allows us to filter
+    result$snp_probe <- paste(result$SNP, result$gene, sep = '_')
+    result <- result[result$snp_probe %in% paste(snp_gene_confinement[[1]], snp_gene_confinement[[2]], sep = '_'), ]
+    # remove the column used for this filtering
+    result$snp_probe <- NULL
+    # recalculate the fdr that MatrixEQTL does (n is different after filtering)
+    result$FDR <- p.adjust(result[['p-value']], method = 'fdr')
+    # rewrite the result
+    write.table(result, output_file_name_cis_ct_cond, sep = '\t', row.names = F, col.names = T) 
+  }
   # convert data tables to data frames
   expressions_ct_cond <- data.frame(expressions_ct_cond)
   covariates_ct_cond <- data.frame(covariates_ct_cond)
@@ -270,10 +452,23 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
       covariates_file_name=covariate_file_name_ct_cond_permuted, # Covariates file name
       cisDist = 100000
     )
+    if(!is.null(snp_gene_confinement)){
+      # because MatrixEQTL doesn't have snp+gene confinements, we need to do filtering after the fact
+      perm_result <- read.table(output_file_name_cis_ct_cond_permuted, header = T, sep = '\t', stringsAsFactors = F, check.names = F)
+      # pasting SNP and gene together, allows us to filter
+      perm_result$snp_probe <- paste(perm_result$SNP, perm_result$gene, sep = '_')
+      perm_result <- perm_result[perm_result$snp_probe %in% paste(snp_gene_confinement[[1]], snp_gene_confinement[[2]], sep = '_'), ]
+      # remove the column used for this filtering
+      perm_result$snp_probe <- NULL
+      # recalculate the fdr that MatrixEQTL does (n is different after filtering)
+      perm_result$FDR <- p.adjust(perm_result[['p-value']], method = 'fdr')
+      # rewrite the result
+      write.table(perm_result, output_file_name_cis_ct_cond_permuted, sep = '\t', row.names = F, col.names = T)  
+    }
   }
   #parallel::stopCluster(cl)
   if(permutation_rounds > 0){
-    determine_fdr(output_file_name_cis = output_file_name_cis_ct_cond, permutation_rounds = permutation_rounds, do_smallest_per_gene = do_smallest_per_gene)
+    determine_fdr_emp(output_file_name_cis = output_file_name_cis_ct_cond, permutation_rounds = permutation_rounds, do_smallest_per_gene = do_smallest_per_gene)
   }
 }
 
@@ -286,6 +481,8 @@ perform_qtl_mapping <- function(snps_loc, snps_location_file_name, gene_location
   genepos = fread(gene_location_file_name, header = TRUE, stringsAsFactors = FALSE);
   # confinement of genes
   gene_confinement <- NULL
+  # confinement of snp_gene combinations
+  snp_gene_confinement <- NULL
   # filter by confinement
   if(!is.null(confinement_file_name)){
     # read the table
@@ -298,6 +495,8 @@ perform_qtl_mapping <- function(snps_loc, snps_location_file_name, gene_location
     if(ncol(confinement) > 1){
       # get the genes
       gene_confinement <- confinement$V2
+      # and set the combination of snp-gene confinement
+      snp_gene_confinement <- confinement
     }
   }
   for(cell_type in cell_typers){
@@ -307,7 +506,7 @@ perform_qtl_mapping <- function(snps_loc, snps_location_file_name, gene_location
       output_file_name_cis_ct_cond <- paste(output_file_name_cis_prepend, condition, '/',  cell_type, output_file_name_cis_append, sep = '')
       covariates_file_loc_ct_cond <- paste(covariates_file_name_prepend, condition, '/',  cell_type, covariates_file_name_append, sep = '')
       # do the mapping
-      run_qtl_mapping(features_loc_ct_cond, output_file_name_cis_ct_cond, covariates_file_loc_ct_cond, snps, snpspos, genepos, maf, permutation_rounds = permutation_rounds , permute_in_covar_group = permute_in_covar_group, do_smallest_per_gene = do_smallest_per_gene, gene_confinement=gene_confinement)
+      run_qtl_mapping(features_loc_ct_cond, output_file_name_cis_ct_cond, covariates_file_loc_ct_cond, snps, snpspos, genepos, maf, permutation_rounds = permutation_rounds , permute_in_covar_group = permute_in_covar_group, do_smallest_per_gene = do_smallest_per_gene, gene_confinement=gene_confinement, snp_gene_confinement = snp_gene_confinement)
     }
   }
 }
@@ -419,7 +618,7 @@ if(do_all_stemi_meta){
   cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
   conditions <- c('Baseline', 't24h', 't8w')
   
-  permute_in_covar_group <- 'chem'
+  permute_in_covar_group <- 'chem_V3'
   
   perform_qtl_mapping(snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append, output_file_name_cis_append, covariates_file_name_append, confinement_file_name, permutation_rounds = permutation_rounds, permute_in_covar_group=permute_in_covar_group, cell_typers=cell_typers, conditions=conditions)
 }
@@ -450,7 +649,7 @@ if(do_all_ut_stemi){
   cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
   conditions <- c('UT_Baseline', 'UT_t24h', 'UT_t8w', 'UT')
   
-  permute_in_covar_group <- 'chem'
+  permute_in_covar_group <- 'chem_V3'
   #snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append
   perform_qtl_mapping(snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append, output_file_name_cis_append, covariates_file_name_append, confinement_file_name, permutation_rounds = permutation_rounds, permute_in_covar_group=permute_in_covar_group, cell_typers=cell_typers, conditions=conditions)
 }
@@ -513,7 +712,7 @@ if(do_all_ut_stemi_unconfined){
   maf <- 0.1
   permutation_rounds <- 20
   
-  cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
+  cell_typers=c('CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
   conditions <- c('UT_Baseline', 'UT_t24h', 'UT_t8w')
   
   permute_in_covar_group <- 'chem_V3'
