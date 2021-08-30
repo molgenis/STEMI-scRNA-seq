@@ -275,10 +275,12 @@ determine_fdr_emp <- function(output_file_name_cis, permutation_rounds, verbose_
     # sort by p value
     setorder(permutation_round, p.value)
     # grab the top effect per gene, because it is ordered, the first match is the one with the lowest p
-    ps_permuted_round <- permutation_round[match(genes, permutation_round[['gene']]), 'p.value']
+    ps_permuted_round <- as.vector(unlist(permutation_round[match(genes, permutation_round[['gene']]), 'p.value']))
     # determine where to fill the vector
     end_pos <- i*length(genes)
     start_pos <- ((i-1)*length(genes)) + 1
+    # add the p values
+    ps_permuted[start_pos:end_pos] <- ps_permuted_round
   }
   # sort the permuted p values
   ps_permuted <- ps_permuted[order(ps_permuted)]
@@ -712,7 +714,7 @@ if(do_all_ut_stemi_unconfined){
   maf <- 0.1
   permutation_rounds <- 20
   
-  cell_typers=c('CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
+  cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
   conditions <- c('UT_Baseline', 'UT_t24h', 'UT_t8w')
   
   permute_in_covar_group <- 'chem_V3'
