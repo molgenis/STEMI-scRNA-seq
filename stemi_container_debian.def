@@ -81,6 +81,7 @@ Include: vim
   /opt/anaconda3/bin/conda create -n scvelo_env scvelo=0.2.3 python=3.7
   /opt/anaconda3/bin/conda create -n scrublet_env scrublet=0.2.3 python=3.7
   /opt/anaconda3/bin/conda init bash
+  #########################
   # install java tools    #
   #########################
   wget -qO - https://adoptopenjdk.jfrog.io/adoptopenjdk/api/gpg/key/public | apt-key add - # the key for openjdk
@@ -125,16 +126,85 @@ Include: vim
   chmod u+x /opt/plink/plink
   ln -s /opt/plink/plink /usr/local/bin/plink
   rm plink_linux_x86_64_20210606.zip
-  curl -O https://s3.amazonaws.com/plink2-assets/plink2_linux_x86_64_20210816.zip
+  curl -O https://s3.amazonaws.com/plink2-assets/plink2_linux_x86_64_20210826.zip
   mkdir -p /opt/plink2
-  unzip -o plink2_linux_x86_64_20210816.zip -d /opt/plink2/
+  unzip -o plink2_linux_x86_64_20210826.zip -d /opt/plink2/
   chmod u+x /opt/plink2/plink2
   ln -s /opt/plink2/plink2 /usr/local/bin/plink2
-  rm plink2_linux_x86_64_20210816.zip
+  rm plink2_linux_x86_64_20210826.zip
   #########################
   # install bcftools      #
   #########################
   apt --yes install bcftools
+  #########################
+  # install Demuxlet      #
+  #########################
+  apt --yes install libbz2-dev
+  # we need a reference to libcurl3
+  mkdir ~/libcurl3 && cd ~/libcurl3
+  #apt download -o=dir::cache=~/libcurl3 libcurl3
+  #ar x libcurl3* data.tar.xz
+  #tar xf data.tar.xz
+  #cp -L ~/libcurl3/usr/lib/x86_64-linux-gnu/libcurl.so.4 /usr/lib/libcurl.so.3
+  #cd ../ && rm -rf ~/libcurl3
+  # htslib is a dependency on Demuxlet, and we need version 1.10
+  git clone https://github.com/samtools/htslib.git
+  cd ./htslib/
+  git checkout fd0f89554459b78c07303e2c8a42acacd6851b46
+  autoreconf -i
+  ./configure --prefix=/opt/
+  make
+  make install
+  cd ../
+  # now actually install Demuxlet
+  git clone https://github.com/statgen/demuxlet.git
+  cd ./demuxlet/
+  git checkout f5044eb9ed5c6678aa3a80a8f2be7db7748ee732
+  autoreconf -vfi
+  ./configure --prefix=/opt/
+  make
+  #make install
+  cd ../
+  # make symlink
+  #ln -s /opt/demuxlet/demuxlet /usr/local/bin/demuxlet
+  #########################
+  # install FastQTL       #
+  #########################
+  # we need GSL
+  apt --yes install libgsl-dev
+  # zlib as well
+  apt --yes install zlib1g
+  # download R source for the math lib
+  wget https://cran.r-project.org/src/base/R-4/R-4.1.1.tar.gz
+  # extract
+  tar xzvf R-4.1.1.tar.gz
+  # go into folder
+  cd R-4.1.1
+  # configure make file
+  ./configure --with-readline=no --with-x=no
+  # go into math folder
+  cd src/nmath/standalone
+  # make
+  make
+  # go back two levels
+  cd ../../
+  # set the R-Math as a variable
+  RMATH=$(pwd)
+  # go up to the home folder
+  cd ../../
+  # download FastQTL
+  wget http://fastqtl.sourceforge.net/files/FastQTL-2.184.linux.tgz
+  tar zxvf FastQTL-2.184.linux.tgz
+  cd ./FastQTL-2.184.linux/
+  make cleanall && make
+  # create directory to store compiled binary
+  mkdir -p /opt/fastqtl/bin/
+  # copy created binary into correct folder
+  cp ./bin/fastQTL.static /opt/fastqtl/bin/
+  # make executable
+  chmod u+x /opt/fastqtl/bin/fastQTL.static
+  # link to usr/bin so it can be found
+  ln -s /opt/fastqtl/fastQTL.static /usr/local/bin/fastQTL.static
   #########################
   # install R libraries   #
   #########################
@@ -253,5 +323,27 @@ Include: vim
   R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/DESeq2_1.32.0.tar.gz", repos=NULL)'
   R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/pcaMethods_1.84.0.tar.gz", repos=NULL)'
   R --slave -e 'devtools::install_github("velocyto-team/velocyto.R", ref="83e6ed92c2d9c9640122dcebf8ebbb5788165a21")'
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/SingleR_1.6.1.tar.gz", repos=NULL)'
+  R --slave -e 'devtools::install_github("carmonalab/UCell", ref="9f70daa5ce82ffb2fca4fb1599d939bf03eba9fe")'
   #R --slave -e 'devtools::install_github("leeshawn/MetaSKAT", ref="c0b63c1961a8d772842d4a5004330d273a8aeb43")'
   #R --slave -e 'devtools::install_github("weizhouUMICH/SAIGE", ref="648850f38ed8f2d187af6a0587cb078fa3233ec6")'
+  # check if everything could be loaded
+  echo '
+  library(Seurat)
+  library(MAST)
+  library(limma)
+  library(DESeq2)
+  library(VariantAnnotation)
+  library(CellChat)
+  library(nichenetr)
+  library(velocyto.R)
+  library(harmony)
+  library(MatrixEQTL)
+  library(Rphenograph)
+  library(UCell)
+  library(SingleR)
+  ' > library_check.R
+  # if this script fails then the installation of one of the R libraries failed
+  Rscript ./library_check.R
+  # clean up
+  rm library_check.R
