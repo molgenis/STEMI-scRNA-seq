@@ -470,7 +470,7 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
   }
   #parallel::stopCluster(cl)
   if(permutation_rounds > 0){
-    determine_fdr_emp(output_file_name_cis = output_file_name_cis_ct_cond, permutation_rounds = permutation_rounds, do_smallest_per_gene = do_smallest_per_gene)
+    determine_fdr_emp(output_file_name_cis = output_file_name_cis_ct_cond, permutation_rounds = permutation_rounds)
   }
 }
 
