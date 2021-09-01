@@ -325,10 +325,14 @@ Include: vim
   R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/DESeq2_1.32.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/pcaMethods_1.84.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'devtools::install_github("velocyto-team/velocyto.R", ref="83e6ed92c2d9c9640122dcebf8ebbb5788165a21")' ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/sparseMatrixStats_1.4.2.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/DelayedMatrixStats_1.14.3.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'remotes::install_version("RcppHNSW", "0.3.0", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocNeighbors_1.10.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocSingular_1.8.1.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'remotes::install_version("rsvd", "1.0.5", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/ScaledMatrix_1.0.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/beachmat_2.8.1.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocSingular_1.8.1.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/SingleR_1.6.1.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'devtools::install_github("carmonalab/UCell", ref="9f70daa5ce82ffb2fca4fb1599d939bf03eba9fe")' ./r_lib_install_log.txt
   #R --slave -e 'devtools::install_github("leeshawn/MetaSKAT", ref="c0b63c1961a8d772842d4a5004330d273a8aeb43")' ./r_lib_install_log.txt
