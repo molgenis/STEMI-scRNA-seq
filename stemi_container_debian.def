@@ -192,6 +192,8 @@ Include: vim
   RMATH=$(pwd)
   # go up to the home folder
   cd ../../
+  # softlink libgsl, as the appended 0 is no longer used
+  ln -s /usr/lib/x86_64-linux-gnu/libgsl.so /usr/lib/x86_64-linux-gnu/libgsl.so.0
   # download FastQTL
   wget http://fastqtl.sourceforge.net/files/FastQTL-2.184.linux.tgz
   tar zxvf FastQTL-2.184.linux.tgz
