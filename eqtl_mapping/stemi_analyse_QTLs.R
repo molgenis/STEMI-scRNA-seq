@@ -266,6 +266,8 @@ plot_egene_sharing_per_celltype <- function(output_loc, cell_types=c('B', 'CD4T'
   empty.intersections <-  NULL
   # default color
   sets.bar.color <- 'black'
+  # upset has a bug with empty intersections
+  dont_colour <- F
   # set coloured bars for the wholly unique cell types
   if(use_color_dict){
     queries <- list()
@@ -284,8 +286,10 @@ plot_egene_sharing_per_celltype <- function(output_loc, cell_types=c('B', 'CD4T'
       queries[[i]] <- ct_list
       # check for exclusivity, there is a bug with colouring of empty intersections
       is_exclusive <- check_exclusivity(egenes_per_ct, cell_type)
-      if(is_exclusive){
+      if(!is_exclusive){
         empty.intersections <- "on"
+        # we can't colour with empty intersections unfortunately
+        dont_colour <- T
       }
       # add for the DF to order the set sizes
       numbers_row <- data.frame(ct=c(cell_type), nr=c(length(egenes_per_ct[[cell_type]])), stringsAsFactors = F)
@@ -301,6 +305,10 @@ plot_egene_sharing_per_celltype <- function(output_loc, cell_types=c('B', 'CD4T'
     # add the colors for the sets
     sets.bar.color <- unlist(get_color_coding_dict()[ordered_cts])
   }
+  # if there are empty queries, we sadly have to forego the colouring, as there is but in upsetr with these
+  if(dont_colour){
+    queries <- NULL
+  }
   return(upset(fromList(egenes_per_ct), order.by = 'freq', nsets = length(names(egenes_per_ct)), queries = queries, sets.bar.color=sets.bar.color, empty.intersections = empty.intersections))
 }
 
@@ -312,7 +320,6 @@ plot_egene_sharing_per_condition <- function(output_loc, append, conditions=c('U
   if(use_label_dict){
     names(egenes_per_condition) <- label_dict()[names(egenes_per_condition)]
   }
-  print(names(egenes_per_condition))
   # if colouring this list is filled
   queries <- NULL
   # this parameter must be supplied due to a bug
@@ -357,6 +364,35 @@ plot_egene_sharing_per_condition <- function(output_loc, append, conditions=c('U
   return(upset(fromList(egenes_per_condition), order.by = 'freq', nsets = length(names(egenes_per_condition)), queries = queries, sets.bar.color=sets.bar.color, empty.intersections = empty.intersections))
 }
 
+
+plot_egene_sharing_per_condition_allct <- function(output_loc, append, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), conditions=c('UT', 'UT_Baseline', 'UT_t24h', 'UT_t8w'), pval_column='p.value', pval_cutoff=0.05, only_gene_fdr=T, gene_fdr_column='FDR_gene', use_label_dict=T, use_color_dict=T){
+  # make plot for all cell types
+  plot_per_cell_type <- list()
+  # go through the cell types
+  for(cell_type in cell_types){
+    # set up the append that we will supply
+    ct_append <- paste(cell_type, append, sep = '')
+    plot_ct <- plot_egene_sharing_per_condition(output_loc = output_loc, append = ct_append, conditions = conditions, pval_column = pval_column, pval_cutoff = pval_cutoff, only_gene_fdr = only_gene_fdr, gene_fdr_column = gene_fdr_column, use_label_dict = use_label_dict, use_color_dict = use_color_dict)
+    # put the plot in the list
+    plot_per_cell_type[[cell_type]] <- plot_ct
+  }
+  return(plot_per_cell_type)
+}
+
+plot_egene_sharing_per_celltype_allcond <- function(output_loc, conditions=c('UT', 'UT_Baseline', 'UT_t24h', 'UT_t8w'), cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), pval_column='p.value', pval_cutoff=0.05, only_gene_fdr=T, gene_fdr_column='FDR_gene', use_label_dict=T, use_color_dict=T){
+  # make the plot for each condition
+  plot_per_condition <- list()
+  # go through the conditions
+  for(condition in conditions){
+    # set up the path for this specific condition
+    output_loc_condition <- paste(output_loc, condition, '/', sep = '')
+    # make the plots
+    plot_condition <- plot_egene_sharing_per_celltype(output_loc = output_loc_condition, cell_types = cell_types, pval_column = pval_column, pval_cutoff = pval_cutoff, only_gene_fdr = only_gene_fdr, gene_fdr_column = gene_fdr_column, use_label_dict = use_label_dict, use_color_dict = use_color_dict)
+    # put in the list
+    plot_per_condition[[condition]] <- plot_condition
+  }
+  return(plot_per_condition)
+}
 
 get_color_coding_dict <- function(){
   # set the condition colors
@@ -487,6 +523,20 @@ label_dict <- function(){
   label_dict[["dnT"]] <- "double negative T"
   return(label_dict)
 }
+
+
+
+
+# plot locations
+egene_sharing_ct_loc <- '/data/cardiology/eQTL_mapping/plots/MatrixEQTL/stemi_and_1mut_lowerres_20210629_eqtlgenlead/egene_sharing_ct/'
+egene_sharing_cond_loc <- '/data/cardiology/eQTL_mapping/plots/MatrixEQTL/stemi_and_1mut_lowerres_20210629_eqtlgenlead/egene_sharing_cond/'
+# location of output
+eqtl_output <- '/data/cardiology/eQTL_mapping/results/MatrixEQTL/stemi_and_1mut_lowerres_20210629_eqtlgenlead/'
+
+# get the condition sharing in each cell type
+condition_sharing_per_ct <- plot_egene_sharing_per_condition_allct(eqtl_output, '.cis.fdr.tsv', conditions = c('UT_Baseline', 'UT_t24h', 'UT_t8w'))
+# get the cell type sharing in each condition
+condition_sharing_per_cond <- plot_egene_sharing_per_celltype_allcond(eqtl_output, conditions = c('UT_Baseline', 'UT_t24h', 'UT_t8w'))
 
 # load object
 #cardio.stemi <- readRDS('/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/cardio.stemi.20210611.combatcorrected.rds')
