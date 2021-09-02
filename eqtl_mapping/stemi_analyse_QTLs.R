@@ -230,6 +230,7 @@ get_matrixeqtl_egenes_per_cell_type <- function(output_loc, cell_types=c('B', 'C
   return(egenes_per_ct)
 }
 
+
 get_matrixeqtl_egenes_per_condition <- function(output_loc, append, conditions=c('UT', 'UT_Baseline', 'UT_t24h', 'UT_t8w'), pval_column='p.value', pval_cutoff=0.05, only_gene_fdr=T, gene_fdr_column='FDR_gene'){
   # 
   egenes_per_condition <- list()
@@ -252,6 +253,7 @@ get_matrixeqtl_egenes_per_condition <- function(output_loc, append, conditions=c
   }
   return(egenes_per_condition)
 }
+
 
 plot_egene_sharing_per_celltype <- function(output_loc, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), pval_column='p.value', pval_cutoff=0.05, only_gene_fdr=T, gene_fdr_column='FDR_gene', use_label_dict=T, use_color_dict=T){
   # get the 
@@ -393,6 +395,35 @@ plot_egene_sharing_per_celltype_allcond <- function(output_loc, conditions=c('UT
   }
   return(plot_per_condition)
 }
+
+
+plot_concordance <- function(qtl_output_1, qtl_output_2, snp_column_1, snp_column_2, probe_column_1, probe_column_2, score_column_1, score_column_2, significance_column_1, significance_column_2, assessed_allele_column_1, assessed_allele_column_2){
+  # read the tables
+  qtls_1 <- fread(qtl_output_1)
+  qtls_2 <- fread(qtl_output_2)
+  # add columns with standardised names
+  qtls_1$SNP <- qtls_1[[snp_column_1]]
+  qtls_2$SNP <- qtls_2[[snp_column_2]]
+  qtls_1$probe <- qtls_1[[probe_column_1]]
+  qtls_2$probe <- qtls_2[[probe_column_2]]
+  qtls_1$score_1 <- qtls_1[[score_column_1]]
+  qtls_2$score_2 <- qtls_2[[score_column_2]]
+  qtls_1$significance_1 <- qtls_1[[significance_column_1]]
+  qtls_2$significance_2 <- qtls_2[[significance_column_2]]
+  qtls_1$allele_assessed_1 <- qtls_1[[assessed_allele_column_1]]
+  qtls_2$allele_assessed_2 <- qtls_2[[assessed_allele_column_2]]
+  # subset to what we need, thus speeding it all up
+  qtls_1 <- qtls_1[, c('SNP', 'probe', 'allele_assesed_1', 'score_1', 'significance_1'), with=F]
+  qtls_2 <- qtls_2[, c('SNP', 'probe', 'allele_assesed_2', 'score_2', 'significance_2'), with=F]
+  # set keys for easy joining
+  setkey(qtls_1, SNP, probe)
+  setkey(qtls_2, SNP, probe)
+  qtls <- qtls_1[qtls_2]
+  # correct for direction
+  qtls[qtls$allele_assesed_1 != qtls$allele_assesed_2, 'score_1', with=F] <- qtls[qtls$allele_assesed_1 != qtls$allele_assesed_2, 'score_1', with=F] * -1
+  # TODO continue and plot here
+}
+
 
 get_color_coding_dict <- function(){
   # set the condition colors
