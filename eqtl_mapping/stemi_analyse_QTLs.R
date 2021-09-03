@@ -207,13 +207,13 @@ check_exclusivity <- function(list_of_vectors, exclusivity_list){
 
 
 
-get_matrixeqtl_egenes_per_cell_type <- function(output_loc, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), pval_column='p.value', pval_cutoff=0.05, only_gene_fdr=T, gene_fdr_column='FDR_gene'){
+get_matrixeqtl_egenes_per_cell_type <- function(output_loc, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), pval_column='p.value', pval_cutoff=0.05, only_gene_fdr=T, gene_fdr_column='FDR_gene', file_append='.cis.fdr.gt.tsv'){
   # 
   egenes_per_ct <- list()
   # check each cell type
   for(cell_type in cell_types){
     # build the full eQTL path
-    eqtl_path <- paste(output_loc, cell_type, '.cis.fdr.tsv', sep = '')
+    eqtl_path <- paste(output_loc, cell_type, file_append, sep = '')
     # read the output file
     eqtl_output <- read.table(eqtl_path, sep = '\t', header = T, stringsAsFactors = F)
     # subset to the egenes
@@ -397,7 +397,7 @@ plot_egene_sharing_per_celltype_allcond <- function(output_loc, conditions=c('UT
 }
 
 
-plot_concordance <- function(qtl_output_1, qtl_output_2, snp_column_1, snp_column_2, probe_column_1, probe_column_2, score_column_1, score_column_2, significance_column_1, significance_column_2, assessed_allele_column_1, assessed_allele_column_2){
+plot_concordance <- function(qtl_output_1, qtl_output_2, snp_column_1, snp_column_2, probe_column_1, probe_column_2, score_column_1, score_column_2, significance_column_1, significance_column_2, assessed_allele_column_1, assessed_allele_column_2, xlab='qtl1', ylab='qtl2', main='qtl 1 vs qtl 2', group_1_name='qtls 1', group_2_name='qtls 2', paper_style=F){
   # read the tables
   qtls_1 <- fread(qtl_output_1)
   qtls_2 <- fread(qtl_output_2)
@@ -413,15 +413,51 @@ plot_concordance <- function(qtl_output_1, qtl_output_2, snp_column_1, snp_colum
   qtls_1$allele_assessed_1 <- qtls_1[[assessed_allele_column_1]]
   qtls_2$allele_assessed_2 <- qtls_2[[assessed_allele_column_2]]
   # subset to what we need, thus speeding it all up
-  qtls_1 <- qtls_1[, c('SNP', 'probe', 'allele_assesed_1', 'score_1', 'significance_1'), with=F]
-  qtls_2 <- qtls_2[, c('SNP', 'probe', 'allele_assesed_2', 'score_2', 'significance_2'), with=F]
+  qtls_1 <- qtls_1[, c('SNP', 'probe', 'allele_assessed_1', 'score_1', 'significance_1'), with=F]
+  qtls_2 <- qtls_2[, c('SNP', 'probe', 'allele_assessed_2', 'score_2', 'significance_2'), with=F]
   # set keys for easy joining
   setkey(qtls_1, SNP, probe)
   setkey(qtls_2, SNP, probe)
-  qtls <- qtls_1[qtls_2]
+  qtls <- merge(qtls_1, qtls_2, by=c('SNP', 'probe'))
+  qtls <- data.frame(qtls)
+  # remove rows not filled in completely
+  qtls <- qtls[!is.na(qtls$allele_assessed_1) & !is.na(qtls$allele_assessed_2), ]
   # correct for direction
-  qtls[qtls$allele_assesed_1 != qtls$allele_assesed_2, 'score_1', with=F] <- qtls[qtls$allele_assesed_1 != qtls$allele_assesed_2, 'score_1', with=F] * -1
-  # TODO continue and plot here
+  qtls[qtls$allele_assesed_1 != qtls$allele_assessed_2, 'score_1'] <- qtls[qtls$allele_assesed_1 != qtls$allele_assessed_2, 'score_1'] * -1
+  #qtls[qtls$allele_assesed_1 != qtls$allele_assesed_2,score_1  := score_1 * -1]
+  # denote their significance
+  qtls$significant <- NA
+  qtls[!is.na(qtls$significance_1) & qtls$significance_1 < 0.05, 'significant'] <- group_1_name
+  qtls[!is.na(qtls$significance_2) & qtls$significance_2 < 0.05, 'significant'] <- group_2_name
+  qtls[!is.na(qtls$significance_1) & qtls$significance_1 < 0.05 & !is.na(qtls$significance_2) & qtls$significance_2 < 0.05, 'significant' ] <- 'both'
+  # remove what was never significant
+  qtls <- qtls[!is.na(qtls$significant), ] 
+  #qtls[!is.na(qtls$significance_1) & qtls$significance_1 < 0.05, significant := group_1_name]
+  #qtls[!is.na(qtls$significance_1) & qtls$significance_1 < 0.05, significant := group_2_name]
+  #qtls[!is.na(qtls$significance_1) & qtls$significance_1 < 0.05 & !is.na(qtls$significance_2) & qtls$significance_2 < 0.05, significant := 'both']
+  # plot
+  p <- ggplot(data=qtls, aes(x=score_1, y=score_2, color=significant)) +
+    
+    #xlim(c(-1, 1)) + ylim(c(-1, 1)) +
+    xlab(xlab) + ylab(ylab) +
+    ggtitle(main) +
+    annotate("rect", xmin=-Inf, xmax=0, ymin=-Inf, ymax=0, fill="green", alpha=0.1) +
+    annotate("rect", xmin=0, xmax=Inf, ymin=0, ymax=Inf, fill="green", alpha=0.1) +
+    annotate("rect", xmin=-Inf, xmax=0, ymin=0, ymax=Inf, fill="red", alpha=0.1) +
+    annotate("rect", xmin=0, xmax=Inf, ymin=-Inf, ymax=0, fill="red", alpha=0.1) +
+    geom_hline(yintercept=0, linetype="dashed", color = "black") +
+    geom_vline(xintercept=0, linetype="dashed", color = "black") +
+    geom_point() +
+    annotate("rect", xmin=0.5, xmax=1.0, ymin=-1, ymax=-0.75, fill="white", alpha=1) +
+    annotate("segment", x = 0.5, xend = 1, y = -0.75, yend = -0.75, colour = "black") +
+    annotate("segment", x = 0.5, xend = 1, y = -1, yend = -1, colour = "black") +
+    annotate("segment", x = 0.5, xend = 0.5, y = -0.75, yend = -1, colour = "black") +
+    annotate("segment", x = 1, xend = 1, y = -0.75, yend = -1, colour = "black")
+    #annotate("text", x = 0.75, y = -0.875, label = paste('', round(concordance*100, digits = 1), "% concordance", sep=''), fontface='bold')
+  if(paper_style){
+    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  return(p)
 }
 
 
@@ -561,25 +597,20 @@ label_dict <- function(){
 # plot locations
 egene_sharing_ct_loc <- '/data/cardiology/eQTL_mapping/plots/MatrixEQTL/stemi_and_1mut_lowerres_20210629_eqtlgenlead/egene_sharing_ct/'
 egene_sharing_cond_loc <- '/data/cardiology/eQTL_mapping/plots/MatrixEQTL/stemi_and_1mut_lowerres_20210629_eqtlgenlead/egene_sharing_cond/'
-# location of output
-eqtl_output <- '/data/cardiology/eQTL_mapping/results/MatrixEQTL/stemi_and_1mut_lowerres_20210629_eqtlgenlead/'
-
-# get the condition sharing in each cell type
-condition_sharing_per_ct <- plot_egene_sharing_per_condition_allct(eqtl_output, '.cis.fdr.tsv', conditions = c('UT_Baseline', 'UT_t24h', 'UT_t8w'))
-# get the cell type sharing in each condition
-condition_sharing_per_cond <- plot_egene_sharing_per_celltype_allcond(eqtl_output, conditions = c('UT_Baseline', 'UT_t24h', 'UT_t8w'))
-
-# load object
-#cardio.stemi <- readRDS('/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/cardio.stemi.20210611.combatcorrected.rds')
-# genotype location
-snps_loc<-'/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/genotype/stemi_all_merged_nomissing_numeric.tsv'
-# load genotype data
-snps <- fread(snps_loc, header=T)
-# locations of features
-features_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/features/'
 # locations of the results
 results_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/results/' 
-results_emp_meta_eqtlgenlead <- paste(results_loc, 'inhouse_eQTL_mapping_pipeline/stemi_meta_lowerres_20210301_confine_lead_snp_gene/', sep = '')
-#
-mash_emp_meta_eqtlgenlead <- get_conditions_cell_types_mash(results_emp_meta_eqtlgenlead)
-saveRDS(mash_emp_meta_eqtlgenlead, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/eQTL_mapping/results/mashr_stemi_meta_lowerres_20210301_confine_lead_snp_gene.rds')
+results_loc <- '/data/cardiology/eQTL_mapping/results/' 
+results_emp_meta_eqtlgenlead <- paste(results_loc, 'inhouse_eQTL_mapping_pipeline/stemi_and_1mut_meta_lowerres_20210629_confine_lead_snp_gene/', sep = '')
+results_matrixeqtl_eqtlgenlead <- paste(results_loc, 'MatrixEQTL/stemi_and_1mut_lowerres_20210629_eqtlgenlead/', sep = '')
+
+# get the condition sharing in each cell type
+condition_sharing_per_ct <- plot_egene_sharing_per_condition_allct(results_matrixeqtl_eqtlgenlead, '.cis.fdr.gt.tsv', conditions = c('UT', 'UT_Baseline', 'UT_t24h', 'UT_t8w'))
+# get the cell type sharing in each condition
+condition_sharing_per_cond <- plot_egene_sharing_per_celltype_allcond(results_matrixeqtl_eqtlgenlead, conditions = c('UT', 'UT_Baseline', 'UT_t24h', 'UT_t8w'))
+# save to manually output later
+saveRDS(condition_sharing_per_ct, paste(egene_sharing_cond_loc, 'condition_sharing_per_ct.rds', sep = ''))
+saveRDS(condition_sharing_per_cond, paste(egene_sharing_ct_loc, 'celltype_sharing_per_cond.rds', sep = ''))
+
+
+
+

@@ -513,6 +513,38 @@ perform_qtl_mapping <- function(snps_loc, snps_location_file_name, gene_location
   }
 }
 
+
+re_annotate_qlt_output <- function(qtl_output_loc, ref_table_loc, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), conditions=c('UT', 'UT_Baseline', 'UT_t24h', 'UT_t8w'), sort_columns=c('FDR_gene', 'p.value')){
+  # read the reference table
+  ref_table <- fread(ref_table_loc)
+  # set the same column as in the eQTL mapping output
+  #ref_table$SNP <- ref_table$ID
+  #ref_table$ID <- NULL
+  # set as key for fast mergine
+  setkey(ref_table, SNP)
+  # for each cell type and condition
+  for(cell_type in cell_types){
+    for(condition in conditions){
+      try({
+        # read the original table
+        eqtl_table <- fread(paste(qtl_output_loc, condition, '/', cell_type, '.cis.fdr.tsv', sep = ''))
+        # also set key for fast merging
+        setkey(eqtl_table, SNP)
+        # merge together
+        eqtl_table <- merge(eqtl_table, ref_table, by = 'SNP', all = F)
+        output_loc_annotated <- paste(qtl_output_loc, condition, '/', cell_type, '.cis.fdr.gt.tsv', sep = '')
+        print(head(eqtl_table))
+        # re-sort on gene FDR
+        #setorder(eqtl_table, cols=c(sort_columns))
+        # write result
+        print(paste('writing to', output_loc_annotated))
+        write.table(eqtl_table, output_loc_annotated, sep = '\t', row.names = F, col.names = T, quote = F)
+      })
+    }
+  }
+}
+
+
 setup_default_settings <- function(){
   # set some defaults here
   default_settings_list <- list(
@@ -683,7 +715,7 @@ if(do_all_ut_stemi_eqtlgen){
   maf <- 0.1
   permutation_rounds <- 20
   
-  cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
+  cell_typers=c('bulk', 'B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
   conditions <- c('UT_Baseline', 'UT_t24h', 'UT_t8w')
   
   permute_in_covar_group <- 'chem_V3'
