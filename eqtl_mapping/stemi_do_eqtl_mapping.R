@@ -361,8 +361,6 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
   nr_participants <- ncol(snps_ct_cond) -1 # first column is the ID column
   # put into data table
   snps_metadata <- data.table(SNP=snps_to_be_tested, maf=maf_calculated, n=nr_participants)
-  # key for easy merging later
-  setkey(snps_metadata, SNP)
   
   # now write the filtered files to temporary storage
   SNP_file_name_ct_cond <- tempfile()
@@ -398,9 +396,9 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
     write.table(result, output_file_name_cis_ct_cond, sep = '\t', row.names = F, col.names = T) 
   }
   # add the SNP metadata back we created before the mapping
-  result <- fread(output_file_name_cis_ct_cond)
+  result <- fread(output_file_name_cis_ct_cond, check.names = T)
   # key the snp and genek
-  setkey(result, cols=c('SNP', 'gene'))
+  setkey(result)
   # merge the data
   result <- merge(result, snps_metadata, by='SNP')
   # calculate the r
@@ -702,7 +700,7 @@ if(do_all_ut_stemi){
   permutation_rounds <- 20
   
   cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK', 'bulk')
-  conditions <- c('UT_Baseline', 'UT_t24h', 'UT_t8w', 'UT')
+  conditions <- c('UT_Baseline', 'UT_t24h', 'UT_t8w')
   
   permute_in_covar_group <- 'chem_V3'
   #snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append
@@ -767,11 +765,19 @@ if(do_all_ut_stemi_unconfined){
   maf <- 0.1
   permutation_rounds <- 20
   
-  cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
-  conditions <- c('UT_Baseline', 'UT_t24h', 'UT_t8w')
+  #cell_typers=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
+  #conditions <- c('UT_Baseline', 'UT_t24h', 'UT_t8w')
   
   permute_in_covar_group <- 'chem_V3'
   #snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append
+  #perform_qtl_mapping(snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append, output_file_name_cis_append, covariates_file_name_append, confinement_file_name, permutation_rounds = permutation_rounds, permute_in_covar_group=permute_in_covar_group, cell_typers=cell_typers, conditions=conditions)
+  
+  cell_typers=c('B')
+  conditions <- c('UT_t24h', 'UT_t8w')
   perform_qtl_mapping(snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append, output_file_name_cis_append, covariates_file_name_append, confinement_file_name, permutation_rounds = permutation_rounds, permute_in_covar_group=permute_in_covar_group, cell_typers=cell_typers, conditions=conditions)
+  cell_typers=c('CD8T')
+  conditions <- c('UT_t8w')
+  perform_qtl_mapping(snps_loc, snps_location_file_name, gene_location_file_name, features_loc_prepend, output_file_name_cis_prepend, covariates_file_name_prepend, features_loc_append, output_file_name_cis_append, covariates_file_name_append, confinement_file_name, permutation_rounds = permutation_rounds, permute_in_covar_group=permute_in_covar_group, cell_typers=cell_typers, conditions=conditions)
+  
 }
 

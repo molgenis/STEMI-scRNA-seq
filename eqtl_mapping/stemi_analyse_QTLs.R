@@ -423,7 +423,7 @@ plot_concordance <- function(qtl_output_1, qtl_output_2, snp_column_1, snp_colum
   # remove rows not filled in completely
   qtls <- qtls[!is.na(qtls$allele_assessed_1) & !is.na(qtls$allele_assessed_2), ]
   # correct for direction
-  qtls[qtls$allele_assesed_1 != qtls$allele_assessed_2, 'score_1'] <- qtls[qtls$allele_assesed_1 != qtls$allele_assessed_2, 'score_1'] * -1
+  qtls[qtls$allele_assessed_1 != qtls$allele_assessed_2, 'score_1'] <- qtls[qtls$allele_assessed_1 != qtls$allele_assessed_2, 'score_1'] * -1
   #qtls[qtls$allele_assesed_1 != qtls$allele_assesed_2,score_1  := score_1 * -1]
   # denote their significance
   qtls$significant <- NA
@@ -435,6 +435,10 @@ plot_concordance <- function(qtl_output_1, qtl_output_2, snp_column_1, snp_colum
   #qtls[!is.na(qtls$significance_1) & qtls$significance_1 < 0.05, significant := group_1_name]
   #qtls[!is.na(qtls$significance_1) & qtls$significance_1 < 0.05, significant := group_2_name]
   #qtls[!is.na(qtls$significance_1) & qtls$significance_1 < 0.05 & !is.na(qtls$significance_2) & qtls$significance_2 < 0.05, significant := 'both']
+  # calculate concordance
+  concondant_number <- nrow(qtls[qtls$significant == 'both' & ((qtls$score_1 < 0 & qtls$score_2 < 0) | (qtls$score_1 > 0 & qtls$score_2 > 0)), ])
+  concordance <- concondant_number / nrow(qtls[qtls$significant == 'both', ])
+  print(concordance)
   # plot
   p <- ggplot(data=qtls, aes(x=score_1, y=score_2, color=significant)) +
     
