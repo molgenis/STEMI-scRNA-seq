@@ -403,6 +403,8 @@ run_qtl_mapping <- function(features_loc_ct_cond, output_file_name_cis_ct_cond, 
   setkey(result, cols=c('SNP', 'gene'))
   # merge the data
   result <- merge(result, snps_metadata, by='SNP')
+  # calculate the r
+  result$r <- result$t.stat / sqrt(result$n - 2 + result$t.stat ** 2)
   # and write our result with the metadata added
   write.table(result, output_file_name_cis_ct_cond, sep = '\t', row.names = F, col.names = T) 
   
