@@ -196,6 +196,43 @@ plot_all_aggregate_pathways <- function(chat_object_per_timepoint_and_chem, outp
   }
 }
 
+compare_conditions <- function(all_conditions_list, condition.1, condition.2){
+  # subset to only the conditions we want
+  conditions.list <- list(condition.1 = all_conditions_list[[condition.1]], condition.2 = all_conditions_list[[condition.2]])
+  conditions <- mergeCellChat(conditions.list, add.names = names(conditions.list))
+  # compare interactions and strength numbers
+  gg1 <- compareInteractions(conditions, show.legend = F, group = c(1,2))
+  gg2 <- compareInteractions(conditions, show.legend = F, group = c(1,2), measure = "weight")
+  # check strengths and weights as circle plots
+  gg3 <- netVisual_diffInteraction(conditions, weight.scale = T)
+  gg4 <- netVisual_diffInteraction(conditions, weight.scale = T, measure = "weight")
+  # check strengths and weights as heatmaps
+  gg5 <- netVisual_heatmap(conditions)
+  gg6 <- netVisual_heatmap(conditions, measure = "weight")
+  # compute net neutrality score to show differences
+  conditions.list[[1]] <- netAnalysis_computeCentrality(conditions.list[[1]])
+  conditions.list[[2]] <- netAnalysis_computeCentrality(conditions.list[[2]])
+  # visualize in 2d space, #first get the number of links in both sets
+  conditions.list.num.link <- sapply(conditions.list, function(x) {rowSums(x@net$count) + colSums(x@net$count)-diag(x@net$count)})
+  # set a max and min, so the plots will have the same scale
+  conditions.list.weight.MinMax <- c(min(conditions.list.num.link), max(conditions.list.num.link))
+  # make the plots
+  gg7 <- netAnalysis_signalingRole_scatter(conditions.list[[1]], title = names(conditions.list)[1], weight.MinMax = conditions.list.weight.MinMax)
+  gg8 <- netAnalysis_signalingRole_scatter(conditions.list[[2]], title = names(conditions.list)[2], weight.MinMax = conditions.list.weight.MinMax)
+  # put everything in a nice list
+  all_plots <- list('interactions_number' = gg1,
+                    'interactions_weight' = gg2,
+                    'circle_number' = gg3,
+                    'circle_weight' = gg4,
+                    'heatmap_number' = gg5,
+                    'heatmap_weight' = gg6,
+                    'scatter_cond1' = gg7,
+                    'scatter_cond2' = gg8)
+  return(all_plots)
+}
+
+
+
 # set paths
 object_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/'
 cardio.integrated.loc <- paste(object_loc, 'cardio.integrated.20210301.rds', sep = '')
@@ -231,3 +268,29 @@ cardio.list_per_chem <- list('V2' = cardio.chem_v2.all_list, 'V3' = cardio.chem_
 saveRDS(cardio.list_per_chem, chat.all.loc)
 plot_all_communications_networks_separate(cardio.list_per_chem, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/cellchat/')
 plot_all_aggregate_pathways(cardio.list_per_chem, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/cellchat/')
+
+
+# start comparing the conditions
+cardio.stemi_v3.t24h <- cardio.integrated[, cardio.integrated@meta.data$orig.ident == 'stemi_v3' & cardio.integrated@meta.data$timepoint.final == 't24h']
+# create cell type
+cardio.stemi_v3.t24h.chat <- init_cellchat_object(cardio.stemi_v3.t24h)
+cardio.stemi_v3.t24h.chat <- preprocess_cellchat_object(cardio.stemi_v3.t24h.chat)
+cardio.stemi_v3.t24h.chat <- inference_communication_network(cardio.stemi_v3.t24h.chat)
+# and 8w
+cardio.stemi_v3.t8w <- cardio.integrated[, cardio.integrated@meta.data$orig.ident == 'stemi_v3' & cardio.integrated@meta.data$timepoint.final == 't8w']
+cardio.stemi_v3.t8w.chat <- init_cellchat_object(cardio.stemi_v3.t8w)
+cardio.stemi_v3.t8w.chat <- preprocess_cellchat_object(cardio.stemi_v3.t8w.chat)
+cardio.stemi_v3.t8w.chat <- inference_communication_network(cardio.stemi_v3.t8w.chat)
+# finally let's do UT
+cardio.stemi_v3.UT <- cardio.integrated[, cardio.integrated@meta.data$chem == 'V3' & cardio.integrated@meta.data$timepoint.final == 'UT']
+cardio.stemi_v3.UT.chat <- init_cellchat_object(cardio.stemi_v3.UT)
+cardio.stemi_v3.UT.chat <- preprocess_cellchat_object(cardio.stemi_v3.UT.chat)
+cardio.stemi_v3.UT.chat <- inference_communication_network(cardio.stemi_v3.UT.chat)
+# put everything in the list
+cardio.stemi_v3.all.list <- list('Baseline' = cardio.stemi_v3.baseline.chat, 't24h' = cardio.stemi_v3.t24h.chat, 't8w' = cardio.stemi_v3.t8w.chat, 'UT' = cardio.stemi_v3.UT.chat)
+# do analyses we care about
+cardio.stemi.v3.chatresult.Baseline_t24h <- compare_conditions(cardio.stemi_v3.all.list, 'Baseline', 't24h')
+cardio.stemi.v3.chatresult.Baseline_t8w <- compare_conditions(cardio.stemi_v3.all.list, 'Baseline', 't8w')
+cardio.stemi.v3.chatresult.UT_Baseline <- compare_conditions(cardio.stemi_v3.all.list, 'UT', 'Baseline')
+
+
