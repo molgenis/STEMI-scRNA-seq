@@ -8,6 +8,7 @@ library(Seurat)
 library(Matrix)
 library(CellChat)
 library(patchwork)
+library(ggpubr)
 
 # set some options
 options(stringsAsFactors = FALSE)
@@ -204,8 +205,8 @@ compare_conditions <- function(all_conditions_list, condition.1, condition.2){
   gg1 <- compareInteractions(conditions, show.legend = F, group = c(1,2))
   gg2 <- compareInteractions(conditions, show.legend = F, group = c(1,2), measure = "weight")
   # check strengths and weights as circle plots
-  gg3 <- netVisual_diffInteraction(conditions, weight.scale = T)
-  gg4 <- netVisual_diffInteraction(conditions, weight.scale = T, measure = "weight")
+  #gg3 <- plot(netVisual_diffInteraction(conditions, weight.scale = T))
+  #gg4 <- plot(netVisual_diffInteraction(conditions, weight.scale = T, measure = "weight"))
   # check strengths and weights as heatmaps
   gg5 <- netVisual_heatmap(conditions)
   gg6 <- netVisual_heatmap(conditions, measure = "weight")
@@ -219,18 +220,62 @@ compare_conditions <- function(all_conditions_list, condition.1, condition.2){
   # make the plots
   gg7 <- netAnalysis_signalingRole_scatter(conditions.list[[1]], title = names(conditions.list)[1], weight.MinMax = conditions.list.weight.MinMax)
   gg8 <- netAnalysis_signalingRole_scatter(conditions.list[[2]], title = names(conditions.list)[2], weight.MinMax = conditions.list.weight.MinMax)
+  # identify signalling groups based on structure similarity
+  conditions <- computeNetSimilarityPairwise(conditions, type = "functional")
+  # Compute signaling network similarity for datasets 1 2
+  conditions <- netEmbedding(conditions, type = "functional")
+  # Manifold learning of the signaling networks for datasets 1 2
+  conditions <- netClustering(conditions, type = "functional")
+  # Visualization in 2D-space
+  gg9 <- netVisual_embeddingPairwise(conditions, type = "functional", label.size = 3.5)
+  # same, but on structure similarity this time
+  conditions <- computeNetSimilarityPairwise(conditions, type = "structural")
+  conditions <- netEmbedding(conditions, type = "structural")
+  conditions <- netClustering(conditions, type = "structural")
+  gg10 <- netVisual_embeddingPairwise(conditions, type = "structural", label.size = 3.5)
   # put everything in a nice list
   all_plots <- list('interactions_number' = gg1,
                     'interactions_weight' = gg2,
-                    'circle_number' = gg3,
-                    'circle_weight' = gg4,
+                    #'circle_number' = gg3,
+                    #'circle_weight' = gg4,
                     'heatmap_number' = gg5,
                     'heatmap_weight' = gg6,
                     'scatter_cond1' = gg7,
-                    'scatter_cond2' = gg8)
+                    'scatter_cond2' = gg8,
+                    'clust_functional' = gg9,
+                    'clust_structural' = gg10)
   return(all_plots)
 }
 
+
+chat_result_to_plots <-function(chat_plots, output_loc){
+  # setup the output
+  pdf(output_loc)
+  #par(mfrow = c(1,2))
+  #chat_plots[['circle_number']]
+  #chat_plots[['circle_weight']]
+  print(
+    ggarrange(
+      plotlist = list(
+        chat_plots[['interactions_number']], 
+        chat_plots[['interactions_weight']] 
+      ), ncol = 1, nrow = 2
+    )
+  )
+  print(chat_plots[['heatmap_number']] + chat_plots[['heatmap_weight']])
+  print(
+    ggarrange(
+      plotlist = list(
+        chat_plots[['scatter_cond1']], 
+        chat_plots[['scatter_cond2']], 
+        chat_plots[['clust_functional']], 
+        chat_plots[['clust_structural']]
+      ), ncol = 2, nrow = 2
+    )
+  )
+  dev.off()
+  # back to default
+}
 
 
 # set paths
@@ -292,5 +337,36 @@ cardio.stemi_v3.all.list <- list('Baseline' = cardio.stemi_v3.baseline.chat, 't2
 cardio.stemi.v3.chatresult.Baseline_t24h <- compare_conditions(cardio.stemi_v3.all.list, 'Baseline', 't24h')
 cardio.stemi.v3.chatresult.Baseline_t8w <- compare_conditions(cardio.stemi_v3.all.list, 'Baseline', 't8w')
 cardio.stemi.v3.chatresult.UT_Baseline <- compare_conditions(cardio.stemi_v3.all.list, 'UT', 'Baseline')
+# save as plots
+chat_result_to_plots(cardio.stemi.v3.chatresult.Baseline_t24h, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/cellchat/v3_Baseline_t24h_di.pdf')
+chat_result_to_plots(cardio.stemi.v3.chatresult.Baseline_t8w, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/cellchat/v3_Baseline_t8w_di.pdf')
+chat_result_to_plots(cardio.stemi.v3.chatresult.UT_Baseline, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/cellchat/v3_UT_Baseline_di.pdf')
+
+# start comparing the conditions
+cardio.stemi_v2.t24h <- cardio.integrated[, cardio.integrated@meta.data$orig.ident == 'stemi_v2' & cardio.integrated@meta.data$timepoint.final == 't24h']
+# create cell type
+cardio.stemi_v2.t24h.chat <- init_cellchat_object(cardio.stemi_v2.t24h)
+cardio.stemi_v2.t24h.chat <- preprocess_cellchat_object(cardio.stemi_v2.t24h.chat)
+cardio.stemi_v2.t24h.chat <- inference_communication_network(cardio.stemi_v2.t24h.chat)
+# and 8w
+cardio.stemi_v2.t8w <- cardio.integrated[, cardio.integrated@meta.data$orig.ident == 'stemi_v2' & cardio.integrated@meta.data$timepoint.final == 't8w']
+cardio.stemi_v2.t8w.chat <- init_cellchat_object(cardio.stemi_v2.t8w)
+cardio.stemi_v2.t8w.chat <- preprocess_cellchat_object(cardio.stemi_v2.t8w.chat)
+cardio.stemi_v2.t8w.chat <- inference_communication_network(cardio.stemi_v2.t8w.chat)
+# finally let's do UT
+cardio.stemi_v2.UT <- cardio.integrated[, cardio.integrated@meta.data$chem == 'v2' & cardio.integrated@meta.data$timepoint.final == 'UT']
+cardio.stemi_v2.UT.chat <- init_cellchat_object(cardio.stemi_v2.UT)
+cardio.stemi_v2.UT.chat <- preprocess_cellchat_object(cardio.stemi_v2.UT.chat)
+cardio.stemi_v2.UT.chat <- inference_communication_network(cardio.stemi_v2.UT.chat)
+# put everything in the list
+cardio.stemi_v2.all.list <- list('Baseline' = cardio.stemi_v2.baseline.chat, 't24h' = cardio.stemi_v2.t24h.chat, 't8w' = cardio.stemi_v2.t8w.chat, 'UT' = cardio.stemi_v2.UT.chat)
+# do analyses we care about
+cardio.stemi.v2.chatresult.Baseline_t24h <- compare_conditions(cardio.stemi_v2.all.list, 'Baseline', 't24h')
+cardio.stemi.v2.chatresult.Baseline_t8w <- compare_conditions(cardio.stemi_v2.all.list, 'Baseline', 't8w')
+cardio.stemi.v2.chatresult.UT_Baseline <- compare_conditions(cardio.stemi_v2.all.list, 'UT', 'Baseline')
+# save as plots
+chat_result_to_plots(cardio.stemi.v2.chatresult.Baseline_t24h, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/cellchat/v2_Baseline_t24h_di.pdf')
+chat_result_to_plots(cardio.stemi.v2.chatresult.Baseline_t8w, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/cellchat/v2_Baseline_t8w_di.pdf')
+chat_result_to_plots(cardio.stemi.v2.chatresult.UT_Baseline, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/cellchat/v2_UT_Baseline_di.pdf')
 
 
