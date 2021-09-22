@@ -248,6 +248,26 @@ compare_conditions <- function(all_conditions_list, condition.1, condition.2){
 }
 
 
+do_compare_conditions <- function(all_conditions_list, condition.1, condition.2){
+  # subset to only the conditions we want
+  conditions.list <- list(condition.1 = all_conditions_list[[condition.1]], condition.2 = all_conditions_list[[condition.2]])
+  conditions <- mergeCellChat(conditions.list, add.names = names(conditions.list))
+  # compute net neutrality score to show differences
+  conditions.list[[1]] <- netAnalysis_computeCentrality(conditions.list[[1]])
+  conditions.list[[2]] <- netAnalysis_computeCentrality(conditions.list[[2]])
+  # identify signalling groups based on structure similarity
+  conditions <- computeNetSimilarityPairwise(conditions, type = "functional")
+  # Compute signaling network similarity for datasets 1 2
+  conditions <- netEmbedding(conditions, type = "functional")
+  # Manifold learning of the signaling networks for datasets 1 2
+  conditions <- netClustering(conditions, type = "functional")
+  # Visualization in 2D-space
+  conditions <- computeNetSimilarityPairwise(conditions, type = "structural")
+  conditions <- netEmbedding(conditions, type = "structural")
+  conditions <- netClustering(conditions, type = "structural")
+  return(conditions)
+}
+
 chat_result_to_plots <-function(chat_plots, output_loc){
   # setup the output
   pdf(output_loc)
@@ -341,7 +361,22 @@ cardio.stemi.v3.chatresult.UT_Baseline <- compare_conditions(cardio.stemi_v3.all
 chat_result_to_plots(cardio.stemi.v3.chatresult.Baseline_t24h, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/cellchat/v3_Baseline_t24h_di.pdf')
 chat_result_to_plots(cardio.stemi.v3.chatresult.Baseline_t8w, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/cellchat/v3_Baseline_t8w_di.pdf')
 chat_result_to_plots(cardio.stemi.v3.chatresult.UT_Baseline, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/cellchat/v3_UT_Baseline_di.pdf')
+# we might also want the objects
+cardio.stemi.v3.chat.Baseline_t24h <- do_compare_conditions(cardio.stemi_v3.all.list, 'Baseline', 't24h')
+cardio.stemi.v3.chat.Baseline_t8w <- do_compare_conditions(cardio.stemi_v3.all.list, 'Baseline', 't8w')
+cardio.stemi.v3.chat.UT_Baseline <- do_compare_conditions(cardio.stemi_v3.all.list, 'UT', 'Baseline')
+saveRDS(cardio.stemi.v3.chat.Baseline_t24h, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/cellchat/objects/cardio.stemi.v3.chatresult.Baseline_t24h.rds')
+saveRDS(cardio.stemi.v3.chat.Baseline_t8w, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/cellchat/objects/cardio.stemi.v3.chatresult.Baseline_t8w.rds')
+saveRDS(cardio.stemi.v3.chat.UT_Baseline, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/cellchat/objects/cardio.stemi.v3.chatresult.UT_Baseline.rds')
 
+
+
+# the whole shebang for v2 as well
+cardio.stemi_v2.baseline <- cardio.integrated[, cardio.integrated@meta.data$orig.ident == 'stemi_v2' & cardio.integrated@meta.data$timepoint.final == 'Baseline']
+# create cell type
+cardio.stemi_v2.baseline.chat <- init_cellchat_object(cardio.stemi_v2.baseline)
+cardio.stemi_v2.baseline.chat <- preprocess_cellchat_object(cardio.stemi_v2.baseline.chat)
+cardio.stemi_v2.baseline.chat <- inference_communication_network(cardio.stemi_v2.baseline.chat)
 # start comparing the conditions
 cardio.stemi_v2.t24h <- cardio.integrated[, cardio.integrated@meta.data$orig.ident == 'stemi_v2' & cardio.integrated@meta.data$timepoint.final == 't24h']
 # create cell type
@@ -354,7 +389,7 @@ cardio.stemi_v2.t8w.chat <- init_cellchat_object(cardio.stemi_v2.t8w)
 cardio.stemi_v2.t8w.chat <- preprocess_cellchat_object(cardio.stemi_v2.t8w.chat)
 cardio.stemi_v2.t8w.chat <- inference_communication_network(cardio.stemi_v2.t8w.chat)
 # finally let's do UT
-cardio.stemi_v2.UT <- cardio.integrated[, cardio.integrated@meta.data$chem == 'v2' & cardio.integrated@meta.data$timepoint.final == 'UT']
+cardio.stemi_v2.UT <- cardio.integrated[, cardio.integrated@meta.data$chem == 'V2' & cardio.integrated@meta.data$timepoint.final == 'UT']
 cardio.stemi_v2.UT.chat <- init_cellchat_object(cardio.stemi_v2.UT)
 cardio.stemi_v2.UT.chat <- preprocess_cellchat_object(cardio.stemi_v2.UT.chat)
 cardio.stemi_v2.UT.chat <- inference_communication_network(cardio.stemi_v2.UT.chat)
@@ -368,5 +403,14 @@ cardio.stemi.v2.chatresult.UT_Baseline <- compare_conditions(cardio.stemi_v2.all
 chat_result_to_plots(cardio.stemi.v2.chatresult.Baseline_t24h, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/cellchat/v2_Baseline_t24h_di.pdf')
 chat_result_to_plots(cardio.stemi.v2.chatresult.Baseline_t8w, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/cellchat/v2_Baseline_t8w_di.pdf')
 chat_result_to_plots(cardio.stemi.v2.chatresult.UT_Baseline, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/cellchat/v2_UT_Baseline_di.pdf')
+
+# we might also want the objects
+cardio.stemi.v2.chat.Baseline_t24h <- do_compare_conditions(cardio.stemi_v2.all.list, 'Baseline', 't24h')
+cardio.stemi.v2.chat.Baseline_t8w <- do_compare_conditions(cardio.stemi_v2.all.list, 'Baseline', 't8w')
+cardio.stemi.v2.chat.UT_Baseline <- do_compare_conditions(cardio.stemi_v2.all.list, 'UT', 'Baseline')
+saveRDS(cardio.stemi.v2.chat.Baseline_t24h, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/cellchat/objects/cardio.stemi.v2.chatresult.Baseline_t24h.rds')
+saveRDS(cardio.stemi.v2.chat.Baseline_t8w, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/cellchat/objects/cardio.stemi.v2.chatresult.Baseline_t8w.rds')
+saveRDS(cardio.stemi.v2.chat.UT_Baseline, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/cellchat/objects/cardio.stemi.v2.chatresult.UT_Baseline.rds')
+
 
 
