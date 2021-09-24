@@ -1,7 +1,7 @@
 library(circlize)
 
 
-interactions_to_circle <- function(interactions_per_ct_list){
+interactions_to_circle <- function(interactions_per_ct_list, plot_title=title(main='cell communication')){
   # get the total number of connections per cell type
   interaction_numbers <- get_interaction_numbers(interactions_per_ct_list)
   # slim it down into a three column input
@@ -75,9 +75,10 @@ interactions_to_circle <- function(interactions_per_ct_list){
       to_start <- as.numeric(row['to_start'])
       to_stop <- as.numeric(row['to_stop'])
       # draw the connection
-      circos.link(row['a'], c(from_start, from_stop), row['b'], c(to_start, to_stop), col = connection_color)
+      circos.link(row['a'], c(from_start, from_stop), row['b'], c(to_start, to_stop), col = connection_color, directional = 1)
     }
   })
+  plot_title
 }
 
 turn_sizes_to_ranges <- function(link_sizes_df, size_column, from_column, to_column){
@@ -417,7 +418,29 @@ text_color_dict <- function(){
 
 # locations of the files
 interactions_loc <- '/data/cardiology/cell_cell_interactions/nichenet/objects/'
-interactions_Baseline_t24h_loc <- paste(interactions_loc, 'v2_Baseline_vs_t24h_nichenet_onlymajors_perct.rds', sep = '')
+interactions_Baseline_t24h_v2_loc <- paste(interactions_loc, 'v2_Baseline_vs_t24h_nichenet_onlymajors_perct.rds', sep = '')
+interactions_Baseline_t8w_v2_loc <- paste(interactions_loc, 'v2_Baseline_vs_t8w_nichenet_onlymajor_perct.rds', sep = '')
+interactions_UT_Baseline_v2_loc <- paste(interactions_loc, 'v2_UT_vs_Baseline_nichenet_onlymajor_perct.rds', sep = '')
+interactions_Baseline_t24h_v3_loc <- paste(interactions_loc, 'v3_Baseline_vs_t24h_nichenet_onlymajors_perct.rds', sep = '')
+interactions_Baseline_t8w_v3_loc <- paste(interactions_loc, 'v3_Baseline_vs_t8w_nichenet_onlymajor_perct.rds', sep = '')
+interactions_UT_Baseline_v3_loc <- paste(interactions_loc, 'v3_UT_vs_Baseline_nichenet_onlymajor_perct.rds', sep = '')
+
 
 # read object
-interactions_Baseline_t24h <- readRDS(interactions_Baseline_t24h_loc)
+interactions_UT_Baseline_v2 <- readRDS(interactions_UT_Baseline_v2_loc)
+interactions_Baseline_t24h_v2 <- readRDS(interactions_Baseline_t24h_v2_loc)
+interactions_Baseline_t8w_v2 <- readRDS(interactions_Baseline_t8w_v2_loc)
+interactions_UT_Baseline_v3 <- readRDS(interactions_UT_Baseline_v3_loc)
+interactions_Baseline_t24h_v3 <- readRDS(interactions_Baseline_t24h_v3_loc)
+interactions_Baseline_t8w_v3 <- readRDS(interactions_Baseline_t8w_v3_loc)
+
+
+# setup four plot tiles
+par(mfrow=c(3,2))
+interactions_to_circle(interactions_UT_Baseline_v2, plot_title = title('V2 Cell communication changes \nbetween HC and t0'))
+interactions_to_circle(interactions_UT_Baseline_v3, plot_title = title('V3 Cell communication changes \nbetween HC and t0'))
+interactions_to_circle(interactions_Baseline_t24h_v2, plot_title = title('V2 Cell communication changes \nbetween t0 and t24h'))
+interactions_to_circle(interactions_Baseline_t24h_v3, plot_title = title('V3 Cell communication changes \nbetween t0 and t24h'))
+interactions_to_circle(interactions_Baseline_t8w_v2, plot_title = title('V2 Cell communication changes \nbetween t0 and t8w'))
+interactions_to_circle(interactions_Baseline_t8w_v3, plot_title = title('V3 Cell communication changes \nbetween t0 and t8w'))
+
