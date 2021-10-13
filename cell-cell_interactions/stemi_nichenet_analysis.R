@@ -6,9 +6,15 @@
 # libraries
 #
 
+# required for nichent
 library(nichenetr)
 library(Seurat)
 library(tidyverse)
+# omnipath dependencies
+library(OmnipathR)
+library(mlrMBO)
+library(parallelMap)
+
 
 #
 # functions
@@ -315,6 +321,103 @@ create_dotplot_per_ct_and_tp <- function(seurat_object, features_per_ct, conditi
 }
 
 
+# adapted from https://workflows.omnipathdb.org/nichenet1.html
+interactionFormatTransf <- function(InputDf, InteractionType){
+  
+  OutputInt <- tibble(from = character(), to = character(), 
+                      source = character(), database = character())  
+  
+  n <- nrow(InputDf)
+  sources <- dplyr::pull(InputDf, sources)
+  sourceNodes <- dplyr::pull(InputDf, from)
+  targetNodes <- dplyr::pull(InputDf, to)
+  
+  for (i in seq(n)){
+    currentSources <- unlist(strsplit(sources[i],";"))
+    for (j in seq(length(currentSources))){
+      OutputInt <- add_row(OutputInt, 
+                           from = sourceNodes[i] , 
+                           to = targetNodes[i],  
+                           # source = paste(currentSources[j], InteractionType, sep="_"),
+                           source = currentSources[j],
+                           database = currentSources[j]) 
+    }
+  }
+  
+  return(OutputInt)
+}
+
+remove_duplicates_and_selfreferences <- function(omnipath_interactions){
+  # remove duplicates and self-references
+  omnipath_interactions_clean <- omnipath_interactions %>%
+    dplyr::select(source_genesymbol,target_genesymbol,sources) %>%
+    dplyr::rename(from=source_genesymbol, to=target_genesymbol) %>% 
+    dplyr::filter(from != to) %>% 
+    dplyr::distinct()
+  return(omnipath_interactions_clean)
+}
+
+
+get_color_coding_dict <- function(){
+  # set the condition colors
+  color_coding <- list()
+  color_coding[["UTBaseline"]] <- "khaki2"
+  color_coding[["UTt24h"]] <- "khaki4"
+  color_coding[["UTt8w"]] <- "paleturquoise1"
+  color_coding[["Baselinet24h"]] <- "paleturquoise3"
+  color_coding[["Baselinet8w"]] <- "rosybrown1"
+  color_coding[["t24ht8w"]] <- "rosybrown3"
+  color_coding[["UT\nBaseline"]] <- "khaki2"
+  color_coding[["UT\nt24h"]] <- "khaki4"
+  color_coding[["UT\nt8w"]] <- "paleturquoise1"
+  color_coding[["Baseline\nt24h"]] <- "paleturquoise3"
+  color_coding[["Baseline\nt8w"]] <- "rosybrown1"
+  color_coding[["t24h\nt8w"]] <- "rosybrown3"
+  color_coding[["UT-Baseline"]] <- "khaki2"
+  color_coding[["UT-t24h"]] <- "khaki4"
+  color_coding[["UT-t8w"]] <- "paleturquoise1"
+  color_coding[["Baseline-t24h"]] <- "paleturquoise3"
+  color_coding[["Baseline-t8w"]] <- "rosybrown1"
+  color_coding[["t24h-t8w"]] <- "rosybrown3"
+  color_coding[["UT-t0"]] <- "khaki2"
+  color_coding[["UT-t24h"]] <- "khaki4"
+  color_coding[["UT-t8w"]] <- "paleturquoise1"
+  color_coding[["HC-t0"]] <- "khaki2"
+  color_coding[["t0-HC"]] <- "khaki2"
+  color_coding[["HC-t24h"]] <- "khaki4"
+  color_coding[["t24h-HC"]] <- "khaki4"
+  color_coding[["HC-t8w"]] <- "paleturquoise1"
+  color_coding[["t8w-HC"]] <- "paleturquoise1"
+  color_coding[["t0-t24h"]] <- "#FF6066" #"paleturquoise3"
+  color_coding[["t24h-t0"]] <- "#FF6066" #"paleturquoise3"
+  color_coding[["t0-t8w"]] <- "#C060A6" #"rosybrown1"
+  color_coding[["t8w-t0"]] <- "#C060A6" #"rosybrown1"
+  color_coding[["t24h-t8w"]] <- "#C00040" #"rosybrown3"
+  color_coding[["t8w-t24h"]] <- "#C00040" #"rosybrown3"
+  # set condition colors
+  color_coding[["HC"]] <- "grey"
+  color_coding[["t0"]] <- "pink"
+  color_coding[["t24h"]] <- "red"
+  color_coding[["t8w"]] <- "purple"
+  # set the cell type colors
+  color_coding[["Bulk"]] <- "black"
+  color_coding[["CD4T"]] <- "#153057"
+  color_coding[["CD8T"]] <- "#009DDB"
+  color_coding[["monocyte"]] <- "#EDBA1B"
+  color_coding[["NK"]] <- "#E64B50"
+  color_coding[["B"]] <- "#71BC4B"
+  color_coding[["DC"]] <- "#965EC8"
+  color_coding[["CD4+ T"]] <- "#153057"
+  color_coding[["CD8+ T"]] <- "#009DDB"
+  # other cell type colors
+  color_coding[["HSPC"]] <- "#009E94"
+  color_coding[["platelet"]] <- "#9E1C00"
+  color_coding[["plasmablast"]] <- "#DB8E00"
+  color_coding[["other T"]] <- "#FF63B6"
+  return(color_coding)
+}
+
+
 #
 # main code
 #
@@ -342,6 +445,7 @@ weighted_networks = readRDS(weighted_networks_loc)
 # read the object
 combined_v2 <- readRDS(combined_v2_loc)
 combined_v2 <- combined_v2[, combined_v2@meta.data$cell_type_lowerres %in% c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')]
+DefaultAssay(combined_v2) <- 'SCT'
 # compare Baseline to t24h
 v2_Baseline_vs_t24h <- do_nichenet_analysis_per_celltype(combined_v2, 'timepoint.final', 't24h', 'Baseline', lr_network, weighted_networks, ligand_target_matrix)
 saveRDS(v2_Baseline_vs_t24h, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_Baseline_vs_t24h_nichenet_onlymajors.rds')
@@ -372,7 +476,7 @@ for(plot_name in names(v2_UT_vs_Baseline_plots)){
 # read the object
 combined_v3 <- readRDS(combined_v3_loc)
 combined_v3 <- combined_v3[, combined_v3@meta.data$cell_type_lowerres %in% c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')]
-
+DefaultAssay(combined_v3) <- 'SCT'
 # compare Baseline to t24h
 v3_Baseline_vs_t24h <- do_nichenet_analysis_per_celltype(combined_v3, 'timepoint.final', 't24h', 'Baseline', lr_network, weighted_networks, ligand_target_matrix)
 saveRDS(v3_Baseline_vs_t24h, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_Baseline_vs_t24h_nichenet_onlymajor.rds')
@@ -458,6 +562,62 @@ for(ct1 in names(v3_UT_vs_Baseline_perct_plots)){
     ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'nichenet_', 'UT_vs_Baseline', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, heigh = 20, plot=v3_UT_vs_Baseline_perct_plots[[ct1]][[ct2]])
   }
 }
+
+# try with the omni data
+ligand_target_matrix_omni_unweighted_loc <-paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/omni/', 'ligand_target_matrixNoweights.rds', sep = '')
+lr_network_omni_loc <- paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/omni/','lr_Network_Omnipath.rds', sep = '')
+unweighted_networks_omni_loc <- paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/omni/','weighted_networksNonSourceWeights.rds', sep = '')
+# there are weighted matrices as well
+ligand_target_matrix_omni_weighted_loc <-paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/omni/', 'ligand_target_matrixWithweights.rds', sep = '')
+weighted_networks_omni_loc <- paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/omni/','weighted_networksWithSourceWeights.rds', sep = '')
+# read network data
+ligand_target_matrix_omni_unweighted = readRDS(ligand_target_matrix_omni_unweighted_loc)
+ligand_target_matrix_omni_weighted = readRDS(ligand_target_matrix_omni_weighted_loc)
+lr_network_omni = readRDS(lr_network_omni_loc)
+unweighted_networks_omni = readRDS(unweighted_networks_omni_loc)
+weighted_networks_omni = readRDS(weighted_networks_omni_loc)
+
+
+# do specifically for one cell type using the omni data
+v2_Baseline_vs_t24h_perct_omni_unweighted <- do_nichenet_analysis_versus_each_celltype(combined_v2, 'timepoint.final', 't24h', 'Baseline', lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
+v2_Baseline_vs_t8w_perct_omni_unweighted <- do_nichenet_analysis_versus_each_celltype(combined_v2, 'timepoint.final', 't8w', 'Baseline', lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
+v2_UT_vs_Baseline_perct_omni_unweighted <- do_nichenet_analysis_versus_each_celltype(combined_v2, 'timepoint.final', 'Baseline', 'UT', lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
+saveRDS(v2_Baseline_vs_t24h_perct_omni_unweighted, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds')
+saveRDS(v2_Baseline_vs_t8w_perct_omni_unweighted, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds')
+saveRDS(v2_UT_vs_Baseline_perct_omni_unweighted, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_UT_vs_Baseline_nichenet_onlymajor_perct_omni_unweighted.rds')
+v2_Baseline_vs_t24h_perc_omni_unweightedt_plots <- perct_output_to_plot(v2_Baseline_vs_t24h_perct_omni_unweighted)
+v2_Baseline_vs_t8w_perct_omni_unweighted_plots <- perct_output_to_plot(v2_Baseline_vs_t8w_perct_omni_unweighted)
+v2_UT_vs_Baseline_perc_omni_unweightedt_plots <- perct_output_to_plot(v2_UT_vs_Baseline_perct_omni_unweighted)
+# for both chemistries
+v3_Baseline_vs_t24h_perct_omni_unweighted <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 't24h', 'Baseline', lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
+v3_Baseline_vs_t8w_perct_omni_unweighted <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 't8w', 'Baseline', lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
+v3_UT_vs_Baseline_perct_omni_unweighted <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 'Baseline', 'UT', lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
+saveRDS(v3_Baseline_vs_t24h_perct_omni_unweighted, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds')
+saveRDS(v3_Baseline_vs_t8w_perct_omni_unweighted, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds')
+saveRDS(v3_UT_vs_Baseline_perct_omni_unweighted, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_UT_vs_Baseline_nichenet_onlymajor_perct_omni_unweighted.rds')
+v3_Baseline_vs_t24h_perc_omni_unweightedt_plots <- perct_output_to_plot(v3_Baseline_vs_t24h_perct_omni_unweighted)
+v3_Baseline_vs_t8w_perct_omni_unweighted_plots <- perct_output_to_plot(v3_Baseline_vs_t8w_perct_omni_unweighted)
+v3_UT_vs_Baseline_perc_omni_unweightedt_plots <- perct_output_to_plot(v3_UT_vs_Baseline_perct_omni_unweighted)
+
+# same thing with the weighted now
+v2_Baseline_vs_t24h_perct_omni_weighted <- do_nichenet_analysis_versus_each_celltype(combined_v2, 'timepoint.final', 't24h', 'Baseline', lr_network_omni, weighted_networks_omni, ligand_target_matrix_omni_weighted)
+v2_Baseline_vs_t8w_perct_omni_weighted <- do_nichenet_analysis_versus_each_celltype(combined_v2, 'timepoint.final', 't8w', 'Baseline', lr_network_omni, weighted_networks_omni, ligand_target_matrix_omni_weighted)
+v2_UT_vs_Baseline_perct_omni_weighted <- do_nichenet_analysis_versus_each_celltype(combined_v2, 'timepoint.final', 'Baseline', 'UT', lr_network_omni, weighted_networks_omni, ligand_target_matrix_omni_weighted)
+saveRDS(v2_Baseline_vs_t24h_perct_omni_weighted, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_weighted.rds')
+saveRDS(v2_Baseline_vs_t8w_perct_omni_weighted, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_weighted.rds')
+saveRDS(v2_UT_vs_Baseline_perct_omni_weighted, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_UT_vs_Baseline_nichenet_onlymajor_perct_omni_weighted.rds')
+v2_Baseline_vs_t24h_perc_omni_weightedt_plots <- perct_output_to_plot(v2_Baseline_vs_t24h_perct_omni_weighted)
+v2_Baseline_vs_t8w_perct_omni_weighted_plots <- perct_output_to_plot(v2_Baseline_vs_t8w_perct_omni_weighted)
+v2_UT_vs_Baseline_perc_omni_weightedt_plots <- perct_output_to_plot(v2_UT_vs_Baseline_perct_omni_weighted)
+v3_Baseline_vs_t24h_perct_omni_weighted <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 't24h', 'Baseline', lr_network_omni, weighted_networks_omni, ligand_target_matrix_omni_weighted)
+v3_Baseline_vs_t8w_perct_omni_weighted <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 't8w', 'Baseline', lr_network_omni, weighted_networks_omni, ligand_target_matrix_omni_weighted)
+v3_UT_vs_Baseline_perct_omni_weighted <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 'Baseline', 'UT', lr_network_omni, weighted_networks_omni, ligand_target_matrix_omni_weighted)
+saveRDS(v3_Baseline_vs_t24h_perct_omni_weighted, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_weighted.rds')
+saveRDS(v3_Baseline_vs_t8w_perct_omni_weighted, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_weighted.rds')
+saveRDS(v3_UT_vs_Baseline_perct_omni_weighted, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_UT_vs_Baseline_nichenet_onlymajor_perct_omni_weighted.rds')
+v3_Baseline_vs_t24h_perc_omni_weightedt_plots <- perct_output_to_plot(v3_Baseline_vs_t24h_perct_omni_weighted)
+v3_Baseline_vs_t8w_perct_omni_weighted_plots <- perct_output_to_plot(v3_Baseline_vs_t8w_perct_omni_weighted)
+v3_UT_vs_Baseline_perc_omni_weightedt_plots <- perct_output_to_plot(v3_UT_vs_Baseline_perct_omni_weighted)
 
 
 

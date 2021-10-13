@@ -1,9 +1,9 @@
 library(circlize)
 
 
-interactions_to_circle <- function(interactions_per_ct_list, plot_title=title(main='cell communication')){
+interactions_to_circle <- function(interactions_per_ct_list, plot_title=title(main='cell communication'), by_receptor=T){
   # get the total number of connections per cell type
-  interaction_numbers <- get_interaction_numbers(interactions_per_ct_list)
+  interaction_numbers <- get_interaction_numbers(interactions_per_ct_list, by_receptor)
   # slim it down into a three column input
   connections_slim <- slim_df_down(interaction_numbers, new_col_names = c('sender', 'receiver', 'connections'))
   # add the receiver and connections together
@@ -13,7 +13,7 @@ interactions_to_circle <- function(interactions_per_ct_list, plot_title=title(ma
   # reformat
   connections_all_ct <- data.frame(a=rownames(connections_all_ct), b=connections_all_ct$connections)
   # get the data in a start/stop manner, instead of a size-manner
-  connections_start_stop <- turn_sizes_to_ranges(connections_directionless, 'c', 'a', 'b')
+  connections_start_stop <- turn_sizes_to_ranges(connections_slim, 'connections', 'sender', 'receiver')
   # make sure the other plot is gone
   circos.clear()
   # start making the plot, set height of track (cell types)
@@ -35,33 +35,17 @@ interactions_to_circle <- function(interactions_per_ct_list, plot_title=title(ma
                 rou2 = get.cell.meta.data("cell.bottom.radius", track.index = 1),
                 col = get_color_coding_dict()[[cell_type]])
   }
-  #circos.text(CELL_META$xcenter, CELL_META$ycenter,CELL_META$sector.index)
+  # draw colour on the sectors, representing the cell types
   for(cell_type in unique(connections_directionless$a)){
     highlight.sector(c(cell_type), track.index = 1, text=label_dict()[[cell_type]], col = '#ffffff00', text.col = '#ffffffff')
   }
   # draw the connections
-#  apply(connections_slim, 1, function(row){
-#    if(!is.na(as.numeric(row['connections'])) & as.numeric(row['connections']) > 0){
-#      # grab the color of the sender
-#      send_color <- get_color_coding_dict()[[row['sender']]]
-#      # and of the receiver
-#      receiver_color <- get_color_coding_dict()[[row['receiver']]]
-#      # split colors in five
-#      ramp_colors <- colorRampPalette(c(send_color, receiver_color))(5)
-#      # color slightly more towards the sender, by taking the second color from the 5 levels, and add remove possible existing transparancy
-#      connection_color <- substr(ramp_colors[2], 1, 7)
-#      # manually add transparancy by adding it to normal 6-colour hex code
-#      connection_color <- paste(connection_color, '80', sep = '')
-#      # draw the connection
-#      circos.link(row['sender'], c(0, as.numeric(row['connections'])), row['receiver'], c(0, as.numeric(row['connections'])), col = connection_color)
-#    }
-#  })
   apply(connections_start_stop, 1, function(row){
-    if(!is.na(row['a'])){
+    if(!is.na(row['sender'])){
       # grab the color of the sender
-      send_color <- get_color_coding_dict()[[row['a']]]
+      send_color <- get_color_coding_dict()[[row['sender']]]
       # and of the receiver
-      receiver_color <- get_color_coding_dict()[[row['b']]]
+      receiver_color <- get_color_coding_dict()[[row['receiver']]]
       # split colors in five
       ramp_colors <- colorRampPalette(c(send_color, receiver_color))(5)
       # color slightly more towards the sender, by taking the second color from the 5 levels, and add remove possible existing transparancy
@@ -75,11 +59,66 @@ interactions_to_circle <- function(interactions_per_ct_list, plot_title=title(ma
       to_start <- as.numeric(row['to_start'])
       to_stop <- as.numeric(row['to_stop'])
       # draw the connection
-      circos.link(row['a'], c(from_start, from_stop), row['b'], c(to_start, to_stop), col = connection_color, directional = 1)
+      circos.link(row['sender'], c(from_start, from_stop), row['receiver'], c(to_start, to_stop), col = connection_color, directional = 1)
     }
   })
   plot_title
 }
+
+
+interactions_to_percentages <- function(interaction_numbers, percentage_of='both_receiver'){
+  # create a new matrix with the same dimensions as the original
+  interaction_percentages <- matrix(, ncol=ncol(interaction_numbers), nrow=nrow(interaction_numbers), dimnames = list(rownames(interaction_numbers), colnames(interaction_numbers)))
+  # calculate the sum of the rows, which are the senders
+  sent_sums <- as.list(rowSums(interaction_numbers, na.rm = T))
+  names(sent_sums) <- rownames(interaction_numbers)
+  # calculate the sum of the columns, which are the receivers
+  received_sums <- as.list(colSums(interaction_numbers, na.rm = T))
+  names(received_sums) <- colnames(interaction_numbers)
+  # check each sender
+  for(sender in rownames(interaction_numbers)){
+    # check each receiver
+    for(receiver in colnames(interaction_numbers)){
+      # grab the value for that combination
+      sender_receiver_combo  <- interaction_numbers[sender, receiver]
+      # depending on the choice, we will calculate a percentage of senders, receivers, or all
+      if(percentage_of == 'sender'){
+        sender_receiver_combo <- sender_receiver_combo / sent_sums[[receiver]]
+      }
+      else if(percentage_of == 'receiver'){
+        sender_receiver_combo <- sender_receiver_combo / received_sums[[receiver]]
+      }
+      else if(percentage_of == 'both_sender'){
+        sender_receiver_combo <- sender_receiver_combo / (sent_sums[[sender]] + received_sums[[sender]])
+      }
+      else if(percentage_of == 'both_receiver'){
+        sender_receiver_combo <- sender_receiver_combo / (sent_sums[[receiver]] + received_sums[[receiver]])
+      }
+      else{
+        print('unknown option, doing both receiver')
+        sender_receiver_combo <- sender_receiver_combo / (sent_sums[[receiver]] + received_sums[[receiver]])
+      }
+      # set the value
+      interaction_percentages[sender, receiver] <- sender_receiver_combo
+    }
+  }
+  return(data.frame(interaction_percentages))
+}
+
+
+all_interactions_to_percentages <- function(interactions_per_ct_list, output_loc_prepend, by_receptor=T, percentages_of=c('sender', 'receiver', 'both_sender', 'both_receiver')){
+  # first get the numbers
+  interaction_numbers <- get_interaction_numbers(interactions_per_ct_list, by_receptor)
+  # then calculate each percentage
+  for(percentage_of in percentages_of){
+    interaction_percentage <- interactions_to_percentages(interaction_numbers, percentage_of)
+    # paste together an output path
+    full_out <- paste(output_loc_prepend, '_percentage_', percentage_of, '.tsv', sep = '')
+    # write the result
+    write.table(interaction_percentage, full_out, sep = '\t', quote = F, col.names = T)
+  }
+}
+
 
 turn_sizes_to_ranges <- function(link_sizes_df, size_column, from_column, to_column){
   # get the possible entries
@@ -90,11 +129,11 @@ turn_sizes_to_ranges <- function(link_sizes_df, size_column, from_column, to_col
   # we'll add entries by index, that is a lot faster than rbinding new rows
   i <- 1
   # check each entry
-  for(x in 1:(length(entries)-1)){
+  for(x in 1:(length(entries))){
     # the column on the horizontal axis is the number, and we'll grab the entry for that number
     from_entry <- entries[x]
     # from the bottom left and from the top right are the same, and the entry against itself is always empty
-    for(y in (x + 1):(length(entries))){
+    for(y in (1):(length(entries))){
       # grab on the vertical axis
       to_entry <- entries[y]
       # store the link size
@@ -103,44 +142,32 @@ turn_sizes_to_ranges <- function(link_sizes_df, size_column, from_column, to_col
       if(nrow(link_sizes_df[link_sizes_df[[from_column]] == from_entry & link_sizes_df[[to_column]] == to_entry, ]) > 0){
         link_size <- as.numeric(link_sizes_df[link_sizes_df[[from_column]] == from_entry & link_sizes_df[[to_column]] == to_entry, size_column])
       }
-      # of course the entry could also be in there in reverse
-      else if(nrow(link_sizes_df[link_sizes_df[[from_column]] == to_entry & link_sizes_df[[to_column]] == from_entry, ]) > 0){
-        link_size <- as.numeric(link_sizes_df[link_sizes_df[[from_column]] == to_entry & link_sizes_df[[to_column]] == from_entry, size_column])
-      }
       # if this link exists, we can continue
       if(!is.na(link_size)){
-        # check if we have not already entered it
-        if(nrow(
-          link_df[!is.na(link_df[[from_column]]) & !is.na(link_df[[to_column]]) & (
-            (link_df[[from_column]] == from_entry & link_df[[to_column]] == to_entry) |
-            (link_df[[from_column]] == to_entry & link_df[[to_column]] == from_entry)
-          ), ]) == 0){
-          # alright, it does not exist, let's see what the current max is for both the sender and receiver, adding zero manually as an option
-          max_from <- max(c(0,
-            as.numeric(link_df[!is.na(link_df[[from_column]]) & !is.na(link_df[[to_column]]) &
-                      link_df[[from_column]] == from_entry, 'from_stop']),
-            as.numeric(link_df[!is.na(link_df[[from_column]]) & !is.na(link_df[[to_column]]) &
-                      link_df[[to_column]] == from_entry, 'to_stop'])
-            )
+        max_from <- max(c(0,
+          as.numeric(link_df[!is.na(link_df[[from_column]]) & !is.na(link_df[[to_column]]) &
+                    link_df[[from_column]] == from_entry, 'from_stop']),
+          as.numeric(link_df[!is.na(link_df[[from_column]]) & !is.na(link_df[[to_column]]) &
+                    link_df[[to_column]] == from_entry, 'to_stop'])
           )
-          max_to <- max(c(0,
+        )
+        max_to <- max(c(0,
             as.numeric(link_df[!is.na(link_df[[to_column]]) & !is.na(link_df[[to_column]]) &
-                      link_df[[from_column]] == to_entry, 'from_stop']),
+                    link_df[[from_column]] == to_entry, 'from_stop']),
             as.numeric(link_df[!is.na(link_df[[to_column]]) & !is.na(link_df[[to_column]]) &
-                      (link_df[[to_column]] == to_entry), 'to_stop'])
-            )
+                    (link_df[[to_column]] == to_entry), 'to_stop'])
           )
+        )
           
-          # now we are either zero or the max of both entries, we'll turn that into the actual entries
-          link_df[i, from_column] <- from_entry
-          link_df[i, to_column] <- to_entry
-          link_df[i, 'from_start'] <- max_from
-          link_df[i, 'from_stop'] <- (max_from + link_size)
-          link_df[i, 'to_start'] <- max_to
-          link_df[i, 'to_stop'] <- (max_to + link_size)
-          # update the index
-          i <- i + 1
-        }
+        # now we are either zero or the max of both entries, we'll turn that into the actual entries
+        link_df[i, from_column] <- from_entry
+        link_df[i, to_column] <- to_entry
+        link_df[i, 'from_start'] <- max_from
+        link_df[i, 'from_stop'] <- (max_from + link_size)
+        link_df[i, 'to_start'] <- max_to
+        link_df[i, 'to_stop'] <- (max_to + link_size)
+        # update the index
+        i <- i + 1
       }
     }
   }
@@ -239,7 +266,7 @@ get_total_interactions <- function(interactions_per_ct_list){
 }
 
 
-get_interaction_numbers <- function(interactions_per_ct_list){
+get_interaction_numbers <- function(interactions_per_ct_list, by_receptor=T){
   # results are saved in a table
   interaction_numbers <- NULL
   # check the number of receptions incoming
@@ -254,8 +281,17 @@ get_interaction_numbers <- function(interactions_per_ct_list){
     for(cell_type_sender in names(receiver)){
       # extract the data for this sender
       sender <- receiver[[cell_type_sender]]
-      # get the number of non-zero ligand-receptor pairs
-      number_receiving_connection <- sum(sender$ligand_receptor_network > 0)
+      # init variable
+      number_receiving_connection <- NA
+      # check if the user want to use the targets or the receptors as connections to the ligand
+      if(by_receptor){
+        # get the number of non-zero ligand-receptor pairs
+        number_receiving_connection <- sum(sender$ligand_receptor_network > 0)
+      }
+      else{
+        # get the number of non-zero ligand-target pairs
+        number_receiving_connection <- sum(sender$ligand_target > 0)
+      }
       # store this in the row that we created
       column_cell_type_receiver[cell_type_sender, cell_type_receiver] <- number_receiving_connection
     }
@@ -437,10 +473,23 @@ interactions_Baseline_t8w_v3 <- readRDS(interactions_Baseline_t8w_v3_loc)
 
 # setup four plot tiles
 par(mfrow=c(3,2))
-interactions_to_circle(interactions_UT_Baseline_v2, plot_title = title('V2 Cell communication changes \nbetween HC and t0'))
-interactions_to_circle(interactions_UT_Baseline_v3, plot_title = title('V3 Cell communication changes \nbetween HC and t0'))
-interactions_to_circle(interactions_Baseline_t24h_v2, plot_title = title('V2 Cell communication changes \nbetween t0 and t24h'))
-interactions_to_circle(interactions_Baseline_t24h_v3, plot_title = title('V3 Cell communication changes \nbetween t0 and t24h'))
-interactions_to_circle(interactions_Baseline_t8w_v2, plot_title = title('V2 Cell communication changes \nbetween t0 and t8w'))
-interactions_to_circle(interactions_Baseline_t8w_v3, plot_title = title('V3 Cell communication changes \nbetween t0 and t8w'))
+interactions_to_circle(interactions_UT_Baseline_v2, plot_title = title('V2 Cell communication changes \nbetween HC and t0'), by_receptor = F)
+interactions_to_circle(interactions_UT_Baseline_v3, plot_title = title('V3 Cell communication changes \nbetween HC and t0'), by_receptor = F)
+interactions_to_circle(interactions_Baseline_t24h_v2, plot_title = title('V2 Cell communication changes \nbetween t0 and t24h'), by_receptor = F)
+interactions_to_circle(interactions_Baseline_t24h_v3, plot_title = title('V3 Cell communication changes \nbetween t0 and t24h'), by_receptor = F)
+interactions_to_circle(interactions_Baseline_t8w_v2, plot_title = title('V2 Cell communication changes \nbetween t0 and t8w'), by_receptor = F)
+interactions_to_circle(interactions_Baseline_t8w_v3, plot_title = title('V3 Cell communication changes \nbetween t0 and t8w'), by_receptor = F)
 
+
+all_interactions_to_percentages(interactions_UT_Baseline_v2, '/data/cardiology/cell_cell_interactions/nichenet/interaction_percentages/UT_Baseline_v2_byreceptor')
+all_interactions_to_percentages(interactions_UT_Baseline_v3, '/data/cardiology/cell_cell_interactions/nichenet/interaction_percentages/UT_Baseline_v3_byreceptor')
+all_interactions_to_percentages(interactions_Baseline_t24h_v2, '/data/cardiology/cell_cell_interactions/nichenet/interaction_percentages/Baseline_t24h_v2_byreceptor')
+all_interactions_to_percentages(interactions_Baseline_t24h_v3, '/data/cardiology/cell_cell_interactions/nichenet/interaction_percentages/Baseline_t24h_v3_byreceptor')
+all_interactions_to_percentages(interactions_Baseline_t8w_v2, '/data/cardiology/cell_cell_interactions/nichenet/interaction_percentages/Baseline_t8w_v2_byreceptor')
+all_interactions_to_percentages(interactions_Baseline_t8w_v3, '/data/cardiology/cell_cell_interactions/nichenet/interaction_percentages/Baseline_t8w_v3_byreceptor')
+all_interactions_to_percentages(interactions_UT_Baseline_v2, '/data/cardiology/cell_cell_interactions/nichenet/interaction_percentages/UT_Baseline_v2_bytarget', by_receptor = F)
+all_interactions_to_percentages(interactions_UT_Baseline_v3, '/data/cardiology/cell_cell_interactions/nichenet/interaction_percentages/UT_Baseline_v3_bytarget', by_receptor = F)
+all_interactions_to_percentages(interactions_Baseline_t24h_v2, '/data/cardiology/cell_cell_interactions/nichenet/interaction_percentages/Baseline_t24h_v2_bytarget', by_receptor = F)
+all_interactions_to_percentages(interactions_Baseline_t24h_v3, '/data/cardiology/cell_cell_interactions/nichenet/interaction_percentages/Baseline_t24h_v3_bytarget', by_receptor = F)
+all_interactions_to_percentages(interactions_Baseline_t8w_v2, '/data/cardiology/cell_cell_interactions/nichenet/interaction_percentages/Baseline_t8w_v2_bytarget', by_receptor = F)
+all_interactions_to_percentages(interactions_Baseline_t8w_v3, '/data/cardiology/cell_cell_interactions/nichenet/interaction_percentages/Baseline_t8w_v3_bytarget', by_receptor = F)
