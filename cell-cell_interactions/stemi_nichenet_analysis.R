@@ -599,6 +599,45 @@ v3_Baseline_vs_t24h_perc_omni_unweightedt_plots <- perct_output_to_plot(v3_Basel
 v3_Baseline_vs_t8w_perct_omni_unweighted_plots <- perct_output_to_plot(v3_Baseline_vs_t8w_perct_omni_unweighted)
 v3_UT_vs_Baseline_perc_omni_unweightedt_plots <- perct_output_to_plot(v3_UT_vs_Baseline_perct_omni_unweighted)
 
+# save the plots once again
+for(ct1 in names(v2_Baseline_vs_t24h_perc_omni_unweightedt_plots)){
+  for(ct2 in names(v2_Baseline_vs_t24h_perc_omni_unweightedt_plots[[ct1]])){
+    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_per_ct/', 'v2_nichenet_omni_', 'Baseline_vs_t24h_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, heigh = 20, plot=v2_Baseline_vs_t24h_perc_omni_unweightedt_plots[[ct1]][[ct2]])
+  }
+}
+# save the plots once again
+for(ct1 in names(v2_Baseline_vs_t8w_perct_omni_unweighted_plots)){
+  for(ct2 in names(v2_Baseline_vs_t8w_perct_omni_unweighted_plots[[ct1]])){
+    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_per_ct/', 'v2_nichenet_omni_', 'Baseline_vs_t8w_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, heigh = 20, plot=v2_Baseline_vs_t8w_perct_omni_unweighted_plots[[ct1]][[ct2]])
+  }
+}
+# save the plots once again
+for(ct1 in names(v2_UT_vs_Baseline_perc_omni_unweightedt_plots)){
+  for(ct2 in names(v2_UT_vs_Baseline_perc_omni_unweightedt_plots[[ct1]])){
+    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_per_ct/', 'v2_nichenet_omni_', 'UT_vs_Baseline_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, heigh = 20, plot=v2_UT_vs_Baseline_perc_omni_unweightedt_plots[[ct1]][[ct2]])
+  }
+}
+
+#and v3
+for(ct1 in names(v3_Baseline_vs_t24h_perc_omni_unweightedt_plots)){
+  for(ct2 in names(v3_Baseline_vs_t24h_perc_omni_unweightedt_plots[[ct1]])){
+    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'v3_nichenet_omni_', 'Baseline_vs_t24h_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, heigh = 20, plot=v3_Baseline_vs_t24h_perc_omni_unweightedt_plots[[ct1]][[ct2]])
+  }
+}
+# save the plots once again
+for(ct1 in names(v3_Baseline_vs_t8w_perct_omni_unweighted_plots)){
+  for(ct2 in names(v3_Baseline_vs_t8w_perct_omni_unweighted_plots[[ct1]])){
+    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'v3_nichenet_omni_', 'Baseline_vs_t8w_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, heigh = 20, plot=v3_Baseline_vs_t8w_perct_omni_unweighted_plots[[ct1]][[ct2]])
+  }
+}
+# save the plots once again
+for(ct1 in names(v3_UT_vs_Baseline_perc_omni_unweightedt_plots)){
+  for(ct2 in names(v3_UT_vs_Baseline_perc_omni_unweightedt_plots[[ct1]])){
+    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'v3_nichenet_omni_', 'UT_vs_Baseline_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, heigh = 20, plot=v3_UT_vs_Baseline_perc_omni_unweightedt_plots[[ct1]][[ct2]])
+  }
+}
+
+
 # same thing with the weighted now
 v2_Baseline_vs_t24h_perct_omni_weighted <- do_nichenet_analysis_versus_each_celltype(combined_v2, 'timepoint.final', 't24h', 'Baseline', lr_network_omni, weighted_networks_omni, ligand_target_matrix_omni_weighted)
 v2_Baseline_vs_t8w_perct_omni_weighted <- do_nichenet_analysis_versus_each_celltype(combined_v2, 'timepoint.final', 't8w', 'Baseline', lr_network_omni, weighted_networks_omni, ligand_target_matrix_omni_weighted)
@@ -619,7 +658,42 @@ v3_Baseline_vs_t24h_perc_omni_weightedt_plots <- perct_output_to_plot(v3_Baselin
 v3_Baseline_vs_t8w_perct_omni_weighted_plots <- perct_output_to_plot(v3_Baseline_vs_t8w_perct_omni_weighted)
 v3_UT_vs_Baseline_perc_omni_weightedt_plots <- perct_output_to_plot(v3_UT_vs_Baseline_perct_omni_weighted)
 
+for(ct1 in names(v2_Baseline_vs_t24h_perc_omni_weightedt_plots)){
+  for(ct2 in names(v2_Baseline_vs_t24h_perc_omni_weightedt_plots[[ct1]])){
+    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_per_ct/', 'v2_nichenet_omni_', 'Baseline_vs_t24h_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, heigh = 20, plot=v2_Baseline_vs_t24h_perc_omni_weightedt_plots[[ct1]][[ct2]])
+  }
+}
+# save the plots once again
+for(ct1 in names(v2_Baseline_vs_t8w_perct_omni_weighted_plots)){
+  for(ct2 in names(v2_Baseline_vs_t8w_perct_omni_weighted_plots[[ct1]])){
+    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_per_ct/', 'v2_nichenet_omni_', 'Baseline_vs_t8w_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, heigh = 20, plot=v2_Baseline_vs_t8w_perct_omni_weighted_plots[[ct1]][[ct2]])
+  }
+}
+# save the plots once again
+for(ct1 in names(v2_UT_vs_Baseline_perc_omni_weightedt_plots)){
+  for(ct2 in names(v2_UT_vs_Baseline_perc_omni_weightedt_plots[[ct1]])){
+    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_per_ct/', 'v2_nichenet_omni_', 'UT_vs_Baseline_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, heigh = 20, plot=v2_UT_vs_Baseline_perc_omni_weightedt_plots[[ct1]][[ct2]])
+  }
+}
 
+#and v3
+for(ct1 in names(v3_Baseline_vs_t24h_perc_omni_weightedt_plots)){
+  for(ct2 in names(v3_Baseline_vs_t24h_perc_omni_weightedt_plots[[ct1]])){
+    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'v3_nichenet_omni_', 'Baseline_vs_t24h_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, heigh = 20, plot=v3_Baseline_vs_t24h_perc_omni_weightedt_plots[[ct1]][[ct2]])
+  }
+}
+# save the plots once again
+for(ct1 in names(v3_Baseline_vs_t8w_perct_omni_weighted_plots)){
+  for(ct2 in names(v3_Baseline_vs_t8w_perct_omni_weighted_plots[[ct1]])){
+    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'v3_nichenet_omni_', 'Baseline_vs_t8w_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, heigh = 20, plot=v3_Baseline_vs_t8w_perct_omni_weighted_plots[[ct1]][[ct2]])
+  }
+}
+# save the plots once again
+for(ct1 in names(v3_UT_vs_Baseline_perc_omni_weightedt_plots)){
+  for(ct2 in names(v3_UT_vs_Baseline_perc_omni_weightedt_plots[[ct1]])){
+    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'v3_nichenet_omni_', 'UT_vs_Baseline_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, heigh = 20, plot=v3_UT_vs_Baseline_perc_omni_weightedt_plots[[ct1]][[ct2]])
+  }
+}
 
 
 create_dotplot_per_ct_and_tp(combined_v3, v3_Baseline_vs_t24h, 'Baseline', 't24h', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined_onlymajor/', split_condition = T)
