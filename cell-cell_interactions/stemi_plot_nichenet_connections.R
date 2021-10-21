@@ -493,3 +493,15 @@ all_interactions_to_percentages(interactions_Baseline_t24h_v2, '/data/cardiology
 all_interactions_to_percentages(interactions_Baseline_t24h_v3, '/data/cardiology/cell_cell_interactions/nichenet/interaction_percentages/Baseline_t24h_v3_bytarget', by_receptor = F)
 all_interactions_to_percentages(interactions_Baseline_t8w_v2, '/data/cardiology/cell_cell_interactions/nichenet/interaction_percentages/Baseline_t8w_v2_bytarget', by_receptor = F)
 all_interactions_to_percentages(interactions_Baseline_t8w_v3, '/data/cardiology/cell_cell_interactions/nichenet/interaction_percentages/Baseline_t8w_v3_bytarget', by_receptor = F)
+
+
+# now for the omin database stuff as well
+interactions_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/object/'
+interactions_omin_unweighted_Baseline_t24h_v2_loc <- paste(interactions_loc, 'v2_Baseline_vs_t24h_nichenet_onlymajors_perct.rds', sep = '')
+interactions_omin_unweighted_Baseline_t8w_v2_loc <- paste(interactions_loc, 'v2_Baseline_vs_t8w_nichenet_onlymajor_perct.rds', sep = '')
+interactions_omin_unweighted_UT_Baseline_v2_loc <- paste(interactions_loc, 'v2_UT_vs_Baseline_nichenet_onlymajor_perct.rds', sep = '')
+interactions_omin_unweighted_Baseline_t24h_v3_loc <- paste(interactions_loc, 'v3_Baseline_vs_t24h_nichenet_onlymajors_perct.rds', sep = '')
+interactions_omin_unweighted_Baseline_t8w_v3_loc <- paste(interactions_loc, 'v3_Baseline_vs_t8w_nichenet_onlymajor_perct.rds', sep = '')
+interactions_omin_unweighted_UT_Baseline_v3_loc <- paste(interactions_loc, 'v3_UT_vs_Baseline_nichenet_onlymajor_perct.rds', sep = '')
+
+

@@ -2,9 +2,6 @@
 # update container apt-get update && apt-get upgrade
 # sudo apt-get install debootstrap
 # sudo apt-get install debian-archive-keyring
-#Place the following lines into the '.rpmmacros' file:
-#%_var /var
-#%_dbpath %{_var}/lib/rpm
 # add to sudo nano /etc/yum.conf
 # assumeyes=1
 
@@ -66,12 +63,15 @@ Include: vim
   apt --yes install libblas-dev
   apt --yes install liblapack-dev
   apt --yes install libboost-all-dev
+  apt --yes install unzip
+  apt --yes install zip
   ########################
   # install conda #
   ########################
   wget https://repo.anaconda.com/archive/Anaconda3-2019.07-Linux-x86_64.sh
   bash Anaconda3-2019.07-Linux-x86_64.sh -b -p /opt/anaconda3
-  ln -s /opt/anaconda3/bind/conda /usr/local/bin/conda
+  chmod +x /opt/anaconda3/bin/conda
+  ln -s /opt/anaconda3/bin/conda /usr/local/bin/conda
   rm Anaconda3-2019.07-Linux-x86_64.sh
   # install python tools
   /opt/anaconda3/bin/conda config --add channels defaults
@@ -105,15 +105,15 @@ Include: vim
   mkdir -p /opt/systemsgenetics/GenotypeHarmonizer/
   cp ./Genotype-Harmonizer/target/GenotypeHarmonizer-1.4.23-SNAPSHOT.jar /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.jar
   echo "#/bin/bash" > /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.sh
-  echo "java -jar /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.jar" >> /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.sh
-  chmod u+x /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.sh
-  ln -s /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.sh /usr/local/bin/GenotypeHarmonizer.sh
+  echo "java -jar /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.jar '$@'" >> /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.sh
+  chmod +x /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.sh
+  ln -s /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.sh /usr/local/bin/GenotypeHarmonizer
   mkdir -p /opt/systemsgenetics/eqtl-mapping-pipeline/
   cp ./eqtl-mapping-pipeline/target/eqtl-mapping-pipeline-1.4.9a-SNAPSHOT.jar /opt/systemsgenetics/eqtl-mapping-pipeline/eqtl-mapping-pipeline.jar
   echo "#/bin/bash" > /opt/systemsgenetics/eqtl-mapping-pipeline/eqtl-mapping-pipeline.sh
-  echo "java -jar /opt/systemsgenetics/eqtl-mapping-pipeline/eqtl-mapping-pipeline.jar" >> /opt/systemsgenetics/eqtl-mapping-pipeline/eqtl-mapping-pipeline.sh
-  chmod u+x /opt/systemsgenetics/eqtl-mapping-pipeline/eqtl-mapping-pipeline.sh
-  ln -s /opt/systemsgenetics/eqtl-mapping-pipeline/qtl-mapping-pipeline.sh /usr/local/bin/qtl-mapping-pipeline.sh
+  echo "java -jar /opt/systemsgenetics/eqtl-mapping-pipeline/eqtl-mapping-pipeline.jar '$@'" >> /opt/systemsgenetics/eqtl-mapping-pipeline/eqtl-mapping-pipeline.sh
+  chmod +x /opt/systemsgenetics/eqtl-mapping-pipeline/eqtl-mapping-pipeline.sh
+  ln -s /opt/systemsgenetics/eqtl-mapping-pipeline/qtl-mapping-pipeline.sh /usr/local/bin/qtl-mapping-pipeline
   cd ../
   rm -r systemsgenetics
   #########################
@@ -123,13 +123,13 @@ Include: vim
   curl -O https://s3.amazonaws.com/plink1-assets/plink_linux_x86_64_20210606.zip
   mkdir -p /opt/plink
   unzip -o plink_linux_x86_64_20210606.zip -d /opt/plink/
-  chmod u+x /opt/plink/plink
+  chmod +x /opt/plink/plink
   ln -s /opt/plink/plink /usr/local/bin/plink
   rm plink_linux_x86_64_20210606.zip
   curl -O https://s3.amazonaws.com/plink2-assets/plink2_linux_x86_64_20210826.zip
   mkdir -p /opt/plink2
   unzip -o plink2_linux_x86_64_20210826.zip -d /opt/plink2/
-  chmod u+x /opt/plink2/plink2
+  chmod +x /opt/plink2/plink2
   ln -s /opt/plink2/plink2 /usr/local/bin/plink2
   rm plink2_linux_x86_64_20210826.zip
   #########################
