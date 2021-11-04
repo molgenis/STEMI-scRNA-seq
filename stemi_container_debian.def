@@ -2,6 +2,9 @@
 # update container apt-get update && apt-get upgrade
 # sudo apt-get install debootstrap
 # sudo apt-get install debian-archive-keyring
+#Place the following lines into the '.rpmmacros' file:
+#%_var /var
+#%_dbpath %{_var}/lib/rpm
 # add to sudo nano /etc/yum.conf
 # assumeyes=1
 
@@ -27,7 +30,7 @@ Include: vim
   apt --yes install curl
   apt --yes install wget
   # install R: https://docs.rstudio.com/resources/install-r/#optional-install-recommended-packages
-  export R_VERSION=4.1.1
+  export R_VERSION=4.1.2
   curl -O https://cdn.rstudio.com/r/debian-10/pkgs/r-${R_VERSION}_1_amd64.deb
   gdebi -n r-${R_VERSION}_1_amd64.deb
   ln -s /opt/R/${R_VERSION}/bin/R /usr/local/bin/R
@@ -63,16 +66,15 @@ Include: vim
   apt --yes install libblas-dev
   apt --yes install liblapack-dev
   apt --yes install libboost-all-dev
-  apt --yes install unzip
-  apt --yes install zip
   ########################
   # install conda #
   ########################
-  wget https://repo.anaconda.com/archive/Anaconda3-2019.07-Linux-x86_64.sh
-  bash Anaconda3-2019.07-Linux-x86_64.sh -b -p /opt/anaconda3
-  chmod +x /opt/anaconda3/bin/conda
-  ln -s /opt/anaconda3/bin/conda /usr/local/bin/conda
-  rm Anaconda3-2019.07-Linux-x86_64.sh
+  export CONDA_VERSION=Anaconda3-2020.11-Linux-x86_64
+  wget https://repo.anaconda.com/archive/${CONDA_VERSION}.sh
+  bash ${CONDA_VERSION}.sh -b -p /opt/anaconda3
+  chmod +x /opt/anaconda3
+  ln -s /opt/anaconda3/bind/conda /usr/local/bin/conda
+  rm ${CONDA_VERSION}.sh
   # install python tools
   /opt/anaconda3/bin/conda config --add channels defaults
   /opt/anaconda3/bin/conda config --add channels bioconda
@@ -105,33 +107,35 @@ Include: vim
   mkdir -p /opt/systemsgenetics/GenotypeHarmonizer/
   cp ./Genotype-Harmonizer/target/GenotypeHarmonizer-1.4.23-SNAPSHOT.jar /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.jar
   echo "#/bin/bash" > /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.sh
-  echo "java -jar /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.jar '$@'" >> /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.sh
+  echo "java -jar /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.jar $@" >> /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.sh
   chmod +x /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.sh
-  ln -s /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.sh /usr/local/bin/GenotypeHarmonizer
+  ln -s /opt/systemsgenetics/GenotypeHarmonizer/GenotypeHarmonizer.sh /usr/local/bin/GenotypeHarmonizer.sh
   mkdir -p /opt/systemsgenetics/eqtl-mapping-pipeline/
   cp ./eqtl-mapping-pipeline/target/eqtl-mapping-pipeline-1.4.9a-SNAPSHOT.jar /opt/systemsgenetics/eqtl-mapping-pipeline/eqtl-mapping-pipeline.jar
   echo "#/bin/bash" > /opt/systemsgenetics/eqtl-mapping-pipeline/eqtl-mapping-pipeline.sh
-  echo "java -jar /opt/systemsgenetics/eqtl-mapping-pipeline/eqtl-mapping-pipeline.jar '$@'" >> /opt/systemsgenetics/eqtl-mapping-pipeline/eqtl-mapping-pipeline.sh
+  echo "java -jar /opt/systemsgenetics/eqtl-mapping-pipeline/eqtl-mapping-pipeline.jar $@" >> /opt/systemsgenetics/eqtl-mapping-pipeline/eqtl-mapping-pipeline.sh
   chmod +x /opt/systemsgenetics/eqtl-mapping-pipeline/eqtl-mapping-pipeline.sh
-  ln -s /opt/systemsgenetics/eqtl-mapping-pipeline/qtl-mapping-pipeline.sh /usr/local/bin/qtl-mapping-pipeline
+  ln -s /opt/systemsgenetics/eqtl-mapping-pipeline/qtl-mapping-pipeline.sh /usr/local/bin/qtl-mapping-pipeline.sh
   cd ../
   rm -r systemsgenetics
   #########################
   # install plink         #
   #########################
   apt --yes install unzip
-  curl -O https://s3.amazonaws.com/plink1-assets/plink_linux_x86_64_20210606.zip
+  export PLINK_VERSION=plink_linux_x86_64_20210606
+  curl -O https://s3.amazonaws.com/plink1-assets/${PLINK_VERSION}.zip
   mkdir -p /opt/plink
-  unzip -o plink_linux_x86_64_20210606.zip -d /opt/plink/
+  unzip -o ${PLINK_VERSION}.zip -d /opt/plink/
   chmod +x /opt/plink/plink
   ln -s /opt/plink/plink /usr/local/bin/plink
-  rm plink_linux_x86_64_20210606.zip
-  curl -O https://s3.amazonaws.com/plink2-assets/plink2_linux_x86_64_20210826.zip
+  rm ${PLINK_VERSION}.zip
+  export PLINK2_VERSION=plink2_linux_x86_64_20211011
+  curl -O https://s3.amazonaws.com/plink2-assets/${PLINK2_VERSION}.zip
   mkdir -p /opt/plink2
-  unzip -o plink2_linux_x86_64_20210826.zip -d /opt/plink2/
+  unzip -o ${PLINK2_VERSION}.zip -d /opt/plink2/
   chmod +x /opt/plink2/plink2
   ln -s /opt/plink2/plink2 /usr/local/bin/plink2
-  rm plink2_linux_x86_64_20210826.zip
+  rm ${PLINK2_VERSION}.zip
   #########################
   # install bcftools      #
   #########################
@@ -204,7 +208,7 @@ Include: vim
   # copy created binary into correct folder
   cp ./bin/fastQTL.static /opt/fastqtl/bin/
   # make executable
-  chmod u+x /opt/fastqtl/bin/fastQTL.static
+  chmod +x /opt/fastqtl/bin/fastQTL.static
   # link to usr/bin so it can be found
   ln -s /opt/fastqtl/fastQTL.static /usr/local/bin/fastQTL.static
   #########################
@@ -224,7 +228,7 @@ Include: vim
   R --slave -e 'remotes::install_version("roxygen2", "7.1.1", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
   R --slave -e 'BiocManager::install(c("devtools"))' >> ./r_lib_install_log.txt
   # which allows us to install specific versions of software
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/multtest_2.48.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/multtest_2.50.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("data.table", "1.14.0", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("ggplot2", "3.3.5", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("ggpubr", "0.4.0", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
@@ -245,43 +249,43 @@ Include: vim
   R --slave -e 'remotes::install_version("scales", "1.1.1", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("broom", "0.7.9", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("tidyverse", "1.3.1", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.4.3.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.6.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("MatrixEQTL", "2.3", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/S4Vectors_0.30.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/IRanges_2.26.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/S4Vectors_0.32.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/IRanges_2.28.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("RCurl", "1.98-1.3", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/data/annotation/src/contrib/GenomeInfoDbData_1.2.6.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/GenomeInfoDb_1.28.2.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/zlibbioc_1.38.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/XVector_0.32.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/GenomicRanges_1.44.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  #R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.4.3.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/data/annotation/src/contrib/GenomeInfoDbData_1.2.7.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/GenomeInfoDb_1.30.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/zlibbioc_1.40.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/XVector_0.34.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/GenomicRanges_1.46.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  #R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.6.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("metafor", "3.0-2", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/topconfects_1.8.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/topconfects_1.10.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("plotly", "4.9.4.1", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("htmlwidgets", "1.5.3", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/MetaVolcanoR_1.6.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/Biostrings_2.60.2.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/MetaVolcanoR_1.8.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/Biostrings_2.62.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("snow", "0.4-3", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("BH", "1.75.0-0", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BiocParallel_1.26.2.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/Rhtslib_1.24.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/Rsamtools_2.8.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BiocParallel_1.28.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/Rhtslib_1.26.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/Rsamtools_2.10.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("RSQLite", "2.2.7", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("png", "0.1-7", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/KEGGREST_1.32.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/AnnotationDbi_1.54.1.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/AnnotationDbi_1.56.1.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("XML", "3.99-0.6", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/GenomicAlignments_1.28.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BiocIO_1.2.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/GenomicAlignments_1.30.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BiocIO_1.4.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("restfulr", "0.0.13", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/rtracklayer_1.52.1.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BSgenome_1.60.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/rtracklayer_1.54.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BSgenome_1.62.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("filelock", "1.0.2", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BiocFileCache_2.0.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/biomaRt_2.48.3.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/GenomicFeatures_1.44.2.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.38.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BiocFileCache_2.2.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/biomaRt_2.50.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/GenomicFeatures_1.46.1.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.40.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   #R --slave -e 'remotes::install_version("hdf5r", "1.3.3", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
   #R --slave -e 'remotes::install_version("hdf5r", "1.3.3", repos="https://mirror.lyrahosting.com/CRAN/", build_opts=c("--no-resave-data", "--no-manual", "--no-build-vignettes", "--with-hdf5=/usr/local/hdf5/bin/h5cc"))'
   # this package is a nightmare
@@ -300,45 +304,46 @@ Include: vim
   R --slave -e 'remotes::install_version("Cairo", "1.5-12.2", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("circlize", "0.4.13", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("doParallel", "1.0.16", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/ComplexHeatmap_2.8.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/DelayedArray_0.18.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/SummarizedExperiment_1.22.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/SingleCellExperiment_1.14.1.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/MAST_1.18.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/limma_3.48.3.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/GenomicAlignments_1.28.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BiocIO_1.2.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/ComplexHeatmap_2.10.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/DelayedArray_0.20.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/SummarizedExperiment_1.24.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/SingleCellExperiment_1.16.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/MAST_1.20.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/limma_3.50.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/GenomicAlignments_1.30.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BiocIO_1.4.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("restfulr", "0.0.13", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/rtracklayer_1.52.1.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BSgenome_1.60.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/rtracklayer_1.54.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BSgenome_1.62.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("filelock", "1.0.2", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BiocFileCache_2.0.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/biomaRt_2.48.3.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/GenomicFeatures_1.44.2.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.38.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/BiocFileCache_2.2.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/biomaRt_2.50.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/GenomicFeatures_1.46.1.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.40.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'devtools::install_github("sqjin/CellChat", ref="eb959d5fc45df9920116f90644fe0b5e155e304b")' ./r_lib_install_log.txt
   R --slave -e 'devtools::install_github("saeyslab/nichenetr", ref="2136a7260fbbe9ef5e9b4af0fd4c9101a3bc9a78")' ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/KEGGREST_1.32.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/AnnotationDbi_1.54.1.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/annotate_1.70.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/genefilter_1.74.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/KEGGREST_1.34.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/AnnotationDbi_1.56.1.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/annotate_1.72.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/genefilter_1.76.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("locfit", "1.5-9.4", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/geneplotter_1.70.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/DESeq2_1.32.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/pcaMethods_1.84.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/geneplotter_1.72.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/DESeq2_1.34.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/bioc/src/contrib/pcaMethods_1.86.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'devtools::install_github("velocyto-team/velocyto.R", ref="83e6ed92c2d9c9640122dcebf8ebbb5788165a21")' ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/sparseMatrixStats_1.4.2.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/DelayedMatrixStats_1.14.3.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/sparseMatrixStats_1.6.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/DelayedMatrixStats_1.16.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("RcppHNSW", "0.3.0", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocNeighbors_1.10.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocNeighbors_1.12.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("rsvd", "1.0.5", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/ScaledMatrix_1.0.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/beachmat_2.8.1.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocSingular_1.8.1.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/SingleR_1.6.1.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/ScaledMatrix_1.2.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/beachmat_2.10.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocSingular_1.10.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/SingleR_1.8.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'devtools::install_github("carmonalab/UCell", ref="9f70daa5ce82ffb2fca4fb1599d939bf03eba9fe")' ./r_lib_install_log.txt
   #R --slave -e 'devtools::install_github("leeshawn/MetaSKAT", ref="c0b63c1961a8d772842d4a5004330d273a8aeb43")' ./r_lib_install_log.txt
   #R --slave -e 'devtools::install_github("weizhouUMICH/SAIGE", ref="648850f38ed8f2d187af6a0587cb078fa3233ec6")' ./r_lib_install_log.txt
+  R --slave -e "devtools::install_github("powellgenomicslab/scPred", ref="af5492e778b076e529c20462c92aacd06c75bdc0")' ./r_lib_install_log.txt"
   # check specifically for URL issues
   grep URL ./r_lib_install_log.txt
   # then remove the file
@@ -358,6 +363,7 @@ Include: vim
   library(Rphenograph)
   library(UCell)
   library(SingleR)
+  library(scPred)
   ' > library_check.R
   # if this script fails then the installation of one of the R libraries failed
   Rscript ./library_check.R
