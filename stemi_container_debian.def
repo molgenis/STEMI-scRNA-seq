@@ -228,7 +228,7 @@ Include: vim
   R --slave -e 'remotes::install_version("roxygen2", "7.1.1", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
   R --slave -e 'BiocManager::install(c("devtools"))' >> ./r_lib_install_log.txt
   # which allows us to install specific versions of software
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/multtest_2.50.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/multtest_2.50.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/multtest/multtest_2.50.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("data.table", "1.14.0", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("ggplot2", "3.3.5", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
@@ -250,28 +250,28 @@ Include: vim
   R --slave -e 'remotes::install_version("scales", "1.1.1", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("broom", "0.7.9", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("tidyverse", "1.3.1", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.6.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/MatrixGenerics_1.6.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/MatrixGenerics/MatrixGenerics_1.6.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("MatrixEQTL", "2.3", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/S4Vectors_0.32.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/S4Vectors_0.32.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/S4Vectors/S4Vectors_0.32.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/IRanges_2.28.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/IRanges_2.28.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/IRanges/IRanges_2.28.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("RCurl", "1.98-1.3", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomeInfoDbData_1.2.7.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/GenomeInfoDbData_1.2.7.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://www.bioconductor.org/packages/release/data/annotation/src/contrib/GenomeInfoDbData_1.2.7.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomeInfoDb_1.30.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/GenomeInfoDb_1.30.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomeInfoDb/GenomeInfoDb_1.30.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/zlibbioc_1.40.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/zlibbioc_1.40.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/zlibbioc/zlibbioc_1.40.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/XVector_0.34.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/XVector_0.34.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/XVector/XVector_0.34.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicRanges_1.46.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/GenomicRanges_1.46.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomicRanges/GenomicRanges_1.46.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.6.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/MatrixGenerics_1.6.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   #R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/MatrixGenerics/MatrixGenerics_1.6.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("metafor", "3.0-2", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contribtopconfects_1.10.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/topconfects_1.10.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/topconfects/topconfects_1.10.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("plotly", "4.9.4.1", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("htmlwidgets", "1.5.3", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
@@ -393,12 +393,11 @@ Include: vim
   R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/BiocSingular_1.10.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocSingular/BiocSingular_1.10.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/SingleR_1.8.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-
   R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/SingleR/SingleR_1.8.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'devtools::install_github("carmonalab/UCell", ref="9f70daa5ce82ffb2fca4fb1599d939bf03eba9fe")' ./r_lib_install_log.txt
-  #R --slave -e 'devtools::install_github("leeshawn/MetaSKAT", ref="c0b63c1961a8d772842d4a5004330d273a8aeb43")' ./r_lib_install_log.txt
-  #R --slave -e 'devtools::install_github("weizhouUMICH/SAIGE", ref="648850f38ed8f2d187af6a0587cb078fa3233ec6")' ./r_lib_install_log.txt
-  R --slave -e 'devtools::install_github("powellgenomicslab/scPred", ref="af5492e778b076e529c20462c92aacd06c75bdc0")' ./r_lib_install_log.txt
+  R --slave -e 'devtools::install_github("carmonalab/UCell", ref="9f70daa5ce82ffb2fca4fb1599d939bf03eba9fe")' >>  ./r_lib_install_log.txt
+  #R --slave -e 'devtools::install_github("leeshawn/MestaSKAT", ref="c0b63c1961a8d772842d4a5004330d273a8aeb43")' >>  ./r_lib_install_log.txt
+  #R --slave -e 'devtools::install_github("weizhouUMICH/SAIGE", ref="648850f38ed8f2d187af6a0587cb078fa3233ec6")' >>  ./r_lib_install_log.txt
+  R --slave -e 'devtools::install_github("powellgenomicslab/scPred", ref="af5492e778b076e529c20462c92aacd06c75bdc0")' >> ./r_lib_install_log.txt
   # check specifically for URL issues
   grep URL ./r_lib_install_log.txt
   # then remove the file
