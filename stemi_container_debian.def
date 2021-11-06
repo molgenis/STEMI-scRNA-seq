@@ -368,7 +368,6 @@ Include: vim
   R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/AnnotationDbi/AnnotationDbi_1.56.1.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/annotate_1.72.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/annotate/annotate_1.72.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/annotate_1.72.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/genefilter_1.76.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/genefilter/genefilter_1.76.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("locfit", "1.5-9.4", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
