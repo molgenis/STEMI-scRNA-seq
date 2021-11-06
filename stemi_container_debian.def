@@ -289,8 +289,6 @@ Include: vim
   R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/Rsamtools/Rsamtools_2.10.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("RSQLite", "2.2.7", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("png", "0.1-7", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/KEGGREST_1.32.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/KEGGREST/KEGGREST_1.32.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/AnnotationDbi_1.56.1.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/AnnotationDbi_1.56.1.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'remotes::install_version("XML", "3.99-0.6", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
