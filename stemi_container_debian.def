@@ -129,7 +129,7 @@ Include: vim
   chmod +x /opt/plink/plink
   ln -s /opt/plink/plink /usr/local/bin/plink
   rm ${PLINK_VERSION}.zip
-  export PLINK2_VERSION=plink2_linux_x86_64_20211011
+  export PLINK2_VERSION=plink2_linux_x86_64_20211125
   curl -O https://s3.amazonaws.com/plink2-assets/${PLINK2_VERSION}.zip
   mkdir -p /opt/plink2
   unzip -o ${PLINK2_VERSION}.zip -d /opt/plink2/
@@ -256,7 +256,7 @@ Include: vim
   #R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.6.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   #R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/MatrixGenerics/MatrixGenerics_1.6.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'tryCatch({install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/MatrixGenerics/MatrixGenerics_1.6.0.tar.gz", repos=NULL)},
-    error=function(cond) {install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.6.0.tar.gz", repos=NULL})' >> ./r_lib_install_log.txt
+    error=function(cond) {install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.6.0.tar.gz", repos=NULL)})' >> ./r_lib_install_log.txt
 
   R --slave -e 'remotes::install_version("MatrixEQTL", "2.3", repos="https://mirror.lyrahosting.com/CRAN/")' >> ./r_lib_install_log.txt
 
@@ -298,8 +298,8 @@ Include: vim
   R --slave -e 'tryCatch({install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicRanges_1.46.0.tar.gz", repos=NULL)},
     error=function(cond) {install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomicRanges/GenomicRanges_1.46.0.tar.gz", repos=NULL)})' >> ./r_lib_install_log.txt
 
-  R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.6.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/MatrixGenerics/MatrixGenerics_1.6.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  #R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.6.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+  #R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/MatrixGenerics/MatrixGenerics_1.6.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'tryCatch({install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.6.0.tar.gz", repos=NULL)},
     error=function(cond) {install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/MatrixGenerics/MatrixGenerics_1.6.0.tar.gz", repos=NULL)})' >> ./r_lib_install_log.txt
 
@@ -317,7 +317,7 @@ Include: vim
 
   #R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/MetaVolcanoR_1.8.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   #R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/MetaVolcanoR/MetaVolcanoR_1.8.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
-  R --slave -e 'tryCatch({https://bioconductor.org/packages/release/bioc/src/contrib/MetaVolcanoR_1.8.0.tar.gz", repos=NULL)},
+  R --slave -e 'tryCatch({install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/MetaVolcanoR_1.8.0.tar.gz", repos=NULL)},
     error=function(cond) {install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/MetaVolcanoR/MetaVolcanoR_1.8.0.tar.gz", repos=NULL)})' >> ./r_lib_install_log.txt
 
 
@@ -393,7 +393,7 @@ Include: vim
   #R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/biomaRt_2.50.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   #R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/biomaRt/biomaRt_2.50.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   R --slave -e 'tryCatch({install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/biomaRt_2.50.0.tar.gz", repos=NULL)},
-    error=function(cond) {install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/biomaRt/biomaRt_2.50.0.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
+    error=function(cond) {install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/biomaRt/biomaRt_2.50.0.tar.gz", repos=NULL)})' >> ./r_lib_install_log.txt
 
   #R --slave -e 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicFeatures_1.46.1.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
   #R --slave -e 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomicFeatures/GenomicFeatures_1.46.1.tar.gz", repos=NULL)' >> ./r_lib_install_log.txt
