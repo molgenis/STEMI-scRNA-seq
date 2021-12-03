@@ -212,6 +212,25 @@ Include: vim
   # link to usr/bin so it can be found
   ln -s /opt/fastqtl/fastQTL.static /usr/local/bin/fastQTL.static
   #########################
+  # install 10x apps      #
+  #########################
+  # download spaceranger
+  wget -O spaceranger-1.3.1.tar.gz "https://cf.10xgenomics.com/releases/spatial-exp/spaceranger-1.3.1.tar.gz?Expires=1638563847&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9jZi4xMHhnZW5vbWljcy5jb20vcmVsZWFzZXMvc3BhdGlhbC1leHAvc3BhY2VyYW5nZXItMS4zLjEudGFyLmd6IiwiQ29uZGl0aW9uIjp7IkRhdGVMZXNzVGhhbiI6eyJBV1M6RXBvY2hUaW1lIjoxNjM4NTYzODQ3fX19XX0_&Signature=WoRryfIVDit~dXVT4kaNXIcYPucHvPN38javPJbRRIUNl3Mk4ANWG1FPHWbkiBme82~GH8KqZvVK75u-E3ZKZOu2~B7vTRyRSunGyylxiW~oCar9D24PxFa~ly72sDheCfTri967JjPhUu1oJG15pV0z0pTWnmN5t3oXtopDyZwoYKxPaRIbZ3-6jO6KgevYlE7F9CWc2piKICoJhjWuCqNvtbT9NRxNKWrh10O~~uGi90wq2uGa0nq6PmyOtN99E-0zEn~5NsYtDFEIOPaMCw85DB4N1EXI5vu3u38Y4hoIldaHbi0AlOqR9iaEimPYI9jMZsaXbxxWHKi0x2wVEA__&Key-Pair-Id=APKAI7S6A5RYOXBWRPDA"
+  # extract
+  tar -xzvf spaceranger-1.3.1.tar.gz
+  # move into /opt
+  mv spaceranger-1.3.1 /opt
+  # symlink in /usr/bin
+  ln -s /opt/spaceranger-1.3.1/spaceranger /usr/local/bin/spaceranger
+  # clean up
+  rm spaceranger-1.3.1.tar.gz
+  # same for cellranger
+  wget -O cellranger-6.1.2.tar.gz "https://cf.10xgenomics.com/releases/cell-exp/cellranger-6.1.2.tar.gz?Expires=1638564883&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9jZi4xMHhnZW5vbWljcy5jb20vcmVsZWFzZXMvY2VsbC1leHAvY2VsbHJhbmdlci02LjEuMi50YXIuZ3oiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkFXUzpFcG9jaFRpbWUiOjE2Mzg1NjQ4ODN9fX1dfQ__&Signature=kPKaB1wBLZf3w8nLiIl5vdasaVLSvKJbiHoK9KlWTMI2zR8v6XqDVXs2jl-3Gq~e2eWDeviu~UWJgon~qFUgwSqf0NssYywlhf-5I1sOBR37IKN3eGNQYsiaQWKVVUrWmQ5l53A7UzdedstD29ovduyLLj-1RIkpUU6sKuFW9nECX11pAGK2WK3WhD2ev9xXjQq8zgZpGyR8XkpYYTbuFimMnU6fONM98sdkCfs2sNT4Q6nJAw~Sn5621zSJBvoziele63cEhHCIOJO4QIutmefP4X8zAAQUnBLowTtZS0NcOM4Vl~MuJiQy-CIZ5Ue3uq8CCEV6WB2rxTkPlPmPcA__&Key-Pair-Id=APKAI7S6A5RYOXBWRPDA"
+  tar -xzvf cellranger-6.1.2.tar.gz
+  mv cellranger-6.1.2 /opt
+  ln -s /opt/cellranger-6.1.2/cellranger /usr/local/bin/cellranger
+  rm cellranger-6.1.2.tar.gz
+  #########################
   # install R libraries   #
   #########################
   # set file where we will log the installation info
@@ -236,13 +255,12 @@ Include: vim
   echo 'library(RCurl)' >> ./install_r_libraries.R
 
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/multtest_2.50.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/multtest_2.50.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/multtest/multtest_2.50.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/multtest_2.50.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/multtest/multtest_2.50.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   echo 'remotes::install_version("data.table", "1.14.0", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
   echo 'remotes::install_version("ggplot2", "3.3.5", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
@@ -268,37 +286,34 @@ Include: vim
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.6.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/MatrixGenerics/MatrixGenerics_1.6.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.6.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.6.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/MatrixGenerics/MatrixGenerics_1.6.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.6.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/MatrixGenerics/MatrixGenerics_1.6.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   echo 'remotes::install_version("MatrixEQTL", "2.3", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/S4Vectors_0.32.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/S4Vectors/S4Vectors_0.32.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/S4Vectors_0.32.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/S4Vectors_0.32.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/S4Vectors/S4Vectors_0.32.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/S4Vectors_0.32.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/S4Vectors/S4Vectors_0.32.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/IRanges_2.28.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/IRanges/IRanges_2.28.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/IRanges_2.28.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/IRanges_2.28.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/IRanges/IRanges_2.28.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/IRanges_2.28.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/IRanges/IRanges_2.28.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
 
   echo 'remotes::install_version("RCurl", "1.98-1.3", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
@@ -306,68 +321,62 @@ Include: vim
   #echo 'install.packages("https://www.bioconductor.org/packages/release/data/annotation/src/contrib/GenomeInfoDbData_1.2.7.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomeInfoDbData_1.2.7.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://www.bioconductor.org/packages/release/data/annotation/src/contrib/GenomeInfoDbData_1.2.7.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://www.bioconductor.org/packages/release/data/annotation/src/contrib/GenomeInfoDbData_1.2.7.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomeInfoDbData_1.2.7.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://www.bioconductor.org/packages/release/data/annotation/src/contrib/GenomeInfoDbData_1.2.7.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomeInfoDbData_1.2.7.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomeInfoDb_1.30.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomeInfoDb/GenomeInfoDb_1.30.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/GenomeInfoDb_1.30.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomeInfoDb_1.30.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomeInfoDb/GenomeInfoDb_1.30.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomeInfoDb_1.30.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomeInfoDb/GenomeInfoDb_1.30.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/zlibbioc_1.40.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/zlibbioc/zlibbioc_1.40.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/zlibbioc_1.40.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/zlibbioc_1.40.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/zlibbioc/zlibbioc_1.40.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/zlibbioc_1.40.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/zlibbioc/zlibbioc_1.40.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/XVector_0.34.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/XVector/XVector_0.34.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/XVector_0.34.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/XVector_0.34.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/XVector/XVector_0.34.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/XVector_0.34.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/XVector/XVector_0.34.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicRanges_1.46.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomicRanges/GenomicRanges_1.46.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicRanges_1.46.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicRanges_1.46.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomicRanges/GenomicRanges_1.46.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicRanges_1.46.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomicRanges/GenomicRanges_1.46.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.6.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/MatrixGenerics/MatrixGenerics_1.6.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.6.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.6.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/MatrixGenerics/MatrixGenerics_1.6.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/MatrixGenerics_1.6.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/MatrixGenerics/MatrixGenerics_1.6.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
 
   echo 'remotes::install_version("metafor", "3.0-2", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
@@ -375,13 +384,12 @@ Include: vim
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/topconfects_1.10.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/topconfects/topconfects_1.10.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/topconfects_1.10.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/topconfects_1.10.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/topconfects/topconfects_1.10.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/topconfects_1.10.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/topconfects/topconfects_1.10.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
 
   echo 'remotes::install_version("plotly", "4.9.4.1", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
@@ -390,104 +398,96 @@ Include: vim
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/MetaVolcanoR_1.8.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/MetaVolcanoR/MetaVolcanoR_1.8.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/MetaVolcanoR_1.8.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/MetaVolcanoR_1.8.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/MetaVolcanoR/MetaVolcanoR_1.8.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/MetaVolcanoR_1.8.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/MetaVolcanoR/MetaVolcanoR_1.8.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/Biostrings_2.62.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/Biostrings/Biostrings_2.62.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/Biostrings_2.62.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/Biostrings_2.62.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/Biostrings/Biostrings_2.62.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/Biostrings_2.62.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/Biostrings/Biostrings_2.62.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
 
-  #echo 'remotes::install_version("snow", "0.4-3", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
-  #echo 'remotes::install_version("BH", "1.75.0-0", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
+  echo 'remotes::install_version("snow", "0.4-3", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
+  echo 'remotes::install_version("BH", "1.75.0-0", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocParallel_1.28.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocParallel/BiocParallel_1.28.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/BiocParallel_1.28.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocParallel_1.28.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocParallel/BiocParallel_1.28.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocParallel_1.28.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocParallel/BiocParallel_1.28.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/Rhtslib_1.26.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/Rhtslib/Rhtslib_1.26.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/Rhtslib_1.26.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/Rhtslib_1.26.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/Rhtslib/Rhtslib_1.26.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/Rhtslib_1.26.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/Rhtslib/Rhtslib_1.26.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/Rsamtools_2.10.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/Rsamtools/Rsamtools_2.10.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/Rsamtools_2.10.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/Rsamtools_2.10.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/Rsamtools/Rsamtools_2.10.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/Rsamtools_2.10.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/Rsamtools/Rsamtools_2.10.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
 
   echo 'remotes::install_version("RSQLite", "2.2.7", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
   echo 'remotes::install_version("png", "0.1-7", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
 
-  #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/AnnotationDbi_1.56.1.tar.gz", repos=NULL)' >> ./install_r_libraries.R
-  #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/AnnotationDbi_1.56.1.tar.gz", repos=NULL)' >> ./install_r_libraries.R
-  echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/AnnotationDbi_1.56.1.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/AnnotationDbi_1.56.1.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/AnnotationDbi_1.56.1.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+  #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/AnnotationDbi_1.56.2.tar.gz", repos=NULL)' >> ./install_r_libraries.R
+  #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/AnnotationDbi/AnnotationDbi_1.56.2.tar.gz", repos=NULL)' >> ./install_r_libraries.R
+  echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/AnnotationDbi_1.56.2.tar.gz")){
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/AnnotationDbi_1.56.2.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/AnnotationDbi/AnnotationDbi_1.56.2.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   echo 'remotes::install_version("XML", "3.99-0.6", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicAlignments_1.30.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomicAlignments/GenomicAlignments_1.30.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicAlignments_1.30.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicAlignments_1.30.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomicAlignments/GenomicAlignments_1.30.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicAlignments_1.30.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomicAlignments/GenomicAlignments_1.30.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocIO_1.4.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocIO/BiocIO_1.4.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/BiocIO_1.4.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocIO_1.4.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocIO/BiocIO_1.4.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocIO_1.4.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocIO/BiocIO_1.4.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
 
   echo 'remotes::install_version("restfulr", "0.0.13", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
@@ -495,71 +495,65 @@ Include: vim
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/rtracklayer_1.54.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/rtracklayer/rtracklayer_1.54.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/rtracklayer_1.54.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/rtracklayer_1.54.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/rtracklayer/rtracklayer_1.54.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/rtracklayer_1.54.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/rtracklayer/rtracklayer_1.54.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BSgenome_1.62.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BSgenome/BSgenome_1.62.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/BSgenome_1.62.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BSgenome_1.62.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BSgenome/BSgenome_1.62.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BSgenome_1.62.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BSgenome/BSgenome_1.62.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   echo 'remotes::install_version("filelock", "1.0.2", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocFileCache_2.2.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocFileCache/BiocFileCache_2.2.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/BiocFileCache_2.2.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocFileCache_2.2.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocFileCache/BiocFileCache_2.2.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocFileCache_2.2.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocFileCache/BiocFileCache_2.2.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/biomaRt_2.50.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/biomaRt/biomaRt_2.50.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/biomaRt_2.50.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/biomaRt_2.50.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/biomaRt/biomaRt_2.50.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/biomaRt_2.50.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/biomaRt/biomaRt_2.50.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicFeatures_1.46.1.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomicFeatures/GenomicFeatures_1.46.1.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicFeatures_1.46.1.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicFeatures_1.46.1.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomicFeatures/GenomicFeatures_1.46.1.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicFeatures_1.46.1.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomicFeatures/GenomicFeatures_1.46.1.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.40.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/VariantAnnotation/VariantAnnotation_1.40.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.40.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.40.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/VariantAnnotation/VariantAnnotation_1.40.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.40.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/VariantAnnotation/VariantAnnotation_1.40.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
 
   #echo 'remotes::install_version("hdf5r", "1.3.3", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
@@ -569,7 +563,7 @@ Include: vim
   #echo 'install.packages("./hdf5r_1.3.2.tar.gz")' ./r_lib_install_log.txt
   echo 'remotes::install_version("hdf5r", "1.3.2", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
 
-  echo 'remotes::install_version("Seurat", "4.0.4", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
+  echo 'remotes::install_version("Seurat", "4.0.5", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
   echo 'devtools::install_github("thomasp85/patchwork@v1.1.0")' ./r_lib_install_log.txt
   echo 'devtools::install_github("mojaveazure/seurat-disk", ref="163f1aade5bac38ed1e9e9c912283a7e74781610")' ./r_lib_install_log.txt
   echo 'remotes::install_version("harmony", "0.1.0", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
@@ -585,90 +579,82 @@ Include: vim
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/ComplexHeatmap_2.10.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/ComplexHeatmap/ComplexHeatmap_2.10.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/ComplexHeatmap_2.10.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/ComplexHeatmap_2.10.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/ComplexHeatmap/ComplexHeatmap_2.10.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/ComplexHeatmap_2.10.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/ComplexHeatmap/ComplexHeatmap_2.10.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/DelayedArray_0.20.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/DelayedArray/DelayedArray_0.20.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/DelayedArray_0.20.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/DelayedArray_0.20.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/DelayedArray/DelayedArray_0.20.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/DelayedArray_0.20.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/DelayedArray/DelayedArray_0.20.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/SummarizedExperiment_1.24.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/SummarizedExperiment/SummarizedExperiment_1.24.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/SummarizedExperiment_1.24.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/SummarizedExperiment_1.24.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/SummarizedExperiment/SummarizedExperiment_1.24.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/SummarizedExperiment_1.24.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/SummarizedExperiment/SummarizedExperiment_1.24.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/SingleCellExperiment_1.16.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/SingleCellExperiment/SingleCellExperiment_1.16.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/SingleCellExperiment_1.16.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/SingleCellExperiment_1.16.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/SingleCellExperiment/SingleCellExperiment_1.16.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/SingleCellExperiment_1.16.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/SingleCellExperiment/SingleCellExperiment_1.16.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/MAST_1.20.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/MAST/MAST_1.20.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/MAST_1.20.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/MAST_1.20.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/MAST/MAST_1.20.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/MAST_1.20.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/MAST/MAST_1.20.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/limma_3.50.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/limma/limma_3.50.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/limma_3.50.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/limma_3.50.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/limma/limma_3.50.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/limma_3.50.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/limma/limma_3.50.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicAlignments_1.30.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomicAlignments/GenomicAlignments_1.30.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicAlignments_1.30.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicAlignments_1.30.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomicAlignments/GenomicAlignments_1.30.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicAlignments_1.30.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomicAlignments/GenomicAlignments_1.30.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocIO_1.4.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocIO/BiocIO_1.4.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/BiocIO_1.4.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocIO_1.4.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocIO/BiocIO_1.4.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocIO_1.4.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocIO/BiocIO_1.4.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
 
   echo 'remotes::install_version("restfulr", "0.0.13", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
@@ -676,72 +662,66 @@ Include: vim
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/rtracklayer_1.54.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/rtracklayer/rtracklayer_1.54.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/rtracklayer_1.54.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/rtracklayer_1.54.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/rtracklayer/rtracklayer_1.54.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/rtracklayer_1.54.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/rtracklayer/rtracklayer_1.54.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BSgenome_1.62.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BSgenome/BSgenome_1.62.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/BSgenome_1.62.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BSgenome_1.62.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BSgenome/BSgenome_1.62.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BSgenome_1.62.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BSgenome/BSgenome_1.62.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   echo 'remotes::install_version("filelock", "1.0.2", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocFileCache_2.2.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocFileCache/BiocFileCache_2.2.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/BiocFileCache_2.2.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocFileCache_2.2.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocFileCache/BiocFileCache_2.2.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocFileCache_2.2.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocFileCache/BiocFileCache_2.2.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/biomaRt_2.50.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/biomaRt/biomaRt_2.50.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/biomaRt_2.50.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/biomaRt_2.50.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/biomaRt/biomaRt_2.50.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/biomaRt_2.50.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/biomaRt/biomaRt_2.50.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicFeatures_1.46.1.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomicFeatures/GenomicFeatures_1.46.1.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicFeatures_1.46.1.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicFeatures_1.46.1.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomicFeatures/GenomicFeatures_1.46.1.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicFeatures_1.46.1.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomicFeatures/GenomicFeatures_1.46.1.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
 
   echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.40.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/VariantAnnotation/VariantAnnotation_1.40.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.40.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.40.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/VariantAnnotation/VariantAnnotation_1.40.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.40.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/VariantAnnotation/VariantAnnotation_1.40.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   echo 'devtools::install_github("sqjin/CellChat", ref="eb959d5fc45df9920116f90644fe0b5e155e304b")' ./r_lib_install_log.txt
   echo 'devtools::install_github("saeyslab/nichenetr", ref="2136a7260fbbe9ef5e9b4af0fd4c9101a3bc9a78")' ./r_lib_install_log.txt
@@ -749,119 +729,109 @@ Include: vim
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/KEGGREST_1.34.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/KEGGREST/KEGGREST_1.34.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/KEGGREST_1.34.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/KEGGREST_1.34.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/KEGGREST/KEGGREST_1.34.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/KEGGREST_1.34.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/KEGGREST/KEGGREST_1.34.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
-  #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/AnnotationDbi_1.56.1.tar.gz", repos=NULL)' >> ./install_r_libraries.R
-  #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/AnnotationDbi/AnnotationDbi_1.56.1.tar.gz", repos=NULL)' >> ./install_r_libraries.R
-  echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/AnnotationDbi_1.56.1.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/AnnotationDbi_1.56.1.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/AnnotationDbi/AnnotationDbi_1.56.1.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+  #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/AnnotationDbi_1.56.2.tar.gz", repos=NULL)' >> ./install_r_libraries.R
+  #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/AnnotationDbi/AnnotationDbi_1.56.2.tar.gz", repos=NULL)' >> ./install_r_libraries.R
+  echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/AnnotationDbi_1.56.2.tar.gz")){
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/AnnotationDbi_1.56.2.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/AnnotationDbi/AnnotationDbi_1.56.2.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/annotate_1.72.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/annotate/annotate_1.72.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/annotate_1.72.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/annotate_1.72.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/annotate/annotate_1.72.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/annotate_1.72.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/annotate/annotate_1.72.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/genefilter_1.76.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/genefilter/genefilter_1.76.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/genefilter_1.76.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/genefilter_1.76.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/genefilter/genefilter_1.76.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/genefilter_1.76.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/genefilter/genefilter_1.76.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   echo 'remotes::install_version("locfit", "1.5-9.4", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/geneplotter_1.72.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/geneplotter/geneplotter_1.72.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/geneplotter_1.72.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/geneplotter_1.72.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/geneplotter/geneplotter_1.72.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/geneplotter_1.72.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/geneplotter/geneplotter_1.72.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/DESeq2_1.34.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/DESeq2/DESeq2_1.34.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/DESeq2_1.34.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/DESeq2_1.34.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/DESeq2/DESeq2_1.34.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/DESeq2_1.34.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/DESeq2/DESeq2_1.34.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/pcaMethods_1.86.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/pcaMethods/pcaMethods/pcaMethods_1.86.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/pcaMethods_1.86.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/pcaMethods_1.86.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/pcaMethods/pcaMethods/pcaMethods_1.86.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/pcaMethods_1.86.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/pcaMethods/pcaMethods/pcaMethods_1.86.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   echo 'devtools::install_github("velocyto-team/velocyto.R", ref="83e6ed92c2d9c9640122dcebf8ebbb5788165a21")' ./r_lib_install_log.txt
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/sparseMatrixStats_1.6.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/sparseMatrixStats/sparseMatrixStats_1.6.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/sparseMatrixStats_1.6.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/sparseMatrixStats_1.6.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/sparseMatrixStats/sparseMatrixStats_1.6.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/sparseMatrixStats_1.6.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/sparseMatrixStats/sparseMatrixStats_1.6.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/DelayedMatrixStats_1.16.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/DelayedMatrixStats/DelayedMatrixStats_1.16.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/DelayedMatrixStats_1.16.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/DelayedMatrixStats_1.16.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/DelayedMatrixStats/DelayedMatrixStats_1.16.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/DelayedMatrixStats_1.16.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/DelayedMatrixStats/DelayedMatrixStats_1.16.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
   echo 'remotes::install_version("RcppHNSW", "0.3.0", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocNeighbors_1.12.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocNeighbors/BiocNeighbors_1.12.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/BiocNeighbors_1.12.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocNeighbors_1.12.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocNeighbors/BiocNeighbors_1.12.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocNeighbors_1.12.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocNeighbors/BiocNeighbors_1.12.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
 
   echo 'remotes::install_version("rsvd", "1.0.5", repos="https://ftp.belnet.be/mirror/CRAN/")' >> ./install_r_libraries.R
@@ -869,37 +839,34 @@ Include: vim
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/ScaledMatrix_1.2.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/ScaledMatrix/ScaledMatrix_1.2.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/ScaledMatrix_1.2.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/ScaledMatrix_1.2.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/ScaledMatrix/ScaledMatrix_1.2.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/ScaledMatrix_1.2.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/ScaledMatrix/ScaledMatrix_1.2.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/beachmat_2.10.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/beachmat/beachmat_2.10.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/beachmat_2.10.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/beachmat_2.10.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/beachmat/beachmat_2.10.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/beachmat_2.10.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/beachmat/beachmat_2.10.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
 
   echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocSingular_1.10.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocSingular/BiocSingular_1.10.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/BiocSingular_1.10.0.tar.gz")){
-    print(paste("using release"))
-    install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocSingular_1.10.0.tar.gz", repos = NULL, silent = FALSE)
-  }
-  else{
-    print(paste("using archive"))
-    install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocSingular/BiocSingular_1.10.0.tar.gz", repos = NULL, silent = FALSE)
-  }' >> ./install_r_libraries.R
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocSingular_1.10.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocSingular/BiocSingular_1.10.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
 
   #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/SingleR_1.8.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
