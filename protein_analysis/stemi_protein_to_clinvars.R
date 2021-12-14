@@ -1,5 +1,14 @@
+#
+# stemi_protein_to_clinvars.R
+#
+# try to explain peak_ck_mb, which is a proxy for heart damage, by protein expression, measured using the CVD3 olink panel
+#
 # 6-7-2021, IV van Blokland, Roy Oelen
+#
 
+#################
+# libraries     #
+#################
 # Load librahaaaries
 library(lme4)
 library(afex)
@@ -8,6 +17,10 @@ library(lmerTest)
 library(tidyverse)
 library(psycho)
 library(report)
+
+#################
+# functions     #
+#################
 
 ## Loading formulas
 olink_to_plottable_table <- function(olink, split_char='\\.'){
@@ -934,6 +947,102 @@ calc_age_in_days <- function(date_of_birth_string, split_character='/', day_of_m
   return(age_days)
 }
 
+
+perform_simple_linear_model_protein <- function(protein_data, clinvar_data, clinvar_column='peak_ck_mb', clinvar_covars=c('age', 'sex'), mtc_methods=c('BH', 'bonferroni'), timepoint_column='timepoint', timepoints=c('Baseline', 't24h', 't8w'), id_column="id", clinvar_id_column="record_id", clinvar_prepend='TEST_', protein_start_column_nr=3){
+  # put the results in a table
+  result_table <- NULL
+  # for convenience sake, we will turn the timepoint columns into strings
+  protein_data[[timepoint_column]] <- as.character(protein_data[[timepoint_column]])
+  # if we are using a prepend
+  clinvar_data[[clinvar_id_column]] <- paste(clinvar_prepend, clinvar_data[[clinvar_id_column]], sep = '')
+  # combine the interested variable with the covariates
+  clinvar_columns <- c(clinvar_column, clinvar_covars)
+  # we will check each timepoint
+  for(timepoint in intersect(timepoints, unique(protein_data[[timepoint_column]]))){
+    # subset the protein data to this timepoint
+    protein_data_timepoint <- protein_data[protein_data[[timepoint_column]] == timepoint, ]
+    # paste each clinical variable onto it
+    protein_data_timepoint[, clinvar_columns] <- clinvar_data[match(protein_data_timepoint[[id_column]], clinvar_data[[clinvar_id_column]]), clinvar_columns]
+    # check each protein, the last columns are the clinical variables we pasted onto the dataframe, so we'll skip those columns, they are not protein data
+    for(protein in colnames(protein_data_timepoint)[protein_start_column_nr:(ncol(protein_data_timepoint) - length(clinvar_columns))]){
+      # grab the data of the clinical variables and the protein
+      protein_data_timepoint_protein <- protein_data_timepoint[, c(protein, clinvar_columns)]
+      # we'll rename the protein to be 'protein', this makes grabbing the results a bit simpler
+      colnames(protein_data_timepoint_protein)[[1]] <- 'protein'
+      # we want only the complete entries, and get these by summing the NAs in each row, if there are no NAs, the sum is zero
+      protein_data_timepoint_protein <- protein_data_timepoint_protein[apply(protein_data_timepoint_protein, 1, FUN = function(x){
+        return(sum(is.na(x)))
+      }) == 0, ]
+      # we'll build the formula now
+      formula_string <- paste(clinvar_column, '~', 'protein')
+      # if we have covariates, we will add these as well
+      if(length(clinvar_covars) > 0 ){
+        formula_explanatory_variables <- paste(clinvar_covars, collapse = '+')
+        formula_string <- paste(formula_string, '+', formula_explanatory_variables, sep = '')
+      }
+      formula <- formula(formula_string)
+      # these values we will extract
+      variables_per_clinical_variable <- c('p', 'estimate', 'se', 't')
+      # make combinations of these variables for each covariate, and the protein
+      clinvar_variable_result_columns_df <- expand.grid(c('protein', clinvar_covars), variables_per_clinical_variable) # creates dataframe of each combination as two columns
+      clinvar_variable_result_columns <- paste(clinvar_variable_result_columns_df[[1]], clinvar_variable_result_columns_df[[2]], sep = '.') # turn the rows into the combinations we want
+      # let's get all thos columns together then
+      result_columns <- c('protein', 'timepoint', 'n', 'r2', 'adj_r2', clinvar_variable_result_columns)
+      # create a empty result first
+      result_row <- data.frame(matrix(NA, nrow=1, ncol=length(result_columns), dimnames = list(NULL, result_columns)))
+      # fill in what we already know
+      result_row[1, 'protein'] <- protein
+      result_row[1, 'timepoint'] <- timepoint
+      result_row[1, 'n'] <- nrow(protein_data_timepoint_protein)
+      # we will try to do linear regression now. This might fail, but we then want to give an NA result, not exit
+      try({
+        linear_regression <- summary(lm(formula = formula, data = protein_data_timepoint_protein))
+        # extract the shared variables
+        r2 = as.numeric(linear_regression$r.squared)
+        adj_r2 = as.numeric(linear_regression$adj.r.squared)
+        # add to the result
+        result_row[1, 'r2'] <- r2
+        result_row[1, 'adj_r2'] <- adj_r2
+        # check of each covariate, and the protein
+        for(variate in c('protein', clinvar_covars)){
+          # get all these variables
+          p = as.numeric(linear_regression$coefficients[[variate, 'Pr(>|t|)']])
+          estimate = as.numeric(linear_regression$coefficients[[variate, 'Estimate']])
+          se = as.numeric(linear_regression$coefficients[[variate, 'Std. Error']])
+          t = as.numeric(linear_regression$coefficients[[variate, 't value']])
+          # set these as variables
+          result_row[1, paste(variate, 'p', sep='.')] <- p
+          result_row[1, paste(variate, 'estimate', sep ='.')] <- estimate
+          result_row[1, paste(variate, 'se', sep = '.')] <- se
+          result_row[1, paste(variate, 't', sep = '.')] <- t
+        }
+      })
+      # let's add this result
+      if(is.null(result_table)){
+        result_table <- result_row
+      }
+      else{
+        result_table <- rbind(result_table, result_row)
+      }
+    }
+  }
+  # do MTC if requested
+  for(method in mtc_methods){
+    # for each p we have
+    for(variate in c('protein', clinvar_covars)){
+      # paste the original column name together
+      orig_column <- paste(variate, 'p', sep = '.')
+      # and the new column
+      new_column <- paste(variate, method, sep = '.')
+      # do the actual calculation
+      result_table[[new_column]] <- p.adjust(result_table[[orig_column]], method = method)
+    }
+  }
+  # add the dependent variable for clearness sake
+  result_table$dependant <- clinvar_column
+  return(result_table)
+}
+
 ####################
 #    Main Code     #
 ####################
@@ -1060,11 +1169,39 @@ plot5 <- ggplot(data=olink_plottable, mapping=aes(x = peakckmb, y = OID00571, co
 plot4+plot3+plot5+plot1+plot2+plot_layout(guides = "collect")
 
 # try to explain protein by peak_ck_mb+gender+age
-protein_by_peakckmb_gender_age <- perform_simple_linear_model(protein_data = olink_plottable, clinvar_data = clinvar, clinvar_prepend='', clinvar_columns = c('peak_ck_mb', 'gender', 'age'))
+protein_by_peakckmb_gender_age <- perform_simple_linear_model(protein_data = olink_plottable, clinvar_data = clinvar, clinvar_prepend='', clinvar_columns = c('log_peak_ck_mb', 'gender', 'age'))
 # write result
 result_reg_loc <- paste('/data/cardiology/clinical_parameters', '/', 'protein_by_peakckmb.tsv', sep = '')
 write.table(protein_by_peakckmb_gender_age, result_reg_loc, col.names = T, row.names = F, sep = '\t')
 
 
+
+# We first copy the olink data and put it in a metadata file
+metadata <- olink_plottable[, c('id', 'timepoint')]
+# Then we only take the protein data from the metadata
+protein_data_log <- olink_plottable[, setdiff(colnames(olink_plottable), c('id', 'timepoint'))]
+# And we log transform the proteins
+protein_data_log <- log(protein_data_log)
+# Add the log transformed proteins to the protein data together with the metadata
+protein_data_log <- cbind(metadata, protein_data_log)
+# try to explain protein by peak_ck_mb+gender+age
+log_protein_by_peakckmb_gender_age <- perform_simple_linear_model(protein_data = protein_data_log, clinvar_data = clinvar, clinvar_prepend='', clinvar_columns = c('peak_ck_mb', 'gender', 'age'))
+
+
+# the protein data is what you give as the variable you are interested
+# olink_plottable for normal protein data
+# protein_data_log for log transformed protein data
+
+# clinvar_column is the column name of what you are trying to explain
+# 'peak_ck_mb' for explaining peak_ck_mb
+# 'log_peak_ck_mb' for explaining log transformed peak_ck_mb
+
+# clinvar_covars conatins the variables you want to 'correct' for (this just means they also explain peak_ck_mb for example)
+
+# for example:
+# explain peak_ck_mb by protein+age+gender
+peak_ck_mb_by_protein <- perform_simple_linear_model_protein(protein_data = olink_plottable, clinvar_data = clinvar, clinvar_column='peak_ck_mb', clinvar_covars=c('age', 'gender'), clinvar_prepend='')
+# explain log peak_ck_mb by protein+log_ck_mb+gender+age
+log_peak_ck_mb_by_protein <- perform_simple_linear_model_protein(protein_data = olink_plottable, clinvar_data = clinvar, clinvar_column='log_peak_ck_mb', clinvar_covars=c('age', 'gender', 'log_ck_mb'), clinvar_prepend='')
 
 
