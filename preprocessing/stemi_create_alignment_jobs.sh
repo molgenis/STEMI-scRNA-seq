@@ -63,7 +63,7 @@ for lane in ${LANES[*]}
 ' >> ${JOB_LOC}
 
   # do the wrapping up
-  echo 'cp -r '${OUTPUT_LOC_TMP_FULL}' '${OUTPUT_LOC_FULL}'
+  echo 'cp -r '${OUTPUT_LOC_TMP_FULL}'/* '${OUTPUT_LOC_FULL}'
 cd '${OUTPUT_LOC}'
 rm -r '${OUTPUT_LOC_TMP_FULL}'
 ' >> ${JOB_LOC}
