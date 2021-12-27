@@ -9,9 +9,9 @@ JOB_DIR='/groups/umcg-franke-scrna/tmp04/releases/blokland-2020/v1/alignment/b38
 LANES=('191125_lane1' '191125_lane2' '191126_lane1' '191126_lane2' '191209_lane1' '191209_lane2')
 
 CORES='22'
-MEMORY='190GB'
+MEMORY_GB='190'
 TMP_SIZE='1024gb'
-RUNTIME='167:59:59'
+RUNTIME='23:59:59'
 
 
 # check each run
@@ -27,7 +27,7 @@ for lane in ${LANES[*]}
     OUTPUT_LOC_FULL=${OUTPUT_LOC}'/'${lane}'/'
     OUTPUT_LOC_TMP_FULL=${OUTPUT_LOC_TMP}'/'${lane}'/'
     # a library file needs to be present
-    LIB_FILE=${OUTPUT_LOC_TMP_FULL}'library.csv'
+    LIB_FILE=${OUTPUT_LOC_FULL}'library.csv'
 
     # echo the header
     echo '#!/bin/bash
@@ -36,7 +36,7 @@ for lane in ${LANES[*]}
 #SBATCH --error='${JOB_ERR}'
 #SBATCH --time='${RUNTIME}'
 #SBATCH --cpus-per-task='${CORES}'
-#SBATCH --mem='${MEMORY}'
+#SBATCH --mem='${MEMORY_GB}'GB
 #SBATCH --nodes=1
 #SBATCH --export=NONE
 #SBATCH --get-user-env=L
@@ -44,9 +44,10 @@ for lane in ${LANES[*]}
 '> ${JOB_LOC}
 
     # do the prerequisites
-    echo 'mkdir -p '${OUTPUT_LOC_TMP}'/'${lane}'/
-cd '${OUTPUT_LOC_TMP}'
-' >> ${JOB_LOC}
+    echo 'mkdir -p '${OUTPUT_LOC_TMP}'/'${lane}'/' >> ${JOB_LOC}
+    echo 'mkdir -p '${OUTPUT_LOC_FULL}'/' >> ${JOB_LOC}
+    echo 'mkdir -p '${OUTPUT_LOC_TMP}'/' >> ${JOB_LOC}
+    echo 'cd '${OUTPUT_LOC_TMP}'/' >> ${JOB_LOC}
 
     # create a library file
     echo 'echo "fastqs,sample,library_type" > '${LIB_FILE} >> ${JOB_LOC}
@@ -54,16 +55,17 @@ cd '${OUTPUT_LOC_TMP}'
 
     # build the job
     echo ${CELLRANGER_LOC}' count \
---id=cellranger_'${lane}' \
+--id='${lane}' \
 --transcriptome='${REFDATA_LOC}' \
 --libraries='${LIB_FILE}' \
---localcores='${CORES}'
+--localcores='${CORES}' \
+--localmem='${MEMORY_GB}' \
 ' >> ${JOB_LOC}
 
   # do the wrapping up
-  echo 'cp -r '${OUTPUT_LOC_TMP_FULL}' '${OUTPUT_LOC}'
+  echo 'cp -r '${OUTPUT_LOC_TMP_FULL}' '${OUTPUT_LOC_FULL}'
 cd '${OUTPUT_LOC}'
-rm -r '${OUTPUT_LOC_TMP}'
+rm -r '${OUTPUT_LOC_TMP_FULL}'
 ' >> ${JOB_LOC}
 
   done
