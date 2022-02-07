@@ -42,7 +42,7 @@ do_nichenet_analysis <- function(seurat_object, receiver, sender_celltypes, cond
   seurat_obj_receiver = SetIdent(seurat_obj_receiver, value = seurat_obj_receiver[[condition.column]])
   condition_oi = condition.1
   condition_reference = condition.2
-  try({
+  tryCatch({
     DE_table_receiver = FindMarkers(object = seurat_obj_receiver, ident.1 = condition_oi, ident.2 = condition_reference, min.pct = pct, test.use = test.use) %>% tibble::rownames_to_column("gene")
     # subset to significant DE genes
     geneset_oi = DE_table_receiver %>% filter(p_val_adj <= 0.05 & abs(avg_log2FC) >= min_avg_log2FC) %>% pull(gene)
@@ -119,6 +119,11 @@ do_nichenet_analysis <- function(seurat_object, receiver, sender_celltypes, cond
     colnames(vis_ligand_lfc) = vis_ligand_lfc %>% colnames() %>% make.names()
     # add to list
     analysis_list[['ligand_lfc']] <- vis_ligand_lfc
+    # let know we have something working
+    print(paste('analysis success for', receiver, 'in',condition_oi, 'vs', condition_reference, ''))
+  }, error = function(e){
+    print(paste('analysis failed for', receiver, 'in',condition_oi, 'vs', condition_reference, ''))
+    print(e)
   })
   return(analysis_list)
 }
@@ -306,8 +311,6 @@ create_dotplot_per_ct_and_tp <- function(seurat_object, features_per_ct, conditi
     try({
       # get the features
       features <- features_per_ct[[as.character(cell_type)]][['best_upstream_ligands']]
-      print(head(features))
-      print(seurat_object_tps)
       # subset the Seurat object to this cell type
       #seurat_object_tps_ct <- seurat_object_tps[, as.character(seurat_object_tps@meta.data[[cell_type_column]]) == cell_type]
       # make the plot
@@ -357,6 +360,73 @@ remove_duplicates_and_selfreferences <- function(omnipath_interactions){
   return(omnipath_interactions_clean)
 }
 
+
+do_nichenet_analysis_versus_each_celltype_confined <- function(seurat_object, 
+                                                               condition.column, 
+                                                               condition.1, 
+                                                               condition.2,
+                                                               gene_list_loc,
+                                                               gene_lists,
+                                                               lr_network, 
+                                                               networks, 
+                                                               ligand_target_matrix, 
+                                                               cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), 
+                                                               cell_type_column='cell_type_lowerres', 
+                                                               pct=0.1, 
+                                                               min_avg_log2FC=0.25, 
+                                                               top_n=20, 
+                                                               max_active_ligand_target_links=200, 
+                                                               active_ligand_target_links_cutoff=0.33, 
+                                                               only_documented_lr=F){
+  # init list
+  analysis_per_pathway <- list()
+  # do for each pathway
+  for(pathway in names(gene_lists)){
+    # get the filename from the list and prepend the path
+    pathway_loc <- paste(gene_list_loc, gene_lists[[pathway]], sep = '')
+    # read the pathway entries
+    entries_pathways <- read.table(paste(pathway_loc), header=F)$V1
+    # subset the lr_network to entries of pathway
+    lnp_pathways <- lr_network[lr_network[['from']] %in% entries_pathways |
+                         lr_network[['to']] %in% entries_pathways, ]
+    
+    # check each gene
+    col_genes <- colnames(ligand_target_matrix)
+    row_names <- rownames(ligand_target_matrix)
+    # add and make unique
+    genes_ltm <- unique(c(col_genes, row_names))
+    # subset ligand target matrix
+    ltm <- ligand_target_matrix[rownames(ligand_target_matrix) %in% genes_ltm, colnames(ligand_target_matrix) %in% genes_ltm]
+    # networks as well
+    #n_pathways <- networks[networks[['from']] %in% entries_pathways | networks[['to']] %in% entries_pathways, ]
+    n_pathways <- networks
+    # do analysis for this set
+    nichenet_pathway <- do_nichenet_analysis_versus_each_celltype(seurat_object=seurat_object, 
+                                              condition.column=condition.column, 
+                                              condition.1 = condition.1, 
+                                              condition.2 = condition.2,
+                                              lr_network = lnp_pathways, 
+                                              weighted_networks=n_pathways, 
+                                              ligand_target_matrix=ltm, 
+                                              cell_types=cell_types, 
+                                              cell_type_column=cell_type_column, 
+                                              pct=pct, 
+                                              min_avg_log2FC=min_avg_log2FC, 
+                                              top_n=top_n, 
+                                              max_active_ligand_target_links=max_active_ligand_target_links, 
+                                              active_ligand_target_links_cutoff=active_ligand_target_links_cutoff, 
+                                              only_documented_lr=only_documented_lr)
+    analysis_per_pathway[[pathway]] <- nichenet_pathway
+  }
+  return(analysis_per_pathway)
+}
+######
+#TEST#
+######
+v2_Baseline_vs_t24h_perct_omni_unweighted_pathways <- do_nichenet_analysis_versus_each_celltype_confined(combined_v2, 'timepoint.final', 't24h', 'Baseline', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
+######
+#/TEST#
+######
 
 get_color_coding_dict <- function(){
   # set the condition colors
@@ -694,6 +764,15 @@ for(ct1 in names(v3_UT_vs_Baseline_perc_omni_weightedt_plots)){
     ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'v3_nichenet_omni_weighted_', 'UT_vs_Baseline_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, heigh = 20, plot=v3_UT_vs_Baseline_perc_omni_weightedt_plots[[ct1]][[ct2]])
   }
 }
+
+
+# now do for a subselection of features
+pathway_gene_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/pathways/annotations/'
+pathway_files <- c('KEGG_IL-17_signaling_pathway.txt', 'KEGG_Th17_cell_differentiation.txt', 'MySigDBC2BIOCARTA_IL23-mediated_signaling_events.txt', 'MySigDBC2BIOCARTA_IL6-mediated_signaling_events.txt', 'REACTOME_Interleukin-10_signaling.txt', 'REACTOME_Interleukin-4_and_13_signalling.txt')
+pathway_files_named <- as.list(pathway_files)
+names(pathway_files_named) <- c('KEGG IL-17 signaling pathway', 'KEGG Th17 cellf ifferentiation', 'MySigDBC2BIOCARTA IL23-mediated signaling events', 'MySigDBC2BIOCARTA IL6-mediated_signaling events', 'REACTOME Interleukin-10 signaling', 'REACTOME Interleukin-4 and 13 signalling')
+
+v2_Baseline_vs_t24h_perct_omni_unweighted_pathways <- do_nichenet_analysis_versus_each_celltype_confined(combined_v2, 'timepoint.final', 't24h', 'Baseline', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
 
 
 create_dotplot_per_ct_and_tp(combined_v3, v3_Baseline_vs_t24h, 'Baseline', 't24h', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined_onlymajor/', split_condition = T)

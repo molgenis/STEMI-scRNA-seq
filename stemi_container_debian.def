@@ -2,10 +2,6 @@
 # update container apt-get update && apt-get upgrade
 # sudo apt-get install debootstrap
 # sudo apt-get install debian-archive-keyring
-#Place the following lines into the '.rpmmacros' file:
-#%_var /var
-#%_dbpath %{_var}/lib/rpm
-# add to sudo nano /etc/yum.conf
 # assumeyes=1
 
 Bootstrap: debootstrap
@@ -29,9 +25,23 @@ Include: vim
   apt --yes install gdebi-core
   apt --yes install curl
   apt --yes install wget
-  # install R: https://docs.rstudio.com/resources/install-r/#optional-install-recommended-packages
+
+  # download everything first
+  cd
   export R_VERSION=4.1.2
   curl -O https://cdn.rstudio.com/r/debian-10/pkgs/r-${R_VERSION}_1_amd64.deb
+  export CONDA_VERSION=Anaconda3-2020.11-Linux-x86_64
+  wget https://repo.anaconda.com/archive/${CONDA_VERSION}.sh
+  apt --yes install unzip
+  export PLINK_VERSION=plink_linux_x86_64_20210606
+  curl -O https://s3.amazonaws.com/plink1-assets/${PLINK_VERSION}.zip
+  export PLINK2_VERSION=plink2_linux_x86_64_20220129
+  curl -O https://s3.amazonaws.com/plink2-assets/${PLINK2_VERSION}.zip
+  wget http://fastqtl.sourceforge.net/files/FastQTL-2.184.linux.tgz
+  wget -O cellranger-6.1.2.tar.gz "https://cf.10xgenomics.com/releases/cell-exp/cellranger-6.1.2.tar.gz?Expires=1644214648&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9jZi4xMHhnZW5vbWljcy5jb20vcmVsZWFzZXMvY2VsbC1leHAvY2VsbHJhbmdlci02LjEuMi50YXIuZ3oiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkFXUzpFcG9jaFRpbWUiOjE2NDQyMTQ2NDh9fX1dfQ__&Signature=UjzG~epJidChrhRcuoKzRgUb0MwzLI1BYj-xZ7Q8OjtYEHwyRJ00yyHoHEMAigCUHEJzgDCWM~VrYry9EfiLK24WfSHmF0XKcYttYnMFvyUvF1MgCz2AgR4nDVUWfiZRl4CxuzLKolg6QPyjKEU8ITw1C9RpGqoDOlKBNJWLE7EnkmytlFFwse~Dg0Y1aNS~LqjW-AN2NvPUKanJ85FihXQwblU59xQFFJZmhshGF01QL9KvR~mdKowjRFdpWsCO961odO9BgIHyHiqXL3SBDjXDofw5soW66gOGVqarMVfEllo5tlO4r0tdSilbjz38CHBYNGWI5vCT3HmMHcw6-A__&Key-Pair-Id=APKAI7S6A5RYOXBWRPDA"
+  wget -O spaceranger-1.3.1.tar.gz "https://cf.10xgenomics.com/releases/spatial-exp/spaceranger-1.3.1.tar.gz?Expires=1644214736&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9jZi4xMHhnZW5vbWljcy5jb20vcmVsZWFzZXMvc3BhdGlhbC1leHAvc3BhY2VyYW5nZXItMS4zLjEudGFyLmd6IiwiQ29uZGl0aW9uIjp7IkRhdGVMZXNzVGhhbiI6eyJBV1M6RXBvY2hUaW1lIjoxNjQ0MjE0NzM2fX19XX0_&Signature=gp56LdzMkJenHtMOIpPLH9n2mCrvynpa6ALDzNqeWJzMBt3GSEOlF13w5N~dBr4QpWy4Q-gydLZrrd~S8BIdH1k5g8EneWxP48w8EtTiHF7MS9pI7Zciy-vwWOCSfomVYj8m7bNs9vMcV4EOIRNzMv~kLf4-QTqFNuybqA8iW2yQW-YKRDTbdSDatiqT4HJbde9bu-Oy3SSXRPsk~TkrYKeAvi3W~6kLKQMJ7kbDo~2j5xBn70tQb4TEaIhVob1dMmjQ06tvpJv~UXjUzpVJRVKWiG1KzBOy6qJHAzZbJc~Rxe6aBtpG2p780IOwT1BdjCK9V2tw1oIYkFxxvsA04w__&Key-Pair-Id=APKAI7S6A5RYOXBWRPDA"
+
+  # install R: https://docs.rstudio.com/resources/install-r/#optional-install-recommended-packages
   gdebi -n r-${R_VERSION}_1_amd64.deb
   ln -s /opt/R/${R_VERSION}/bin/R /usr/local/bin/R
   ln -s /opt/R/${R_VERSION}/bin/Rscript /usr/local/bin/Rscript
@@ -69,8 +79,7 @@ Include: vim
   ########################
   # install conda #
   ########################
-  export CONDA_VERSION=Anaconda3-2020.11-Linux-x86_64
-  wget https://repo.anaconda.com/archive/${CONDA_VERSION}.sh
+  cd
   bash ${CONDA_VERSION}.sh -b -p /opt/anaconda3
   chmod +x /opt/anaconda3
   ln -s /opt/anaconda3/bind/conda /usr/local/bin/conda
@@ -86,6 +95,7 @@ Include: vim
   #########################
   # install java tools    #
   #########################
+  cd
   wget -qO - https://adoptopenjdk.jfrog.io/adoptopenjdk/api/gpg/key/public | apt-key add - # the key for openjdk
   # we need this package to allow adding of repositories
   apt --yes install software-properties-common
@@ -121,16 +131,12 @@ Include: vim
   #########################
   # install plink         #
   #########################
-  apt --yes install unzip
-  export PLINK_VERSION=plink_linux_x86_64_20210606
-  curl -O https://s3.amazonaws.com/plink1-assets/${PLINK_VERSION}.zip
+  cd
   mkdir -p /opt/plink
   unzip -o ${PLINK_VERSION}.zip -d /opt/plink/
   chmod +x /opt/plink/plink
   ln -s /opt/plink/plink /usr/local/bin/plink
   rm ${PLINK_VERSION}.zip
-  export PLINK2_VERSION=plink2_linux_x86_64_20211125
-  curl -O https://s3.amazonaws.com/plink2-assets/${PLINK2_VERSION}.zip
   mkdir -p /opt/plink2
   unzip -o ${PLINK2_VERSION}.zip -d /opt/plink2/
   chmod +x /opt/plink2/plink2
@@ -143,6 +149,7 @@ Include: vim
   #########################
   # install Demuxlet      #
   #########################
+  cd
   apt --yes install libbz2-dev
   # we need a reference to libcurl3
   mkdir ~/libcurl3 && cd ~/libcurl3
@@ -174,6 +181,7 @@ Include: vim
   #########################
   # install FastQTL       #
   #########################
+  cd
   # we need GSL
   apt --yes install libgsl-dev
   # zlib as well
@@ -198,8 +206,7 @@ Include: vim
   cd ../../
   # softlink libgsl, as the appended 0 is no longer used
   ln -s /usr/lib/x86_64-linux-gnu/libgsl.so /usr/lib/x86_64-linux-gnu/libgsl.so.0
-  # download FastQTL
-  wget http://fastqtl.sourceforge.net/files/FastQTL-2.184.linux.tgz
+  # FastQTL
   tar zxvf FastQTL-2.184.linux.tgz
   cd ./FastQTL/
   #make cleanall && make
@@ -214,9 +221,8 @@ Include: vim
   #########################
   # install 10x apps      #
   #########################
-  # download spaceranger
-  wget -O spaceranger-1.3.1.tar.gz "https://cf.10xgenomics.com/releases/spatial-exp/spaceranger-1.3.1.tar.gz?Expires=1638563847&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9jZi4xMHhnZW5vbWljcy5jb20vcmVsZWFzZXMvc3BhdGlhbC1leHAvc3BhY2VyYW5nZXItMS4zLjEudGFyLmd6IiwiQ29uZGl0aW9uIjp7IkRhdGVMZXNzVGhhbiI6eyJBV1M6RXBvY2hUaW1lIjoxNjM4NTYzODQ3fX19XX0_&Signature=WoRryfIVDit~dXVT4kaNXIcYPucHvPN38javPJbRRIUNl3Mk4ANWG1FPHWbkiBme82~GH8KqZvVK75u-E3ZKZOu2~B7vTRyRSunGyylxiW~oCar9D24PxFa~ly72sDheCfTri967JjPhUu1oJG15pV0z0pTWnmN5t3oXtopDyZwoYKxPaRIbZ3-6jO6KgevYlE7F9CWc2piKICoJhjWuCqNvtbT9NRxNKWrh10O~~uGi90wq2uGa0nq6PmyOtN99E-0zEn~5NsYtDFEIOPaMCw85DB4N1EXI5vu3u38Y4hoIldaHbi0AlOqR9iaEimPYI9jMZsaXbxxWHKi0x2wVEA__&Key-Pair-Id=APKAI7S6A5RYOXBWRPDA"
-  # extract
+  cd
+  # untar
   tar -xzvf spaceranger-1.3.1.tar.gz
   # move into /opt
   mv spaceranger-1.3.1 /opt
@@ -225,7 +231,6 @@ Include: vim
   # clean up
   rm spaceranger-1.3.1.tar.gz
   # same for cellranger
-  wget -O cellranger-6.1.2.tar.gz "https://cf.10xgenomics.com/releases/cell-exp/cellranger-6.1.2.tar.gz?Expires=1638564883&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9jZi4xMHhnZW5vbWljcy5jb20vcmVsZWFzZXMvY2VsbC1leHAvY2VsbHJhbmdlci02LjEuMi50YXIuZ3oiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkFXUzpFcG9jaFRpbWUiOjE2Mzg1NjQ4ODN9fX1dfQ__&Signature=kPKaB1wBLZf3w8nLiIl5vdasaVLSvKJbiHoK9KlWTMI2zR8v6XqDVXs2jl-3Gq~e2eWDeviu~UWJgon~qFUgwSqf0NssYywlhf-5I1sOBR37IKN3eGNQYsiaQWKVVUrWmQ5l53A7UzdedstD29ovduyLLj-1RIkpUU6sKuFW9nECX11pAGK2WK3WhD2ev9xXjQq8zgZpGyR8XkpYYTbuFimMnU6fONM98sdkCfs2sNT4Q6nJAw~Sn5621zSJBvoziele63cEhHCIOJO4QIutmefP4X8zAAQUnBLowTtZS0NcOM4Vl~MuJiQy-CIZ5Ue3uq8CCEV6WB2rxTkPlPmPcA__&Key-Pair-Id=APKAI7S6A5RYOXBWRPDA"
   tar -xzvf cellranger-6.1.2.tar.gz
   mv cellranger-6.1.2 /opt
   ln -s /opt/cellranger-6.1.2/cellranger /usr/local/bin/cellranger
@@ -234,6 +239,7 @@ Include: vim
   # install R libraries   #
   #########################
   # set file where we will log the installation info
+  cd
   touch ./r_lib_install_log.txt
   # set the repo
   echo 'local({r <- getOption("repos");r["CRAN"] <- "https://mirror.lyrahosting.com/";options(repos = r)})' > ~/Rprofile.site
@@ -545,8 +551,8 @@ Include: vim
       install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomicFeatures/GenomicFeatures_1.46.1.tar.gz", repos = NULL, silent = FALSE)
     }' >> ./install_r_libraries.R
 
-  echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.40.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
-  echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/VariantAnnotation/VariantAnnotation_1.40.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
+  #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.40.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
+  #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/VariantAnnotation/VariantAnnotation_1.40.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.40.0.tar.gz")){
       print(paste("using release"))
       install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.40.0.tar.gz", repos = NULL, silent = FALSE)
@@ -626,8 +632,8 @@ Include: vim
       install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/MAST/MAST_1.20.0.tar.gz", repos = NULL, silent = FALSE)
     }' >> ./install_r_libraries.R
 
-  echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/limma_3.50.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
-  echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/limma/limma_3.50.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
+  #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/limma_3.50.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
+  #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/limma/limma_3.50.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/limma_3.50.0.tar.gz")){
       print(paste("using release"))
       install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/limma_3.50.0.tar.gz", repos = NULL, silent = FALSE)
@@ -636,8 +642,8 @@ Include: vim
       install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/limma/limma_3.50.0.tar.gz", repos = NULL, silent = FALSE)
     }' >> ./install_r_libraries.R
 
-  echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicAlignments_1.30.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
-  echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomicAlignments/GenomicAlignments_1.30.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
+  #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicAlignments_1.30.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
+  #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomicAlignments/GenomicAlignments_1.30.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicAlignments_1.30.0.tar.gz")){
       print(paste("using release"))
       install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/GenomicAlignments_1.30.0.tar.gz", repos = NULL, silent = FALSE)
@@ -646,8 +652,8 @@ Include: vim
       install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/GenomicAlignments/GenomicAlignments_1.30.0.tar.gz", repos = NULL, silent = FALSE)
     }' >> ./install_r_libraries.R
 
-  echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocIO_1.4.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
-  echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocIO/BiocIO_1.4.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
+  #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocIO_1.4.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
+  #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocIO/BiocIO_1.4.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/BiocIO_1.4.0.tar.gz")){
       print(paste("using release"))
       install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocIO_1.4.0.tar.gz", repos = NULL, silent = FALSE)
@@ -713,8 +719,8 @@ Include: vim
     }' >> ./install_r_libraries.R
 
 
-  echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.40.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
-  echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/VariantAnnotation/VariantAnnotation_1.40.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
+  #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.40.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
+  #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/VariantAnnotation/VariantAnnotation_1.40.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.40.0.tar.gz")){
       print(paste("using release"))
       install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/VariantAnnotation_1.40.0.tar.gz", repos = NULL, silent = FALSE)
@@ -858,8 +864,8 @@ Include: vim
     }' >> ./install_r_libraries.R
 
 
-  echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocSingular_1.10.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
-  echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocSingular/BiocSingular_1.10.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
+  #echo 'install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocSingular_1.10.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
+  #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/BiocSingular/BiocSingular_1.10.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/BiocSingular_1.10.0.tar.gz")){
       print(paste("using release"))
       install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/BiocSingular_1.10.0.tar.gz", repos = NULL, silent = FALSE)
@@ -873,6 +879,14 @@ Include: vim
   #echo 'install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/SingleR/SingleR_1.8.0.tar.gz", repos=NULL)' >> ./install_r_libraries.R
   echo 'tryCatch({install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/SingleR_1.8.0.tar.gz", repos=NULL)},
     error=function(cond){install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/SingleR/SingleR_1.8.0.tar.gz", repos=NULL)})' >> ./install_r_libraries.R
+
+	echo 'if(url.exists("https://bioconductor.org/packages/release/bioc/src/contrib/SingleR_1.8.0.tar.gz")){
+      print(paste("using release"))
+      install.packages("https://bioconductor.org/packages/release/bioc/src/contrib/SingleR_1.8.0.tar.gz", repos = NULL, silent = FALSE)
+    } else{
+      print(paste("using archive"))
+      install.packages("https://bioconductor.org/packages/3.14/bioc/src/contrib/Archive/SingleR/SingleR_1.8.0.tar.gz", repos = NULL, silent = FALSE)
+    }' >> ./install_r_libraries.R
 
 
   echo 'devtools::install_github("carmonalab/UCell", ref="9f70daa5ce82ffb2fca4fb1599d939bf03eba9fe")' >>  ./r_lib_install_log.txt
