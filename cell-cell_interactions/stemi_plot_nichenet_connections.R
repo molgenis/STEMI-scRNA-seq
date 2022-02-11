@@ -4,14 +4,20 @@ library(circlize)
 interactions_to_circle <- function(interactions_per_ct_list, plot_title=title(main='cell communication'), by_receptor=T){
   # get the total number of connections per cell type
   interaction_numbers <- get_interaction_numbers(interactions_per_ct_list, by_receptor)
+  # remove cell types that don't have any relations
+  #interaction_numbers <- remove_empty_entries(interaction_numbers) # TODO does not do anything
   # slim it down into a three column input
   connections_slim <- slim_df_down(interaction_numbers, new_col_names = c('sender', 'receiver', 'connections'))
+  # remove entries that are completely empty
+  #connections_slim <- connections_slim[connections_slim[['connections']] > 0, ] # TODO does not do anything
   # add the receiver and connections together
   connections_directionless <- combine_columns(connections_slim, c('sender', 'receiver'), 'connections')
   # and calculate the totals per cell type
   connections_all_ct <- get_total_interactions(interactions_per_ct_list)
   # reformat
   connections_all_ct <- data.frame(a=rownames(connections_all_ct), b=connections_all_ct$connections)
+  # remove entries that are completely empty
+  #connections_directionless <- connections_directionless[connections_directionless[['c']] > 0,  ] # TODO does not do anything
   # get the data in a start/stop manner, instead of a size-manner
   connections_start_stop <- turn_sizes_to_ranges(connections_slim, 'connections', 'sender', 'receiver')
   # make sure the other plot is gone
@@ -19,6 +25,7 @@ interactions_to_circle <- function(interactions_per_ct_list, plot_title=title(ma
   # start making the plot, set height of track (cell types)
   circos.par('track.height' = 0.1)
   xlims <- data.frame(a=rep(0, times=nrow(connections_all_ct)), b=connections_all_ct$b)
+  # start building
   circos.initialize(sectors = connections_all_ct$a, xlim = xlims)
   # add track with labels
   circos.track(connections_directionless$a, y=connections_directionless$c, panel.fun = function(x, y){
@@ -64,7 +71,9 @@ interactions_to_circle <- function(interactions_per_ct_list, plot_title=title(ma
   })
   plot_title
 }
-
+##TEST##
+plots_to_files(v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway, path_prepend=v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_plot_loc,  title_prepend='V2 Cell communication changes \nbetween HC and t0\nin ')
+##TEST##
 
 interactions_to_percentages <- function(interaction_numbers, percentage_of='both_receiver'){
   # create a new matrix with the same dimensions as the original
@@ -118,6 +127,33 @@ all_interactions_to_percentages <- function(interactions_per_ct_list, output_loc
     write.table(interaction_percentage, full_out, sep = '\t', quote = F, col.names = T)
   }
 }
+
+
+remove_empty_entries <- function(sender_receiver_table){
+  # get the possible cell types
+  cell_types <- unique(rownames(sender_receiver_table), colnames(sender_receiver_table))
+  # initialize values
+  n_ct_connections <- as.list(rep(0, length(cell_types)))
+  names(n_ct_connections) <- cell_types
+  # check each entry
+  for(ct_a in rownames(sender_receiver_table)){
+    for(ct_b in colnames(sender_receiver_table)){
+      # check for this combination
+      combination <- sender_receiver_table[ct_a, ct_b]
+      # if it is either a sender or a receiver, they have a connection
+      if(!is.na(combination) & combination > 0){
+        n_ct_connections[[ct_a]] <-  n_ct_connections[[ct_a]] + combination
+        n_ct_connections[[ct_b]] <-  n_ct_connections[[ct_b]] + combination
+      }
+    }
+  }
+  # grab the entries that were not zero
+  non_zeroes <- names(n_ct_connections[n_ct_connections != 0])
+  # subset the table
+  subsetted_table <- sender_receiver_table[non_zeroes, non_zeroes]
+  return(subsetted_table)
+}
+
 
 
 turn_sizes_to_ranges <- function(link_sizes_df, size_column, from_column, to_column){
@@ -311,6 +347,37 @@ get_interaction_numbers <- function(interactions_per_ct_list, by_receptor=T){
   return(data.frame(interaction_numbers))
 }
 
+
+plots_to_files <- function(plots_per_pathway, path_prepend='./', title_prepend='interactions', ncols=2){
+  # paste together the path to the output
+  output_path <- paste(path_prepend, 'interactions.pdf', sep = '')
+  # check how many pathways there are
+  n_pathways <- length(names(plots_per_pathway))
+  n_row_frac <- n_pathways/ncols
+  n_row <- ceiling(n_row_frac)
+  # set up the  rows and columns
+  par(mfrow=c(n_row,ncols))
+  # we'll save this output
+  pdf(output_path)
+  
+  # do per pathway
+  for(pathway in names(plots_per_pathway)){
+    # get this specific pathway
+    plots_pathway <- plots_per_pathway[[pathway]]
+    tryCatch({
+        # turn into plot
+        interactions_to_circle(plots_pathway, plot_title = paste(title_prepend, pathway), by_receptor = F)
+      }, error=function(cond) {
+        print(paste('got error for pathways', pathway))
+        print(cond)
+      }
+    )
+    
+  }
+  # these were all the plots
+  dev.off()
+}
+
 get_color_coding_dict <- function(){
   # set the condition colors
   color_coding <- list()
@@ -496,7 +563,7 @@ all_interactions_to_percentages(interactions_Baseline_t8w_v3, '/data/cardiology/
 
 
 # now for the omin database stuff as well
-interactions_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/object/'
+interactions_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/'
 interactions_omin_unweighted_Baseline_t24h_v2_loc <- paste(interactions_loc, 'v2_Baseline_vs_t24h_nichenet_onlymajors_perct.rds', sep = '')
 interactions_omin_unweighted_Baseline_t8w_v2_loc <- paste(interactions_loc, 'v2_Baseline_vs_t8w_nichenet_onlymajor_perct.rds', sep = '')
 interactions_omin_unweighted_UT_Baseline_v2_loc <- paste(interactions_loc, 'v2_UT_vs_Baseline_nichenet_onlymajor_perct.rds', sep = '')
@@ -504,4 +571,36 @@ interactions_omin_unweighted_Baseline_t24h_v3_loc <- paste(interactions_loc, 'v3
 interactions_omin_unweighted_Baseline_t8w_v3_loc <- paste(interactions_loc, 'v3_Baseline_vs_t8w_nichenet_onlymajor_perct.rds', sep = '')
 interactions_omin_unweighted_UT_Baseline_v3_loc <- paste(interactions_loc, 'v3_UT_vs_Baseline_nichenet_onlymajor_perct.rds', sep = '')
 
+interactions_omin_unweighted_Baseline_t24h_v2 <- readRDS(interactions_omin_unweighted_Baseline_t24h_v2_loc)
+interactions_omin_unweighted_Baseline_t8w_v2 <- readRDS(interactions_omin_unweighted_Baseline_t8w_v2_loc)
+interactions_omin_unweighted_UT_Baseline_v2 <- readRDS(interactions_omin_unweighted_UT_Baseline_v2_loc)
+interactions_omin_unweighted_Baseline_t24h_v3 <- readRDS(interactions_omin_unweighted_Baseline_t24h_v3_loc)
+interactions_omin_unweighted_Baseline_t8w_v3 <- readRDS(interactions_omin_unweighted_Baseline_t8w_v3_loc)
+interactions_omin_unweighted_UT_Baseline_v3 <- readRDS(interactions_omin_unweighted_UT_Baseline_v3_loc)
+
+
+v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v2, 'timepoint.final', 't24h', 'Baseline', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
+v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v3, 'timepoint.final', 't24h', 'Baseline', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
+v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v2, 'timepoint.final', 't8w', 'Baseline', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
+v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v3, 'timepoint.final', 't8w', 'Baseline', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
+v2_t24h_vs_t8w_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v2, 'timepoint.final', 't8w', 't24h', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
+v3_t24h_vs_t8w_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v3, 'timepoint.final', 't8w', 't24h', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
+v2_UT_vs_Baseline_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v2, 'timepoint.final', 'Baseline', 'UT', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
+v3_UT_vs_Baseline_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v3, 'timepoint.final', 'Baseline', 'UT', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
+v2_UT_vs_t24h_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v2, 'timepoint.final', 't24h', 'UT', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
+v3_UT_vs_t24h_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v3, 'timepoint.final', 't24h', 'UT', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
+
+
+par(mfrow=c(3,2))
+interactions_to_circle(interactions_UT_Baseline_v2, plot_title = title('V2 Cell communication changes \nbetween HC and t0'), by_receptor = F)
+interactions_to_circle(interactions_UT_Baseline_v3, plot_title = title('V3 Cell communication changes \nbetween HC and t0'), by_receptor = F)
+interactions_to_circle(interactions_Baseline_t24h_v2, plot_title = title('V2 Cell communication changes \nbetween t0 and t24h'), by_receptor = F)
+interactions_to_circle(interactions_Baseline_t24h_v3, plot_title = title('V3 Cell communication changes \nbetween t0 and t24h'), by_receptor = F)
+interactions_to_circle(interactions_Baseline_t8w_v2, plot_title = title('V2 Cell communication changes \nbetween t0 and t8w'), by_receptor = F)
+interactions_to_circle(interactions_Baseline_t8w_v3, plot_title = title('V3 Cell communication changes \nbetween t0 and t8w'), by_receptor = F)
+
+v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds'
+v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway <- readRDS(v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_loc)
+v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/stemi_v2_Baseline_t24h_v2_byreceptor_perpathway_'
+plots_to_files(v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway, path_prepend=v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_plot_loc,  title_prepend='V2 Cell communication changes \nbetween HC and t0\nin ')
 
