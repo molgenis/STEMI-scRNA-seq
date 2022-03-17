@@ -1,23 +1,15 @@
 library(circlize)
 
 
-interactions_to_circle <- function(interactions_per_ct_list, plot_title=title(main='cell communication'), by_receptor=T){
+interactions_to_circle <- function(interactions_per_ct_list, plot_title='cell communication', by_receptor=T){
   # get the total number of connections per cell type
   interaction_numbers <- get_interaction_numbers(interactions_per_ct_list, by_receptor)
-  # remove cell types that don't have any relations
-  #interaction_numbers <- remove_empty_entries(interaction_numbers) # TODO does not do anything
   # slim it down into a three column input
   connections_slim <- slim_df_down(interaction_numbers, new_col_names = c('sender', 'receiver', 'connections'))
-  # remove entries that are completely empty
-  #connections_slim <- connections_slim[connections_slim[['connections']] > 0, ] # TODO does not do anything
-  # add the receiver and connections together
-  connections_directionless <- combine_columns(connections_slim, c('sender', 'receiver'), 'connections')
-  # and calculate the totals per cell type
-  connections_all_ct <- get_total_interactions(interactions_per_ct_list)
-  # reformat
-  connections_all_ct <- data.frame(a=rownames(connections_all_ct), b=connections_all_ct$connections)
-  # remove entries that are completely empty
-  #connections_directionless <- connections_directionless[connections_directionless[['c']] > 0,  ] # TODO does not do anything
+  # add receiver and sender together
+  connections_all_ct <- combine_directions_cells(connections_slim)
+  # okay, I did this somewhere in the past, so afraid I have to do it again
+  colnames(connections_all_ct) <- c('a', 'b')
   # get the data in a start/stop manner, instead of a size-manner
   connections_start_stop <- turn_sizes_to_ranges(connections_slim, 'connections', 'sender', 'receiver')
   # make sure the other plot is gone
@@ -28,14 +20,14 @@ interactions_to_circle <- function(interactions_per_ct_list, plot_title=title(ma
   # start building
   circos.initialize(sectors = connections_all_ct$a, xlim = xlims)
   # add track with labels
-  circos.track(connections_directionless$a, y=connections_directionless$c, panel.fun = function(x, y){
+  circos.track(connections_all_ct$a, y=connections_all_ct$b, panel.fun = function(x, y){
     circos.text(CELL_META$xcenter, 
                 CELL_META$ycenter, 
                 CELL_META$sector.index)
     circos.axis(labels.cex = 0.6, labels.facing = 'outside')
   })
   # color the tracks
-  for(cell_type in unique(connections_directionless$a)){
+  for(cell_type in unique(connections_all_ct$a)){
     draw.sector(get.cell.meta.data("cell.start.degree", sector.index = cell_type),
                 get.cell.meta.data("cell.end.degree", sector.index = cell_type),
                 rou1 = get.cell.meta.data("cell.top.radius", track.index = 1),
@@ -43,7 +35,7 @@ interactions_to_circle <- function(interactions_per_ct_list, plot_title=title(ma
                 col = get_color_coding_dict()[[cell_type]])
   }
   # draw colour on the sectors, representing the cell types
-  for(cell_type in unique(connections_directionless$a)){
+  for(cell_type in unique(connections_all_ct$a)){
     highlight.sector(c(cell_type), track.index = 1, text=label_dict()[[cell_type]], col = '#ffffff00', text.col = '#ffffffff')
   }
   # draw the connections
@@ -69,11 +61,9 @@ interactions_to_circle <- function(interactions_per_ct_list, plot_title=title(ma
       circos.link(row['sender'], c(from_start, from_stop), row['receiver'], c(to_start, to_stop), col = connection_color, directional = 1)
     }
   })
-  plot_title
+  title(plot_title)
 }
-##TEST##
-plots_to_files(v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway, path_prepend=v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_plot_loc,  title_prepend='V2 Cell communication changes \nbetween HC and t0\nin ')
-##TEST##
+
 
 interactions_to_percentages <- function(interaction_numbers, percentage_of='both_receiver'){
   # create a new matrix with the same dimensions as the original
@@ -210,6 +200,30 @@ turn_sizes_to_ranges <- function(link_sizes_df, size_column, from_column, to_col
   return(link_df)
 }
 
+
+combine_directions_cells <- function(slim_connection_df, cell_types){
+  # we will save the sum of the incoming and outgoing connections per cell type
+  total_sum_per_cell_type <- NULL
+  # we will check each sender
+  for(cell_type in unique(c(slim_connection_df[['sender']], slim_connection_df[['receiver']]))){
+    # check that sender against each receiver
+    sent_connections <- sum(slim_connection_df[!is.na(slim_connection_df[['connections']]) & slim_connection_df[['sender']] == cell_type, 'connections'])
+    # check the incoming the connections
+    incoming_connections <- sum(slim_connection_df[!is.na(slim_connection_df[['connections']]) & slim_connection_df[['receiver']] == cell_type, 'connections'])
+    # add these two together
+    total_connections <- sent_connections + incoming_connections
+    # turn this into a row for tht dataframe
+    connection_row <- data.frame(cell_type=c(cell_type), connections=total_connections)
+    # add to dataframe
+    if(is.null(total_sum_per_cell_type)){
+      total_sum_per_cell_type <- connection_row
+    }
+    else{
+      total_sum_per_cell_type <- rbind(total_sum_per_cell_type, connection_row)
+    }
+  }
+  return(total_sum_per_cell_type)
+}
 
 
 
@@ -599,8 +613,29 @@ interactions_to_circle(interactions_Baseline_t24h_v3, plot_title = title('V3 Cel
 interactions_to_circle(interactions_Baseline_t8w_v2, plot_title = title('V2 Cell communication changes \nbetween t0 and t8w'), by_receptor = F)
 interactions_to_circle(interactions_Baseline_t8w_v3, plot_title = title('V3 Cell communication changes \nbetween t0 and t8w'), by_receptor = F)
 
-v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds'
+#v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds'
+v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_loc <- '/data/cardiology/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds'
 v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway <- readRDS(v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_loc)
-v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/stemi_v2_Baseline_t24h_v2_byreceptor_perpathway_'
-plots_to_files(v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway, path_prepend=v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_plot_loc,  title_prepend='V2 Cell communication changes \nbetween HC and t0\nin ')
+#v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/stemi_v2_Baseline_t24h_v2_byreceptor_perpathway_'
+v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/data/cardiology/cell_cell_interactions//plots/nichenet/stemi_v2_Baseline_t24h_v2_byreceptor_perpathway_'
+plots_to_files(v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway, path_prepend=v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_plot_loc,  title_prepend='v2 Cell communication changes \nbetween t0 and t24h\n in')
+#v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds'
+v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_loc <- '/data/cardiology/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds'
+v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway <- readRDS(v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_loc)
+#v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/stemi_v2_Baseline_t24h_v2_byreceptor_perpathway_'
+v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/data/cardiology/cell_cell_interactions//plots/nichenet/stemi_v2_Baseline_t8w_v2_byreceptor_perpathway_'
+plots_to_files(v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway, path_prepend=v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_plot_loc,  title_prepend='v2 Cell communication changes \nbetween t0 and t8w\n in')
+
+#v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds'
+v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_loc <- '/data/cardiology/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds'
+v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway <- readRDS(v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_loc)
+#v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/stemi_v3_Baseline_t24h_v3_byreceptor_perpathway_'
+v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/data/cardiology/cell_cell_interactions//plots/nichenet/stemi_v3_Baseline_t24h_v3_byreceptor_perpathway_'
+plots_to_files(v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway, path_prepend=v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_plot_loc,  title_prepend='v3 Cell communication changes \nbetween t0 and t24h\n in')
+#v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds'
+v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_loc <- '/data/cardiology/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds'
+v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway <- readRDS(v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_loc)
+#v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/stemi_v3_Baseline_t24h_v3_byreceptor_perpathway_'
+v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/data/cardiology/cell_cell_interactions//plots/nichenet/stemi_v3_Baseline_t8w_v3_byreceptor_perpathway_'
+plots_to_files(v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway, path_prepend=v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_plot_loc,  title_prepend='v3 Cell communication changes \nbetween t0 and t24h\n in')
 

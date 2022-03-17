@@ -792,6 +792,7 @@ v3_UT_vs_t8w_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_v
 saveRDS(v3_UT_vs_t8w_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_UT_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds')
 
 
+
 create_dotplot_per_ct_and_tp(combined_v3, v3_Baseline_vs_t24h, 'Baseline', 't24h', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined_onlymajor/', split_condition = T)
 create_dotplot_per_ct_and_tp(combined_v3, v3_Baseline_vs_t8w, 'Baseline', 't8w', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined_onlymajor/', split_condition = T)
 create_dotplot_per_ct_and_tp(combined_v3, v3_UT_vs_Baseline, 'UT', 'Baseline', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined_onlymajor/', split_condition = T)
