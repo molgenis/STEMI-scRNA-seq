@@ -11,12 +11,7 @@
 #################
 # Load librahaaaries
 library(lme4)
-library(afex)
 library(lmerTest)
-# ugly tidyverse library, bleh
-library(tidyverse)
-library(psycho)
-library(report)
 
 #################
 # functions     #
@@ -774,72 +769,6 @@ perform_protein_analysis_clinvars <- function(protein_data, clinvar_data, number
 }  
 
 
-# perform_simple_linear_model <- function(protein_data, clinvar_data, clinvar_column='peak_ck_mb', timepoint_column='timepoint', timepoints=c('Baseline', 't24h', 't8w'), id_column="id", clinvar_id_column="record_id", clinvar_prepend='TEST_', protein_start_column_nr=3){
-#   # put the results in a table
-#   result_table <- NULL
-#   # for convenience sake, we will turn the timepoint columns into strings
-#   protein_data[[timepoint_column]] <- as.character(protein_data[[timepoint_column]])
-#   # if we are using a prepend
-#   clinvar_data[[clinvar_id_column]] <- paste(clinvar_prepend, clinvar_data[[clinvar_id_column]], sep = '')
-#   # we will check each timepoint
-#   for(timepoint in intersect(timepoints, unique(protein_data[[timepoint_column]]))){
-#     # subset the protein data to this timepoint
-#     protein_data_timepoint <- protein_data[protein_data[[timepoint_column]] == timepoint, ]
-#     # paste the clinical data onto it
-#     protein_data_timepoint[['clinvar']] <- clinvar_data[match(protein_data_timepoint[[id_column]], clinvar_data[[clinvar_id_column]]), clinvar_column]
-#     # check each protein
-#     for(protein in colnames(protein_data_timepoint)[protein_start_column_nr:(ncol(protein_data_timepoint) - 1)]){
-#       # turn into simple two column dataframe
-#       protein_data_timepoint_protein <- protein_data_timepoint[, c(protein, 'clinvar')]
-#       # and subset to full entries
-#       protein_data_timepoint_protein <- protein_data_timepoint_protein[!is.na(protein_data_timepoint_protein[[protein]]) &
-#                                                                          !is.na(protein_data_timepoint_protein[['clinvar']]), ]
-#       # setup default variables
-#       n = nrow(protein_data_timepoint_protein)
-#       p = NA
-#       r2 = NA
-#       adj_r2 = NA
-#       estimate = NA
-#       se=NA
-#       t = NA
-# 
-#       # try to do this
-#       try({
-#         formula <- as.formula(paste('clinvar', '~', protein, sep = ''))
-#         linear_regression <- summary(lm(formula = formula, data = protein_data_timepoint_protein))
-#         # set all these variables
-#         p = as.numeric(linear_regression$coefficients[[protein, 'Pr(>|t|)']])
-#         r2 = as.numeric(linear_regression$r.squared)
-#         adj_r2 = as.numeric(linear_regression$adj.r.squared)
-#         estimate = as.numeric(linear_regression$coefficients[[protein, 'Estimate']])
-#         se = as.numeric(linear_regression$coefficients[[protein, 'Std. Error']])
-#         t = as.numeric(linear_regression$coefficients[[protein, 't value']])
-#       })
-#       # make row
-#       row <- data.frame(clinvar=c(clinvar_column),
-#                         timepoint=c(timepoint),
-#                         protein=c(protein),
-#                         p=c(p),
-#                         r2=c(r2),
-#                         adj_r2=c(adj_r2),
-#                         estimate=c(estimate),
-#                         se=c(se),
-#                         t=c(t),
-#                         n=n,
-#                         stringsAsFactors = F)
-#       # add to the rest
-#       if(is.null(result_table)){
-#         result_table <- row
-#       }
-#       else{
-#         result_table <- rbind(result_table, row)
-#       }
-#     }
-#   }
-#   return(result_table)
-# }
-
-
 perform_simple_linear_model <- function(protein_data, clinvar_data, clinvar_columns=c('peak_ck_mb', 'age', 'sex'), mtc_methods=c('BH', 'bonferroni'), timepoint_column='timepoint', timepoints=c('Baseline', 't24h', 't8w'), id_column="id", clinvar_id_column="record_id", clinvar_prepend='TEST_', protein_start_column_nr=3){
   # put the results in a table
   result_table <- NULL
@@ -1088,91 +1017,12 @@ clinvar$age <- apply(clinvar, 1, function(x){
   age <- calc_age_in_days(as.character(x[['date_birth']]), split_character =  '-', year_col = 1, month_of_year_col = 2, day_of_month_col = 3)
   return(age)
 })
-# calculate correlation
-corgenes <- correlate_protein_expression_and_clinicalvars(olink_plottable, clinvar, variables_to_correlate = c("peak_ck_mb"), mtc_method = "fdr")
-corgenes$uniprotid <- olinkid_to_uid[match(corgenes$gene, olinkid_to_uid$OlinkID), "Uniprot.ID"]
-corgenes$gs <- uniprotid_to_gs[match(corgenes$uniprotid, uniprotid_to_gs$From), "To"]
-write.table(corgenes, file="/Users/irene/Documents/Geneeskunde/MD-PhD/scRNA-seq_data/Olink/20210701_corrclinvarstoproteins/20210701_peakckmbtoprotein.tsv", row.names= F, sep="\t")
 
-# plotting significantly correlated proteins with peak CK-MB values
-cor_ntprobnp24h <- NA
-cor_ntprobnp24h <- olink_plottable[which(olink_plottable$timepoint == "t24h"),(olink_plottable=="OID00634")]
-plot(clinvar$peak_ck_mb, cor_ntprobnp24h)
-
-best_plots_eva <- plot_protein_expression_and_clinicalvars(olink_plottable, clinvar, variables_to_correlate = c("peak_ck_mb"))
-best_plots_eva <- plot_protein_expression_and_clinicalvars(olink_plottable, clinvar, variables_to_correlate = c("peak_ck_mb"))
-best_plots_eva[["t24h"]][["OID00634"]][["peak_ck_mb"]]
-
-# import dataset with peak CK-MB values
-olink_peakckmb <- read.table('/Users/irene/Documents/Geneeskunde/MD-PhD/scRNA-seq_data/Olink_results/20210702_olink_plottable2.tsv', header = T, sep = '\t', dec = '.')
-
-# performing LMM for model 1 and saving as model 1
-lmm_protein_peakckmb_1 <- perform_mixed_model_1(olink_plottable, clinvar)
-lmm_table_1 <- lmm_list_to_table(lmm_protein_peakckmb_1)
-write.table(lmm_table_1, file="/Users/irene/Documents/Geneeskunde/MD-PhD/scRNA-seq_data/Olink/20210701_corrclinvarstoproteins/20210705_lmm_1.tsv", row.names= F, sep="\t")
-
-# performing LMM for model 2 and saving as model 2
-lmm_protein_peakckmb_2 <- perform_mixed_model_2(olink_plottable, clinvar)
-lmm_table_2 <- lmm_list_to_table(lmm_protein_peakckmb_2)
-write.table(lmm_table_2, file="/Users/irene/Documents/Geneeskunde/MD-PhD/scRNA-seq_data/Olink/20210701_corrclinvarstoproteins/20210705_lmm_2.tsv", row.names= F, sep="\t")
-
-# performing LMM for model 3 and saving as model 3
-lmm_protein_peakckmb_3 <- perform_mixed_model_3(olink_plottable, clinvar)
-lmm_table_3 <- lmm_list_to_table(lmm_protein_peakckmb_3)
-write.table(lmm_table_3, file="/Users/irene/Documents/Geneeskunde/MD-PhD/scRNA-seq_data/Olink/20210701_corrclinvarstoproteins/20210705_lmm_3.tsv", row.names= F, sep="\t")
-
-# performing LMM for model 3 and saving as model 3
-lmm_protein_peakckmb_1a <- perform_mixed_model_1a(olink_plottable, clinvar)
-lmm_table_1a <- lmm_list_to_table(lmm_protein_peakckmb_1a)
-write.table(lmm_table_1a, file="/Users/irene/Documents/Geneeskunde/MD-PhD/scRNA-seq_data/Olink/20210701_corrclinvarstoproteins/20210705_lmm_1a.tsv", row.names= F, sep="\t")
-
-# try with predicting the clinical variable by the expression
-lmm_protein_peakckmb_clin_1 <- perform_mixed_model_pred_clin_1(olink_plottable, clinvar, clinvar_id_column = 'test_id')
-lmm_protein_peakckmb_clin_2 <- perform_mixed_model_pred_clin_2(olink_plottable, clinvar, clinvar_id_column = 'test_id')
-lmm_protein_peakckmb_clin_3 <- perform_mixed_model_pred_clin_3(olink_plottable, clinvar, clinvar_id_column = 'test_id')
-
-
-# F-test
-# testing protein OID00616
-# performing a one-sided F-test to compare the variance of the residuals of Method 1 and Method 2. We test whether Method 1 is better fit than 2, and so our H0 is: the residuals of method 1 are greater than that of method 2.
-var.test(residuals(lmm_protein_peakckmb_1[["OID00131"]]),residuals(lmm_protein_peakckmb_2[["OID00131"]]), alternative="less")
-# p-value = 0.001 --> Model 1 has greater variance and so model 2 is better fitting
-
-# performing a one-sided F-test to compare the variance of the residuals of method 2 and method 3
-lm1 <- var.test(residuals(lmm_protein_peakckmb_2[["OID00600"]]),residuals(lmm_protein_peakckmb_3[["OID00600"]]), alternative="greater")
-# p-value = 0.13 --> Model 2 does not have a greater variance and so model 2 is the best fit
-
-# choosing the model of best fit
-best_model <- model_per_protein(protein_data=olink_plottable, clinvar_data=clinvar)
-
-# performing permutations
-permutations_model <- perform_permutations(protein_data=olink_plottable, clinvar_data=clinvar, number_of_permutations=3) 
-# perform 100 permutations so we can detect a small enough p-value
-perform_protein_analysis_clinvars(protein_data=olink_plottable, clinvar_data=clinvar, number_of_permutations=100)
-
-# significant proteins associated with peak CK-MB values 
-# $OID00634; p-value=0.0326087 --> IL1RL1. Model used: 2 (protein ~ clinvar_column + timepoint_column + (1|id_column)
-# $OID00600; p-value=0.04347826 --> MPO. Model used: 2 (protein ~ clinvar_column + timepoint_column + (1|id_column)
-# $OID00590; p-value=0.01086957 --> TFPI. Model used:2 (protein ~ clinvar_column + timepoint_column + (1|id_column)
-# $OID00131; p-value=0 --> NT-proBNP. Model used: 2 (protein ~ clinvar_column + timepoint_column + (1|id_column)
-# $OID00571; p-value=0.02173913 --> TNFRSF11B. Model used:2 (protein ~ clinvar_column + timepoint_column + (1|id_column)
-
-# plotting the significant proteins
-olink_plottable$peakckmb <- clinvar[match(olink_plottable$id, clinvar$record_id), "peak_ck_mb"]
-plot1 <- ggplot(data=olink_plottable, mapping=aes(x = peakckmb, y = OID00634, colour = timepoint)) + geom_point() + geom_smooth(method="lm") + theme_classic() + labs(y="IL1RL1")
-plot2 <- ggplot(data=olink_plottable, mapping=aes(x = peakckmb, y = OID00600, colour = timepoint)) + geom_point() + geom_smooth(method="lm") + theme_classic() + labs(y="MPO")
-plot3 <- ggplot(data=olink_plottable, mapping=aes(x = peakckmb, y = OID00590, colour = timepoint)) + geom_point() + geom_smooth(method="lm") + theme_classic() + labs(y="TFPI")
-plot4 <- ggplot(data=olink_plottable, mapping=aes(x = peakckmb, y = OID00131, colour = timepoint)) + geom_point() + geom_smooth(method="lm") + theme_classic() + labs(y="NT-proBNP")
-plot5 <- ggplot(data=olink_plottable, mapping=aes(x = peakckmb, y = OID00571, colour = timepoint)) + geom_point() + geom_smooth(method="lm") + theme_classic() + labs(y="TNFRSF11B")
-
-#ggsave("~/Documents/Geneeskunde/MD-PhD/scRNA-seq_data/Olink/20210615_propcorr/20210708_peakckmb_corr_protein_plots/plot_tnfrsf11b_peakckmb.pdf", dpi=600, width=20, height=20, units="cm")
-plot4+plot3+plot5+plot1+plot2+plot_layout(guides = "collect")
-
-# try to explain protein by peak_ck_mb+gender+age
-protein_by_peakckmb_gender_age <- perform_simple_linear_model(protein_data = olink_plottable, clinvar_data = clinvar, clinvar_prepend='', clinvar_columns = c('log_peak_ck_mb', 'gender', 'age'))
+# try to explain protein by peak_ck_mb
+protein_by_peakckmb <- perform_simple_linear_model(protein_data = olink_plottable[olink_plottable[['timepoint']] == 't8w', ], clinvar_data = clinvar, clinvar_prepend='', clinvar_columns = c('log_peak_ck_mb'))
 # write result
 result_reg_loc <- paste('/data/cardiology/clinical_parameters', '/', 'protein_by_peakckmb.tsv', sep = '')
-write.table(protein_by_peakckmb_gender_age, result_reg_loc, col.names = T, row.names = F, sep = '\t')
+write.table(protein_by_peakckmb, result_reg_loc, col.names = T, row.names = F, sep = '\t')
 
 
 
@@ -1184,8 +1034,8 @@ protein_data_log <- olink_plottable[, setdiff(colnames(olink_plottable), c('id',
 protein_data_log <- log(protein_data_log)
 # Add the log transformed proteins to the protein data together with the metadata
 protein_data_log <- cbind(metadata, protein_data_log)
-# try to explain protein by peak_ck_mb+gender+age
-log_protein_by_peakckmb_gender_age <- perform_simple_linear_model(protein_data = protein_data_log, clinvar_data = clinvar, clinvar_prepend='', clinvar_columns = c('peak_ck_mb', 'gender', 'age'))
+# try to explain protein by peak_ck_mb
+log_protein_by_peakckmb <- perform_simple_linear_model(protein_data = protein_data_log[protein_data_log[['timepoint']] == 't8w', ], clinvar_data = clinvar, clinvar_prepend='', clinvar_columns = c('peak_ck_mb'))
 
 
 # the protein data is what you give as the variable you are interested
@@ -1198,10 +1048,11 @@ log_protein_by_peakckmb_gender_age <- perform_simple_linear_model(protein_data =
 
 # clinvar_covars conatins the variables you want to 'correct' for (this just means they also explain peak_ck_mb for example)
 
-# for example:
 # explain peak_ck_mb by protein+age+gender
-peak_ck_mb_by_protein <- perform_simple_linear_model_protein(protein_data = olink_plottable, clinvar_data = clinvar, clinvar_column='peak_ck_mb', clinvar_covars=c('age', 'gender'), clinvar_prepend='')
+peak_ck_mb_by_protein <- perform_simple_linear_model_protein(protein_data = olink_plottable[olink_plottable[['timepoint']] == 'Baseline', ], clinvar_data = clinvar, clinvar_column='peak_ck_mb', clinvar_covars=c('age', 'gender'), clinvar_prepend='')
 # explain log peak_ck_mb by protein+log_ck_mb+gender+age
-log_peak_ck_mb_by_protein <- perform_simple_linear_model_protein(protein_data = olink_plottable, clinvar_data = clinvar, clinvar_column='log_peak_ck_mb', clinvar_covars=c('age', 'gender', 'log_ck_mb'), clinvar_prepend='')
+log_peak_ck_mb_by_protein <- perform_simple_linear_model_protein(protein_data = olink_plottable[olink_plottable[['timepoint']] == 'Baseline', ], clinvar_data = clinvar, clinvar_column='log_peak_ck_mb', clinvar_covars=c('age', 'gender'), clinvar_prepend='')
+# explain peak_ck_mb by log_protein+age+gender
+peak_ck_mb_by_log_protein <- perform_simple_linear_model_protein(protein_data = protein_data_log[protein_data_log[['timepoint']] == 'Baseline', ], clinvar_data = clinvar, clinvar_column='peak_ck_mb', clinvar_covars=c('age', 'gender'), clinvar_prepend='')
 
 
