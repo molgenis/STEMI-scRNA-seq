@@ -1036,6 +1036,8 @@ protein_data_log <- log(protein_data_log)
 protein_data_log <- cbind(metadata, protein_data_log)
 # try to explain protein by peak_ck_mb
 log_protein_by_peakckmb <- perform_simple_linear_model(protein_data = protein_data_log[protein_data_log[['timepoint']] == 't8w', ], clinvar_data = clinvar, clinvar_prepend='', clinvar_columns = c('peak_ck_mb'))
+result_log_reg_loc <- paste('/data/cardiology/clinical_parameters', '/', 'log_protein_by_peakckmb.tsv', sep = '')
+write.table(log_protein_by_peakckmb, result_log_reg_loc, col.names = T, row.names = F, sep = '\t')
 
 
 # the protein data is what you give as the variable you are interested
@@ -1054,5 +1056,11 @@ peak_ck_mb_by_protein <- perform_simple_linear_model_protein(protein_data = olin
 log_peak_ck_mb_by_protein <- perform_simple_linear_model_protein(protein_data = olink_plottable[olink_plottable[['timepoint']] == 'Baseline', ], clinvar_data = clinvar, clinvar_column='log_peak_ck_mb', clinvar_covars=c('age', 'gender'), clinvar_prepend='')
 # explain peak_ck_mb by log_protein+age+gender
 peak_ck_mb_by_log_protein <- perform_simple_linear_model_protein(protein_data = protein_data_log[protein_data_log[['timepoint']] == 'Baseline', ], clinvar_data = clinvar, clinvar_column='peak_ck_mb', clinvar_covars=c('age', 'gender'), clinvar_prepend='')
-
+# write the results to files
+peak_ck_mb_by_protein_loc <- paste('/data/cardiology/clinical_parameters', '/', 'peak_ck_mb_by_protein.tsv', sep = '')
+write.table(peak_ck_mb_by_protein, peak_ck_mb_by_protein_loc, sep = '\t', col.names = T, row.names = F)
+log_peak_ck_mb_by_protein_loc <- paste('/data/cardiology/clinical_parameters', '/', 'log_peak_ck_mb_by_protein.tsv', sep = '')
+write.table(log_peak_ck_mb_by_protein, log_peak_ck_mb_by_protein_loc, sep = '\t', col.names = T, row.names = F)
+peak_ck_mb_by_log_protein_loc <- paste('/data/cardiology/clinical_parameters', '/', 'peak_ck_mb_by_log_protein.tsv', sep = '')
+write.table(peak_ck_mb_by_log_protein, peak_ck_mb_by_log_protein_loc, sep = '\t', col.names = T, row.names = F)
 
