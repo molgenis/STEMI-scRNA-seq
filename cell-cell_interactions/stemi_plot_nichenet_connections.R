@@ -392,6 +392,106 @@ plots_to_files <- function(plots_per_pathway, path_prepend='./', title_prepend='
   dev.off()
 }
 
+
+get_ligand_target_combinations <- function(nichenet_object){
+  # get the ligands and the downstream targets
+  ligands <- rownames(nichenet_object$ligand_target)
+  targets <- colnames(nichenet_object$ligand_target)
+  # store the interacting components
+  interactions <- c()
+  # check each ligand
+  for(ligand in ligands){
+    # check each target
+    for(target in targets){
+      interaction <- nichenet_object$ligand_target[ligand, target]
+      # if there is an interaction
+      if(interaction > 0){
+        # add it to our interactions
+        interactions <- c(interactions, paste(ligand, target, sep = '_'))
+      }
+    }
+  }
+  return(interactions)
+}
+
+
+check_concordance_nichenet_objects <- function(nichenet_object_1, nichenet_object_2){
+  # get the interactions from the first object
+  interactions_1 <- get_ligand_target_combinations(nichenet_object_1)
+  # get the interactions from the second object
+  interactions_2 <- get_ligand_target_combinations(nichenet_object_2)
+  # get the number that is shared
+  shared_size <- length(intersect(interactions_1, interactions_2))
+  # get what is unique in 1
+  unique_1 <- length(setdiff(interactions_1, interactions_2))
+  # get what is unique in 2
+  unique_2 <- length(setdiff(interactions_2, interactions_1))
+  # return result
+  return(list('shared'=shared_size, 'unique_1'=unique_1, 'unique_2'=unique_2))
+}
+
+check_concordance_nichenet_objects_per_ct_combination <- function(nichenet_list1, nichenet_list2){
+  # put the result in a table
+  sharing_table <- NULL
+  # check which cell types we can do
+  cell_types_senders_to_check <- intersect(names(nichenet_list1), names(nichenet_list2))
+  # check each of these cell types
+  for(cell_type_sending in cell_types_senders_to_check){
+    # subset to that
+    nichenet_receivers_list_1 <- nichenet_list1[[cell_type_sending]]
+    nichenet_receivers_list_2 <- nichenet_list2[[cell_type_sending]]
+    # now check which of these overlap
+    cell_types_receivers_to_check <- intersect(names(nichenet_receivers_list_1), names(nichenet_receivers_list_2))
+    # check each of these cell types
+    for(cell_type_receiving in cell_types_receivers_to_check){
+      # check for a result
+      if(length(nichenet_receivers_list_1[[cell_type_receiving]])>0 & length(nichenet_receivers_list_2[[cell_type_receiving]])>0){
+        # get the sharing
+        sharing <- check_concordance_nichenet_objects(nichenet_receivers_list_1[[cell_type_receiving]], nichenet_receivers_list_2[[cell_type_receiving]])
+        # turn list into dataframe
+        sharing <- as.data.frame(sharing)
+        # add receiving cell type
+        sharing[['receiver']] <- cell_type_receiving
+        sharing[['sender']] <- cell_type_sending
+        # add to the table
+        if(is.null(sharing_table)){
+          sharing_table <- sharing
+        }
+        else{
+          sharing_table <- rbind(sharing_table, sharing)
+        }
+      }
+    }
+    # add the sending cell type
+  }
+  return(sharing_table)
+}
+
+check_concordance_nichenet_objects_per_pathway <- function(nichenet_list1, nichenet_list2){
+  # we will save the result
+  result_table <- NULL
+  # check which pathways we can use
+  common_pathways <- intersect(names(nichenet_list1), names(nichenet_list2))
+  # check these
+  for(pathway in common_pathways){
+    # grab for that specific pathway
+    nichenet_list_pathway_1 <- nichenet_list1[[pathway]]
+    nichenet_list_pathway_2 <- nichenet_list2[[pathway]]
+    # check for this specific pathway
+    sharing <- check_concordance_nichenet_objects_per_ct_combination(nichenet_list_pathway_1, nichenet_list_pathway_2)
+    # add the pathway name
+    sharing[['pathway']] <- pathway
+    # add to result table
+    if(is.null(result_table)){
+      result_table <- sharing
+    }
+    else{
+      result_table <- rbind(result_table, sharing)
+    }
+  }
+  return(result_table)
+}
+
 get_color_coding_dict <- function(){
   # set the condition colors
   color_coding <- list()
@@ -578,6 +678,7 @@ all_interactions_to_percentages(interactions_Baseline_t8w_v3, '/data/cardiology/
 
 # now for the omin database stuff as well
 interactions_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/'
+interactions_loc <- '/data/cardiology/cell_cell_interactions/nichenet/objects/'
 interactions_omin_unweighted_Baseline_t24h_v2_loc <- paste(interactions_loc, 'v2_Baseline_vs_t24h_nichenet_onlymajors_perct.rds', sep = '')
 interactions_omin_unweighted_Baseline_t8w_v2_loc <- paste(interactions_loc, 'v2_Baseline_vs_t8w_nichenet_onlymajor_perct.rds', sep = '')
 interactions_omin_unweighted_UT_Baseline_v2_loc <- paste(interactions_loc, 'v2_UT_vs_Baseline_nichenet_onlymajor_perct.rds', sep = '')
@@ -638,4 +739,8 @@ v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway <- readRDS(v3_Basel
 #v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/stemi_v3_Baseline_t24h_v3_byreceptor_perpathway_'
 v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/data/cardiology/cell_cell_interactions//plots/nichenet/stemi_v3_Baseline_t8w_v3_byreceptor_perpathway_'
 plots_to_files(v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway, path_prepend=v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_plot_loc,  title_prepend='v3 Cell communication changes \nbetween t0 and t24h\n in')
+
+# check the concordances
+concordance_Baseline_vs_t8w_perct_omni_unweighted <- check_concordance_nichenet_objects_per_pathway(v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway, v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway)
+concordance_Baseline_vs_t24h_perct_omni_unweighted <- check_concordance_nichenet_objects_per_pathway(v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway, v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway)
 
