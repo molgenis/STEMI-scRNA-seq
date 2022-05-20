@@ -71,8 +71,8 @@ cardio_object_loc <- paste(object_loc, 'cardio.integrated.20210301.rds', sep = '
 mast_output_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/differential_expression/MAST/results/'
 #mast_output_loc <- '/groups/umcg-wijmenga/scr01/projects/1M_cells_scRNAseq/ongoing/Cardiology/differential_expression/MAST/results/'
 # for a MAST comparison, also do only paired comparisons
-mast_output_paired_loc_v2 <- paste(mast_output_loc, 'stemi_v2_paired_unconfined_20210301/', sep = '')
-mast_output_paired_loc_v3 <- paste(mast_output_loc, 'stemi_v3_paired_unconfined_20210301/', sep = '')
+mast_output_paired_loc_v2 <- paste(mast_output_loc, 'stemi_v2_paired_20210301/', sep = '')
+mast_output_paired_loc_v3 <- paste(mast_output_loc, 'stemi_v3_paired_20210301/', sep = '')
 mast_output_paired_lores_loc_v2 <- paste(mast_output_loc, 'stemi_v2_paired_lores_lfc01minpct01ncountrna_20210301/', sep = '')
 mast_output_paired_lores_loc_v3 <- paste(mast_output_loc, 'stemi_v3_paired_lores_lfc01minpct01ncountrna_20210301/', sep = '')
 mast_output_paired_loc_v2_rna <- paste(mast_output_paired_loc_v2, 'rna/', sep = '')

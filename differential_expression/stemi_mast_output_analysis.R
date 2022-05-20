@@ -370,6 +370,71 @@ get_de_genes <- function(mast_output_loc, pval_column='metap_bonferroni', sig_pv
   return(de_per_ct)
 }
 
+get_unique_de_genes_per_ct <- function(mast_output_loc, pval_column='metap_bonferroni', sig_pval=0.05, max=NULL, max_by_pval=T, only_positive=F, only_negative=F, lfc_column='metafc', to_ens=F, symbols.to.ensg.mapping='genes.tsv', cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), stims=c('UT', 'Baseline', 't24h', 't8w')){
+  # first get all of the DE genes
+  de_genes_per_ct_and_cond <- get_de_genes(mast_output_loc, pval_column=pval_column, sig_pval=sig_pval, max=max, max_by_pval=max_by_pval, only_positive=only_positive, only_negative=only_negative, lfc_column=lfc_column, to_ens=to_ens, symbols.to.ensg.mapping=symbols.to.ensg.mapping, cell_types=cell_types, stims=stims)
+  # we want a flipped list actually
+  de_genes_per_cond_and_ct <- list()
+  # create a list to store what is unique per condition and then per cell type
+  for(cell_type in names(de_genes_per_ct_and_cond)){
+    # grab entry for this cell type
+    de_genes_cell_type <- de_genes_per_ct_and_cond[[cell_type]]
+    # check each condition combination
+    for(condition_combination in names(de_genes_cell_type)){
+      # grab the entry
+      genes_condition_ct <- de_genes_cell_type[[condition_combination]]
+      # add to everything from this
+      if(!(condition_combination %in% names(de_genes_per_cond_and_ct))){
+        de_genes_per_cond_and_ct[[condition_combination]] <- list()
+      }
+      de_genes_per_cond_and_ct[[condition_combination]][[cell_type]] <- genes_condition_ct
+    }
+  }
+  # now go through everything again to find what is unique
+  unique_de_genes_ct_per_cond <- list()
+  # per condition
+  for(condition_combination in names(de_genes_per_cond_and_ct)){
+    # get the lists for this condition
+    de_genes_condition <- de_genes_per_cond_and_ct[[condition_combination]]
+    # we will store the result per condition
+    unique_de_genes_ct_per_cond[[condition_combination]] <- list()
+    # check each cell type in this condition
+    for(cell_type in names(de_genes_condition)){
+      # get the cell type under evaluation
+      de_genes_ct <- de_genes_condition[[cell_type]]
+      # get the names of all other cell types
+      other_cell_types <- setdiff(names(de_genes_condition), cell_type)
+      # get all DE genes in those other cell types
+      de_genes_other_cts <- as.vector(unlist(de_genes_condition[other_cell_types]))
+      # now get what was only in the cell type we are looking at
+      de_genes_only_ct <- unique(setdiff(de_genes_ct, de_genes_other_cts))
+      # save this result
+      unique_de_genes_ct_per_cond[[condition_combination]][[cell_type]] <- de_genes_only_ct
+    }
+  }
+  return(unique_de_genes_ct_per_cond)
+}
+
+
+write_unique_de_genes_per_ct <- function(mast_output_loc, gene_list_out_loc, pval_column='metap_bonferroni', sig_pval=0.05, max=NULL, max_by_pval=T, only_positive=F, only_negative=F, lfc_column='metafc', to_ens=F, symbols.to.ensg.mapping='genes.tsv', cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), stims=c('UT', 'Baseline', 't24h', 't8w')){
+  # get the results
+  unique_de_genes_per_ct <- get_unique_de_genes_per_ct(mast_output_loc, pval_column=pval_column, sig_pval=sig_pval, max=max, max_by_pval=max_by_pval, only_positive=only_positive, only_negative=only_negative, lfc_column=lfc_column, to_ens=to_ens, symbols.to.ensg.mapping=symbols.to.ensg.mapping, cell_types=cell_types, stims=stims)
+  # start writing these results
+  for(condition_combination in names(unique_de_genes_per_ct)){
+    # get for this condition combination
+    unique_de_genes_per_ct_this_cond <- unique_de_genes_per_ct[[condition_combination]]
+    # check each cell type
+    for(cell_type in names(unique_de_genes_per_ct_this_cond)){
+      # grab the genes
+      genes_unique <- unique_de_genes_per_ct_this_cond[[cell_type]]
+      # set up the output location
+      full_gene_list_out_loc <- paste(gene_list_out_loc, cell_type, condition_combination, '.tsv', sep = '')
+      # actually write the result
+      write.table(data.frame(genes=genes_unique), full_gene_list_out_loc, row.names = F, col.names = F, quote = F)
+    }
+  }
+}
+
 
 de_genes_number_to_table <- function(mast_output_loc, pval_column='metap_bonferroni', sig_pval=0.05, max=NULL, max_by_pval=T, only_positive=F, only_negative=F, lfc_column='metafc', to_ens=F, symbols.to.ensg.mapping='genes.tsv', cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), stims=c('UT', 'Baseline', 't24h', 't8w'), remove_na_cols=T){
   # get the DE genes
@@ -2604,6 +2669,13 @@ plot_de_number_vs_subcell_population(mast_meta_output_loc_lfc01, 'monocyte', 'cM
 top_fives_de_genes <- get_top_de_genes_per_cond_and_ct(mast_meta_output_loc_lfc01, max_by_pval = F, stims = c('Baseline', 't24h', 't8w'))
 # get the monocyte genes
 mono_up_or_down_genes <- as.vector(unlist(top_fives_de_genes[, colnames(top_fives_de_genes)[grep('monocyte', colnames(top_fives_de_genes))]]))
+
+
+# get the uniqueness of de genes
+mast_meta_uniqueness_output_loc_lfc01 <- '/data/cardiology/differential_expression/MAST/uniqueness//stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/rna/'
+# write the unique genes
+write_unique_de_genes_per_ct(mast_meta_output_loc_lfc01, mast_meta_uniqueness_output_loc_lfc01)
+
 
 # plotting the expression instead of the LFC
 v2_exp_loc <- '/data/cardiology/differential_expression/cardio.integrated.v2.20210301.avg.exp.rna.tsv'

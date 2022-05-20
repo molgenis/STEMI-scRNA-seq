@@ -329,6 +329,43 @@ metadata_to_ct_table_per_column_per_part <- function(metadata, cell_type_column=
   return(numbers_table)
 }
 
+
+reduce_table <- function(table_from, columns_to_keep=c('timepoint', 'condition', 'cell_type'), reducing_column='number'){
+  # get the column index we are looking at
+  column_index_to_keep <- length(columns_to_keep)-1
+  # always grab the last column
+  relevant_column = columns_to_keep[column_index_to_keep]
+  # init table
+  aggregate_table <- NULL
+  # check each possible variable
+  for(variable in unique(table_from[[relevant_column]])){
+    # get the relevant columns for this one
+    subset_table <- table_from[table_from[[relevant_column]] == variable, , drop=F]
+    
+    aggregate_rows <- NULL
+    # if we won't nest deeper, we can actually sum this
+    if(column_index_to_keep == 0){
+      # calculate the sum
+      aggregated_number <- sum(subset_table[[reducing_column]])
+      # make a row
+      aggregate_rows <- data.frame(number=c(aggregated_number))
+    }
+    else{
+      # if there are still columns to 
+      aggregated_rows <- reduce_table(subset_table, columns_to_keep[0:column_index_to_keep], reducing_column)
+    }
+    # add to aggregate table
+    if(is.null(aggregate_table)){
+      aggregate_table <- aggregate_rows
+    }
+    else{
+      aggregate_table <- rbind(aggregate_table, aggregate_rows)
+    }
+    aggregate_table[[relevant_column]] <- variable
+  }
+  return(aggregate_table)
+}
+
 get_color_coding_dict <- function(){
   # set the condition colors
   color_coding <- list()
