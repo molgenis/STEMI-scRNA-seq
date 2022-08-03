@@ -11,6 +11,7 @@
 
 
 library(Seurat)
+library(ggplot2)
 library(cowplot)
 
 ####################
@@ -143,6 +144,8 @@ nichenet.v3.Baseline.vs.t8w.loc<- '/groups/umcg-wijmenga/tmp01/projects/1M_cells
 # read the object
 nichenet.v2.Baseline.vs.t24h <- readRDS(nichenet.v2.Baseline.vs.t24h.loc)
 nichenet.v3.Baseline.vs.t24h <- readRDS(nichenet.v3.Baseline.vs.t24h.loc)
+nichenet.v2.Baseline.vs.t8w <- readRDS(nichenet.v2.Baseline.vs.t8w.loc)
+nichenet.v3.Baseline.vs.t8w <- readRDS(nichenet.v3.Baseline.vs.t8w.loc)
 
 # get the il1 table for monocytes
 il1.v2.Baseline.vs.t24h.mono.targets <- get_downstream_genes_from_celltype(nichenet.v2.Baseline.vs.t24h$`il1-pathway-reactome`$monocyte)
@@ -152,6 +155,26 @@ il4.13.v2.Baseline.vs.t24h.mono.targets <- get_downstream_genes_from_celltype(ni
 il4.13.v3.Baseline.vs.t24h.mono.targets <- get_downstream_genes_from_celltype(nichenet.v3.Baseline.vs.t24h$`il4il13-pathway-reactome`$monocyte)
 il10.v2.Baseline.vs.t24h.mono.targets <- get_downstream_genes_from_celltype(nichenet.v2.Baseline.vs.t24h$`il10-pathway-reactome`$monocyte)
 il10.v3.Baseline.vs.t24h.mono.targets <- get_downstream_genes_from_celltype(nichenet.v3.Baseline.vs.t24h$`il10-pathway-reactome`$monocyte)
+il17.v2.Baseline.vs.t24h.mono.targets <- get_downstream_genes_from_celltype(nichenet.v2.Baseline.vs.t24h$`il17-pathway-reactome`$monocyte)
+il17.v3.Baseline.vs.t24h.mono.targets <- get_downstream_genes_from_celltype(nichenet.v3.Baseline.vs.t24h$`il17-pathway-reactome`$monocyte)
+il6.v2.Baseline.vs.t24h.mono.targets <- get_downstream_genes_from_celltype(nichenet.v2.Baseline.vs.t24h$`il6-pathway-reactome`$monocyte)
+il6.v3.Baseline.vs.t24h.mono.targets <- get_downstream_genes_from_celltype(nichenet.v3.Baseline.vs.t24h$`il6-pathway-reactome`$monocyte)
+il17.kegg.v2.Baseline.vs.t24h.mono.targets <- get_downstream_genes_from_celltype(nichenet.v2.Baseline.vs.t24h$`KEGG IL-17 signaling pathway`$monocyte)
+il17.kegg.v3.Baseline.vs.t24h.mono.targets <- get_downstream_genes_from_celltype(nichenet.v3.Baseline.vs.t24h$`KEGG IL-17 signaling pathway`$monocyte)
+# also for t8w
+il1.v2.Baseline.vs.t8w.mono.targets <- get_downstream_genes_from_celltype(nichenet.v2.Baseline.vs.t8w$`il1-pathway-reactome`$monocyte)
+il1.v3.Baseline.vs.t8w.mono.targets <- get_downstream_genes_from_celltype(nichenet.v3.Baseline.vs.t8w$`il1-pathway-reactome`$monocyte)
+il4.13.v2.Baseline.vs.t8w.mono.targets <- get_downstream_genes_from_celltype(nichenet.v2.Baseline.vs.t8w$`il4il13-pathway-reactome`$monocyte)
+il4.13.v3.Baseline.vs.t8w.mono.targets <- get_downstream_genes_from_celltype(nichenet.v3.Baseline.vs.t8w$`il4il13-pathway-reactome`$monocyte)
+il10.v2.Baseline.vs.t8w.mono.targets <- get_downstream_genes_from_celltype(nichenet.v2.Baseline.vs.t8w$`il10-pathway-reactome`$monocyte)
+il10.v3.Baseline.vs.t8w.mono.targets <- get_downstream_genes_from_celltype(nichenet.v3.Baseline.vs.t8w$`il10-pathway-reactome`$monocyte)
+il17.v2.Baseline.vs.t8w.mono.targets <- get_downstream_genes_from_celltype(nichenet.v2.Baseline.vs.t8w$`il17-pathway-reactome`$monocyte)
+il17.v3.Baseline.vs.t8w.mono.targets <- get_downstream_genes_from_celltype(nichenet.v3.Baseline.vs.t8w$`il17-pathway-reactome`$monocyte)
+il6.v2.Baseline.vs.t8w.mono.targets <- get_downstream_genes_from_celltype(nichenet.v2.Baseline.vs.t8w$`il6-pathway-reactome`$monocyte)
+il6.v3.Baseline.vs.t8w.mono.targets <- get_downstream_genes_from_celltype(nichenet.v3.Baseline.vs.t8w$`il6-pathway-reactome`$monocyte)
+il17.kegg.v2.Baseline.vs.t8w.mono.targets <- get_downstream_genes_from_celltype(nichenet.v2.Baseline.vs.t8w$`KEGG IL-17 signaling pathway`$monocyte)
+il17.kegg.v3.Baseline.vs.t8w.mono.targets <- get_downstream_genes_from_celltype(nichenet.v3.Baseline.vs.t8w$`KEGG IL-17 signaling pathway`$monocyte)
+
 
 # extract STEMIv2 monocytes
 stemi.v2.monocytes <- cardio.integrated[, cardio.integrated@meta.data$orig.ident == 'stemi_v2' & cardio.integrated@meta.data$cell_type_lowerres == 'monocyte']
@@ -177,7 +200,25 @@ stemi.v3.monocytes <- FindClusters(stemi.v3.monocytes)
 stemi.v2.monocytes.dimplot.timepoint <- DimPlot(stemi.v2.monocytes, group.by = 'timepoint.final')
 stemi.v3.monocytes.dimplot.timepoint <- DimPlot(stemi.v3.monocytes, group.by = 'timepoint.final')
 # check the expression of the downstream genes
-stemi.v2.monocytes.dimplot.downstream.features <- FeaturePlot(stemi.v2.monocytes, features = c(il4.13.v2.Baseline.vs.t24h.mono.targets, il4.13.v3.Baseline.vs.t24h.mono.targets))
-stemi.v3.monocytes.dimplot.downstream.features <- FeaturePlot(stemi.v3.monocytes, features = c(il4.13.v2.Baseline.vs.t24h.mono.targets, il4.13.v3.Baseline.vs.t24h.mono.targets))
-plot_grid(DimPlot(stemi.v2.monocytes), stemi.v2.monocytes.dimplot.timepoint, stemi.v2.monocytes.dimplot.downstream.features, nrow=3, ncol=1)
-plot_grid(DimPlot(stemi.v3.monocytes), stemi.v3.monocytes.dimplot.timepoint, stemi.v3.monocytes.dimplot.downstream.features, nrow=3, ncol=1)
+stemi.v2.monocytes.dimplot.downstream.features.il4.13 <- FeaturePlot(stemi.v2.monocytes, features = c(il4.13.v2.Baseline.vs.t24h.mono.targets, il4.13.v3.Baseline.vs.t24h.mono.targets))
+stemi.v3.monocytes.dimplot.downstream.features.il4.13 <- FeaturePlot(stemi.v3.monocytes, features = c(il4.13.v2.Baseline.vs.t24h.mono.targets, il4.13.v3.Baseline.vs.t24h.mono.targets))
+# save the plots somewhere
+features_plot_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/downstream_features_plots/'
+ggsave(plot = stemi.v2.monocytes.dimplot.downstream.features.il4.13, filename = 'stemi_v2_monocytes_downstream_features_il4_il13.pdf', path = features_plot_loc, width = 5, height = 5)
+ggsave(plot = stemi.v3.monocytes.dimplot.downstream.features.il4.13, filename = 'stemi_v2_monocytes_downstream_features_il4_il13.pdf', path = features_plot_loc, width = 5, height = 5)
+stemi.v2.monocytes <- AddModuleScore(stemi.v2.monocytes, features = list('il4-13'=c(il4.13.v2.Baseline.vs.t24h.mono.targets, il4.13.v3.Baseline.vs.t24h.mono.targets)), name = 'il4-13')
+stemi.v3.monocytes <- AddModuleScore(stemi.v3.monocytes, features = list('il4-13'=c(il4.13.v2.Baseline.vs.t24h.mono.targets, il4.13.v3.Baseline.vs.t24h.mono.targets)), name = 'il4-13')
+FeaturePlot(stemi.v2.monocytes, features = c('il4.131'))
+FeaturePlot(stemi.v3.monocytes, features = c('il4.131'))
+# also t8w
+stemi.v2.monocytes <- AddModuleScore(stemi.v2.monocytes, features = list('il4-13-t8w'=c(il4.13.v2.Baseline.vs.t8w.mono.targets, il4.13.v3.Baseline.vs.t8w.mono.targets)), name = 'il4-13-t8w')
+stemi.v3.monocytes <- AddModuleScore(stemi.v3.monocytes, features = list('il4-13-t8w'=c(il4.13.v2.Baseline.vs.t8w.mono.targets, il4.13.v3.Baseline.vs.t8w.mono.targets)), name = 'il4-13-t8w')
+FeaturePlot(stemi.v2.monocytes, features = c('il4.13.t8w1'))
+FeaturePlot(stemi.v3.monocytes, features = c('il4.13.t8w1'))
+
+# get the average expression per timepoint
+stemi.v2.monocytes.exp <- AverageExpression(stemi.v2.monocytes, features = c(il4.13.v2.Baseline.vs.t24h.mono.targets, il4.13.v3.Baseline.vs.t24h.mono.targets), assays = 'SCT', group.by = 'timepoint.final')
+stemi.v3.monocytes.exp <- AverageExpression(stemi.v3.monocytes, features = c(il4.13.v2.Baseline.vs.t24h.mono.targets, il4.13.v3.Baseline.vs.t24h.mono.targets), assays = 'SCT', group.by = 'timepoint.final')
+stemi.v2.monocytes.clust.exp <- AverageExpression(stemi.v2.monocytes, features = c(il4.13.v2.Baseline.vs.t24h.mono.targets, il4.13.v3.Baseline.vs.t24h.mono.targets), assays = 'SCT', group.by = 'seurat_clusters')
+stemi.v3.monocytes.clust.exp <- AverageExpression(stemi.v3.monocytes, features = c(il4.13.v2.Baseline.vs.t24h.mono.targets, il4.13.v3.Baseline.vs.t24h.mono.targets), assays = 'SCT', group.by = 'seurat_clusters')
+
