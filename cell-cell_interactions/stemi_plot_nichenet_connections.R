@@ -516,7 +516,25 @@ get_interactions_from_table <- function(interaction_table, cutoff=0.05){
   return(interactions)
 }
 
-combine_interactions_per_pathways <- function(interactions_per_pathway_1, interactions_per_pathway_2, cutoff=0.05, by_receptor=T){
+get_common_ligands <- function(gene_interactions_1, gene_interactions_2, split_char='_'){
+  # split the genes
+  genes_1 <- strsplit(gene_interactions_1, split = split_char)
+  genes_2 <- strsplit(gene_interactions_2, split = split_char)
+  # extract the gene from the list of vectors
+  gene_ligands_1 <- c()
+  for(i in length(genes_1)){
+    gene_ligands_1 <- c(gene_ligands_1, genes_1[[i]][1])
+  }
+  gene_ligands_2 <- c()
+  for(i in length(genes_2)){
+    gene_ligands_2 <- c(gene_ligands_2, genes_2[[i]][1])
+  }
+  # check which are in both
+  common_ligands <- intersect(genes_1, genes_2)
+  return(common_ligands)
+}
+
+combine_interactions_per_pathways <- function(interactions_per_pathway_1, interactions_per_pathway_2, cutoff=0.05, by_receptor=T, by_both=F){
   # store the interactions per pathway
   interactions_per_pathway_combined <- list()
   # check which pathways we can use
@@ -540,19 +558,35 @@ combine_interactions_per_pathways <- function(interactions_per_pathway_1, intera
       # check each of these cell types
       for(cell_type_receiving in cell_types_receivers_to_check){
         # grab the interactions
-        interactions_1 <- NULL
-        interactions_2 <- NULL
-        if(by_receptor){
-          interactions_1 <- nichenet_receivers_list_1[[cell_type_receiving]][['ligand_receptor_network']]
-          interactions_2 <- nichenet_receivers_list_2[[cell_type_receiving]][['ligand_receptor_network']]
+        interactions_1_lr <- nichenet_receivers_list_1[[cell_type_receiving]][['ligand_receptor_network']]
+        interactions_2_lr <- nichenet_receivers_list_2[[cell_type_receiving]][['ligand_receptor_network']]
+        interactions_1_lt <- nichenet_receivers_list_1[[cell_type_receiving]][['ligand_target']]
+        interactions_2_lt <- nichenet_receivers_list_2[[cell_type_receiving]][['ligand_target']]
+        if(by_receptor & by_both == F){
+          # get the interactions from the tables
+          interactions_genes_1 <- get_interactions_from_table(interactions_1_lr, cutoff = cutoff)
+          interactions_genes_2 <- get_interactions_from_table(interactions_2_lr, cutoff = cutoff)
+        }
+        else if(by_both){
+          interactions_genes_1_lr <- get_interactions_from_table(interactions_1_lr, cutoff = cutoff)
+          interactions_genes_2_lr <- get_interactions_from_table(interactions_2_lr, cutoff = cutoff)
+          interactions_genes_1_lt <- get_interactions_from_table(interactions_1_lt, cutoff = cutoff)
+          interactions_genes_2_lt <- get_interactions_from_table(interactions_2_lt, cutoff = cutoff)
+          # get the common ligands for receptor and target
+          interactions_ligands_1 <- get_common_ligands(interactions_genes_1_lr, interactions_1_lt)
+          interactions_ligands_2 <- get_common_ligands(interactions_genes_2_lr, interactions_2_lt)
+          # turn these into regexes
+          interactions_ligands_1_pattern <- paste(interactions_ligands_1, collapse = '_|')
+          interactions_ligands_2_pattern <- paste(interactions_ligands_2, collapse = '_|')
+          # extract the lts that match
+          
         }
         else{
-          interactions_1 <- nichenet_receivers_list_1[[cell_type_receiving]][['ligand_target']]
-          interactions_2 <- nichenet_receivers_list_2[[cell_type_receiving]][['ligand_target']]
+          # get the interactions from the tables
+          interactions_genes_1 <- get_interactions_from_table(interactions_1_lt, cutoff = cutoff)
+          interactions_genes_2 <- get_interactions_from_table(interactions_2_lt, cutoff = cutoff)
         }
-        # get the interactions from the tables
-        interactions_genes_1 <- get_interactions_from_table(interactions_1, cutoff = cutoff)
-        interactions_genes_2 <- get_interactions_from_table(interactions_2, cutoff = cutoff)
+        
         # get the outer join of the genes
         interactions_genes <- unique(c(interactions_genes_1, interactions_genes_2))
         # count the number of interactions
@@ -667,6 +701,27 @@ plots_to_files_from_tables <- function(communication_tables_per_pathways, path_p
   dev.off()
 }
 
+
+tables_to_files <- function(communication_tables_per_pathways, path_prepend='./'){
+  # check each pathway
+  for(pathway in names(communication_tables_per_pathways)){
+    # grab the relevant table
+    pathway_table <- communication_tables_per_pathways[[pathway]]
+    # for writing the file we need to replace any characters we don't like
+    pathway_name_safe <- gsub(' ', '_', pathway)
+    # paste together the full path
+    output_loc <- paste(path_prepend, pathway_name_safe, '.tsv')
+    # write the table
+    write.table(pathway_table, output_loc, sep = '\t', row.names = F, col.names = T)
+  }
+}
+
+
+calculate_outgoing_vs_incoming_from_table <- function(communication_table){
+  for(celltype in unique(communication_table[['from']], communication_table[['to']])){
+    
+  }
+}
 
 get_color_coding_dict <- function(){
   # set the condition colors
@@ -891,29 +946,29 @@ interactions_to_circle(interactions_Baseline_t8w_v2, plot_title = title('V2 Cell
 interactions_to_circle(interactions_Baseline_t8w_v3, plot_title = title('V3 Cell communication changes \nbetween t0 and t8w'), by_receptor = F)
 
 #v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds'
-v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_loc <- '/data/cardiology/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds'
+v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_loc <- '/data/cardiology/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds'
 v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway <- readRDS(v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_loc)
 #v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/stemi_v2_Baseline_t24h_v2_byreceptor_perpathway_'
-v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/data/cardiology/cell_cell_interactions//plots/nichenet/stemi_v2_Baseline_t24h_v2_byreceptor_perpathway_'
+v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/data/cardiology/cell_cell_interactions//plots/nichenet/stemi_v2_Baseline_t24h_v2_byreceptor_perpathway_20220621_'
 plots_to_files(v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway, path_prepend=v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_plot_loc,  title_prepend='v2 Cell communication changes \nbetween t0 and t24h\n in')
 #v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds'
-v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_loc <- '/data/cardiology/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds'
+v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_loc <- '/data/cardiology/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds'
 v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway <- readRDS(v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_loc)
 #v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/stemi_v2_Baseline_t24h_v2_byreceptor_perpathway_'
-v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/data/cardiology/cell_cell_interactions//plots/nichenet/stemi_v2_Baseline_t8w_v2_byreceptor_perpathway_'
+v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/data/cardiology/cell_cell_interactions//plots/nichenet/stemi_v2_Baseline_t8w_v2_byreceptor_perpathway_20220621_'
 plots_to_files(v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway, path_prepend=v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_plot_loc,  title_prepend='v2 Cell communication changes \nbetween t0 and t8w\n in')
 
 #v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds'
-v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_loc <- '/data/cardiology/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds'
+v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_loc <- '/data/cardiology/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds'
 v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway <- readRDS(v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_loc)
 #v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/stemi_v3_Baseline_t24h_v3_byreceptor_perpathway_'
-v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/data/cardiology/cell_cell_interactions//plots/nichenet/stemi_v3_Baseline_t24h_v3_byreceptor_perpathway_'
+v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/data/cardiology/cell_cell_interactions//plots/nichenet/stemi_v3_Baseline_t24h_v3_byreceptor_perpathway_20220621_'
 plots_to_files(v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway, path_prepend=v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_plot_loc,  title_prepend='v3 Cell communication changes \nbetween t0 and t24h\n in')
 #v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds'
-v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_loc <- '/data/cardiology/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds'
+v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_loc <- '/data/cardiology/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds'
 v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway <- readRDS(v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_loc)
 #v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/stemi_v3_Baseline_t24h_v3_byreceptor_perpathway_'
-v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/data/cardiology/cell_cell_interactions//plots/nichenet/stemi_v3_Baseline_t8w_v3_byreceptor_perpathway_'
+v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/data/cardiology/cell_cell_interactions//plots/nichenet/stemi_v3_Baseline_t8w_v3_byreceptor_perpathway_20220621_'
 plots_to_files(v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway, path_prepend=v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_plot_loc,  title_prepend='v3 Cell communication changes \nbetween t0 and t24h\n in')
 
 # check the concordances
@@ -921,6 +976,22 @@ concordance_Baseline_vs_t8w_perct_omni_unweighted <- check_concordance_nichenet_
 concordance_Baseline_vs_t24h_perct_omni_unweighted <- check_concordance_nichenet_objects_per_pathway(v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway, v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway)
 # combined the pathways
 combined_Baseline_vs_t8w_perct_omni_unweighted <- combine_interactions_per_pathways(v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway, v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway, by_receptor = F)
-combined_Baseline_vs_t24h_perct_omni_unweighted <- combine_interactions_per_pathways(v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway, v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway)
+combined_Baseline_vs_t24h_perct_omni_unweighted <- combine_interactions_per_pathways(v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway, v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway, by_receptor = F)
+# combined the pathways, using the receptor
+combined_Baseline_vs_t8w_perct_omni_unweighted_byreceptor <- combine_interactions_per_pathways(v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway, v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway, by_receptor = T)
+combined_Baseline_vs_t24h_perct_omni_unweighted_byreceptor <- combine_interactions_per_pathways(v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway, v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway, by_receptor = T)
 # and plot them
-plots_to_files_from_tables(combined_Baseline_vs_t8w_perct_omni_unweighted)
+combined_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/data/cardiology/cell_cell_interactions//plots/nichenet/stemi_combined_Baseline_t24h_v3_bydownstream_perpathway_'
+plots_to_files_from_tables(combined_Baseline_vs_t24h_perct_omni_unweighted, path_prepend = combined_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_plot_loc, title_prepend='Combined cell communication changes \nbetween t0 and t24h\n in')
+combined_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_plot_loc <- '/data/cardiology/cell_cell_interactions//plots/nichenet/stemi_combined_Baseline_t8w_v3_bydownstream_perpathway_'
+plots_to_files_from_tables(combined_Baseline_vs_t8w_perct_omni_unweighted, path_prepend = combined_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_plot_loc, title_prepend='Combined cell communication changes \nbetween t0 and t8w\n in')
+# plot them, using the receptor
+combined_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_byreceptor_plot_loc <- '/data/cardiology/cell_cell_interactions//plots/nichenet/stemi_combined_Baseline_t24h_v3_byreceptor_perpathway_'
+plots_to_files_from_tables(combined_Baseline_vs_t24h_perct_omni_unweighted_byreceptor, path_prepend = combined_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway_byreceptor_plot_loc, title_prepend='Combined cell communication changes \nbetween t0 and t24h\n in')
+combined_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_byreceptor_plot_loc <- '/data/cardiology/cell_cell_interactions//plots/nichenet/stemi_combined_Baseline_t8w_v3_byreceptor_perpathway_'
+plots_to_files_from_tables(combined_Baseline_vs_t8w_perct_omni_unweighted_byreceptor, path_prepend = combined_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway_byreceptor_plot_loc, title_prepend='Combined cell communication changes \nbetween t0 and t8w\n in')
+# write tables as well
+tables_to_files(combined_Baseline_vs_t24h_perct_omni_unweighted, '/data/cardiology/cell_cell_interactions/tables/nichenet/stemi_combined_Baseline_t24h_bydownstream_')
+tables_to_files(combined_Baseline_vs_t8w_perct_omni_unweighted, '/data/cardiology/cell_cell_interactions/tables/nichenet/stemi_combined_Baseline_t8w_bydownstream_')
+tables_to_files(combined_Baseline_vs_t24h_perct_omni_unweighted_byreceptor, '/data/cardiology/cell_cell_interactions/tables/nichenet/stemi_combined_Baseline_t24h_byreceptor_')
+tables_to_files(combined_Baseline_vs_t8w_perct_omni_unweighted_byreceptor, '/data/cardiology/cell_cell_interactions/tables/nichenet/stemi_combined_Baseline_t8w_byreceptor_')
