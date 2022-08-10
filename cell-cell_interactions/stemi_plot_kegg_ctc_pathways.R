@@ -10,7 +10,6 @@
 ####################
 
 
-library(organism, character.only = TRUE)
 library(enrichplot)
 library(pathview)
 library(ggnewscale)
@@ -180,6 +179,9 @@ pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs, pathway.i
 pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04061', species = kegg.organism)
 pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04657', species = kegg.organism)
 pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04659', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04620', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa05321', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa05417', species = kegg.organism)
 setwd(wd_prev)
 
 # read Baseline vs 24h
@@ -231,4 +233,7 @@ pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id
 pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04061', species = kegg.organism)
 pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04657', species = kegg.organism)
 pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04659', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04620', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa05321', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa05417', species = kegg.organism)
 setwd(wd_prev)

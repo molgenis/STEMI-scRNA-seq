@@ -13,7 +13,6 @@ library(tidyverse)
 # omnipath dependencies
 library(OmnipathR)
 library(mlrMBO)
-library(parallelMap)
 
 
 #
@@ -762,34 +761,51 @@ for(ct1 in names(v3_UT_vs_Baseline_perc_omni_weightedt_plots)){
 
 # now do for a subselection of features
 pathway_gene_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/pathways/annotations/'
-pathway_files <- c('KEGG_IL-17_signaling_pathway.txt', 'KEGG_Th17_cell_differentiation.txt', 'MySigDBC2BIOCARTA_IL23-mediated_signaling_events.txt', 'MySigDBC2BIOCARTA_IL6-mediated_signaling_events.txt', 'REACTOME_Interleukin-10_signaling.txt', 'REACTOME_Interleukin-4_and_13_signalling.txt')
+pathway_files <- c('KEGG_IL-17_signaling_pathway.txt', 'KEGG_Th17_cell_differentiation.txt', 'MySigDBC2BIOCARTA_IL23-mediated_signaling_events.txt', 'MySigDBC2BIOCARTA_IL6-mediated_signaling_events.txt', 'REACTOME_Interleukin-10_signaling.txt', 'REACTOME_Interleukin-4_and_13_signalling.txt',
+                   'il10-pathway-reactome.txt',
+                   'il17-pathway-reactome.txt',
+                   'il1-pathway-reactome.txt',
+                   'il23-pathway-reactome.txt',
+                   'il4il13-pathway-reactome.txt',
+                   'il6-pathway-reactome.txt')
 pathway_files_named <- as.list(pathway_files)
-names(pathway_files_named) <- c('KEGG IL-17 signaling pathway', 'KEGG Th17 cellf ifferentiation', 'MySigDBC2BIOCARTA IL23-mediated signaling events', 'MySigDBC2BIOCARTA IL6-mediated_signaling events', 'REACTOME Interleukin-10 signaling', 'REACTOME Interleukin-4 and 13 signalling')
+names(pathway_files_named) <- c('KEGG IL-17 signaling pathway', 
+                                'KEGG Th17 cellf ifferentiation', 
+                                'MySigDBC2BIOCARTA IL23-mediated signaling events', 
+                                'MySigDBC2BIOCARTA IL6-mediated_signaling events', 
+                                'REACTOME Interleukin-10 signaling', 
+                                'REACTOME Interleukin-4 and 13 signalling',
+                                'il10-pathway-reactome',
+                                'il17-pathway-reactome',
+                                'il1-pathway-reactome',
+                                'il23-pathway-reactome',
+                                'il4il13-pathway-reactome',
+                                'il6-pathway-reactome')
 
 v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v2, 'timepoint.final', 't24h', 'Baseline', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds')
+saveRDS(v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
 v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v3, 'timepoint.final', 't24h', 'Baseline', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds')
+saveRDS(v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
 v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v2, 'timepoint.final', 't8w', 'Baseline', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds')
+saveRDS(v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
 v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v3, 'timepoint.final', 't8w', 'Baseline', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds')
+saveRDS(v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
 v2_t24h_vs_t8w_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v2, 'timepoint.final', 't8w', 't24h', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v2_t24h_vs_t8w_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_t24h_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds')
+saveRDS(v2_t24h_vs_t8w_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_t24h_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
 v3_t24h_vs_t8w_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v3, 'timepoint.final', 't8w', 't24h', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v3_t24h_vs_t8w_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_t24h_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds')
+saveRDS(v3_t24h_vs_t8w_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_t24h_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
 v2_UT_vs_Baseline_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v2, 'timepoint.final', 'Baseline', 'UT', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v2_UT_vs_Baseline_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_UT_vs_Baseline_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds')
+saveRDS(v2_UT_vs_Baseline_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_UT_vs_Baseline_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
 v3_UT_vs_Baseline_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v3, 'timepoint.final', 'Baseline', 'UT', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v3_UT_vs_Baseline_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_UT_vs_Baseline_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds')
+saveRDS(v3_UT_vs_Baseline_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_UT_vs_Baseline_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
 v2_UT_vs_t24h_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v2, 'timepoint.final', 't24h', 'UT', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v2_UT_vs_t24h_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_UT_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds')
+saveRDS(v2_UT_vs_t24h_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_UT_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
 v3_UT_vs_t24h_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v3, 'timepoint.final', 't24h', 'UT', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v3_UT_vs_t24h_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_UT_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds')
+saveRDS(v3_UT_vs_t24h_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_UT_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
 v2_UT_vs_t8w_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v2, 'timepoint.final', 't8w', 'UT', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v2_UT_vs_t8w_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_UT_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds')
+saveRDS(v2_UT_vs_t8w_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_UT_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
 v3_UT_vs_t8w_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v3, 'timepoint.final', 't8w', 'UT', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v3_UT_vs_t8w_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_UT_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway.rds')
+saveRDS(v3_UT_vs_t8w_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_UT_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
 
 
 
