@@ -1,9 +1,23 @@
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Roy Oelen
+# Name: stemi_plot_nichenet_connetions.R
+# Function: 
+############################################################################################################################
+
+####################
+# libraries        #
+####################
 library(circlize)
 
 
-interactions_to_circle <- function(interactions_per_ct_list, plot_title='cell communication', by_receptor=T){
+####################
+# Functions        #
+####################
+
+interactions_to_circle <- function(interactions_per_ct_list, plot_title='cell communication', by_receptor=T, cutoff=0.05){
   # get the total number of connections per cell type
-  interaction_numbers <- get_interaction_numbers(interactions_per_ct_list, by_receptor)
+  interaction_numbers <- get_interaction_numbers(interactions_per_ct_list, by_receptor, cutoff)
   # slim it down into a three column input
   connections_slim <- slim_df_down(interaction_numbers, new_col_names = c('sender', 'receiver', 'connections'))
   # add receiver and sender together
@@ -171,20 +185,20 @@ turn_sizes_to_ranges <- function(link_sizes_df, size_column, from_column, to_col
       # if this link exists, we can continue
       if(!is.na(link_size)){
         max_from <- max(c(0,
-          as.numeric(link_df[!is.na(link_df[[from_column]]) & !is.na(link_df[[to_column]]) &
-                    link_df[[from_column]] == from_entry, 'from_stop']),
-          as.numeric(link_df[!is.na(link_df[[from_column]]) & !is.na(link_df[[to_column]]) &
-                    link_df[[to_column]] == from_entry, 'to_stop'])
-          )
+                          as.numeric(link_df[!is.na(link_df[[from_column]]) & !is.na(link_df[[to_column]]) &
+                                               link_df[[from_column]] == from_entry, 'from_stop']),
+                          as.numeric(link_df[!is.na(link_df[[from_column]]) & !is.na(link_df[[to_column]]) &
+                                               link_df[[to_column]] == from_entry, 'to_stop'])
+        )
         )
         max_to <- max(c(0,
-            as.numeric(link_df[!is.na(link_df[[to_column]]) & !is.na(link_df[[to_column]]) &
-                    link_df[[from_column]] == to_entry, 'from_stop']),
-            as.numeric(link_df[!is.na(link_df[[to_column]]) & !is.na(link_df[[to_column]]) &
-                    (link_df[[to_column]] == to_entry), 'to_stop'])
-          )
+                        as.numeric(link_df[!is.na(link_df[[to_column]]) & !is.na(link_df[[to_column]]) &
+                                             link_df[[from_column]] == to_entry, 'from_stop']),
+                        as.numeric(link_df[!is.na(link_df[[to_column]]) & !is.na(link_df[[to_column]]) &
+                                             (link_df[[to_column]] == to_entry), 'to_stop'])
         )
-          
+        )
+        
         # now we are either zero or the max of both entries, we'll turn that into the actual entries
         link_df[i, from_column] <- from_entry
         link_df[i, to_column] <- to_entry
@@ -222,8 +236,6 @@ combine_directions_cells <- function(slim_connection_df, cell_types){
       total_sum_per_cell_type <- rbind(total_sum_per_cell_type, connection_row)
     }
   }
-  # remove empty entries
-  total_sum_per_cell_type[total_sum_per_cell_type[['connections']] > 0, ]
   return(total_sum_per_cell_type)
 }
 
@@ -246,7 +258,7 @@ combine_columns <- function(df, cols_to_combine, variable_to_combine, na_to_zero
         as.vector(
           unlist(
             df[(df[[ cols_to_combine[1] ]] == possible_variable_1 & df[[ cols_to_combine[2] ]] == possible_variable_2) |
-               (df[[ cols_to_combine[1] ]] == possible_variable_2 & df[[ cols_to_combine[2] ]] == possible_variable_1)
+                 (df[[ cols_to_combine[1] ]] == possible_variable_2 & df[[ cols_to_combine[2] ]] == possible_variable_1)
                , variable_to_combine]
           )
         )
@@ -318,7 +330,7 @@ get_total_interactions <- function(interactions_per_ct_list){
 }
 
 
-get_interaction_numbers <- function(interactions_per_ct_list, by_receptor=T){
+get_interaction_numbers <- function(interactions_per_ct_list, by_receptor=T, cutoff=0.05){
   # results are saved in a table
   interaction_numbers <- NULL
   # check the number of receptions incoming
@@ -338,11 +350,11 @@ get_interaction_numbers <- function(interactions_per_ct_list, by_receptor=T){
       # check if the user want to use the targets or the receptors as connections to the ligand
       if(by_receptor){
         # get the number of non-zero ligand-receptor pairs
-        number_receiving_connection <- sum(sender$ligand_receptor_network > 0)
+        number_receiving_connection <- sum(sender$ligand_receptor_network > cutoff)
       }
       else{
         # get the number of non-zero ligand-target pairs
-        number_receiving_connection <- sum(sender$ligand_target > 0)
+        number_receiving_connection <- sum(sender$ligand_target > cutoff)
       }
       # store this in the row that we created
       column_cell_type_receiver[cell_type_sender, cell_type_receiver] <- number_receiving_connection
@@ -381,12 +393,12 @@ plots_to_files <- function(plots_per_pathway, path_prepend='./', title_prepend='
     # get this specific pathway
     plots_pathway <- plots_per_pathway[[pathway]]
     tryCatch({
-        # turn into plot
-        interactions_to_circle(plots_pathway, plot_title = paste(title_prepend, pathway), by_receptor = F)
-      }, error=function(cond) {
-        print(paste('got error for pathways', pathway))
-        print(cond)
-      }
+      # turn into plot
+      interactions_to_circle(plots_pathway, plot_title = paste(title_prepend, pathway), by_receptor = F)
+    }, error=function(cond) {
+      print(paste('got error for pathways', pathway))
+      print(cond)
+    }
     )
     
   }
@@ -492,235 +504,6 @@ check_concordance_nichenet_objects_per_pathway <- function(nichenet_list1, niche
     }
   }
   return(result_table)
-}
-
-get_interactions_from_table <- function(interaction_table, cutoff=0.05){
-  # we have a vector in which we will store the interactions
-  interactions <- c()
-  # check each of the downstream genes
-  downstream_genes <- rownames(interaction_table)
-  # check each of the ligands
-  ligands <- colnames(interaction_table)
-  # now check each combination
-  for(downstream_gene in downstream_genes){
-    for(ligand in ligands){
-      # check the interaction
-      interaction <- interaction_table[downstream_gene, ligand]
-      # check if the interaction is large enough
-      if(interaction > cutoff){
-        # add it to the list of interactions
-        interactions <- c(interactions, paste(ligand, downstream_gene, sep = '_'))
-      }
-    }
-  }
-  return(interactions)
-}
-
-get_common_ligands <- function(gene_interactions_1, gene_interactions_2, split_char='_'){
-  # split the genes
-  genes_1 <- strsplit(gene_interactions_1, split = split_char)
-  genes_2 <- strsplit(gene_interactions_2, split = split_char)
-  # extract the gene from the list of vectors
-  gene_ligands_1 <- c()
-  for(i in length(genes_1)){
-    gene_ligands_1 <- c(gene_ligands_1, genes_1[[i]][1])
-  }
-  gene_ligands_2 <- c()
-  for(i in length(genes_2)){
-    gene_ligands_2 <- c(gene_ligands_2, genes_2[[i]][1])
-  }
-  # check which are in both
-  common_ligands <- intersect(genes_1, genes_2)
-  return(common_ligands)
-}
-
-combine_interactions_per_pathways <- function(interactions_per_pathway_1, interactions_per_pathway_2, cutoff=0.05, by_receptor=T, by_both=F){
-  # store the interactions per pathway
-  interactions_per_pathway_combined <- list()
-  # check which pathways we can use
-  common_pathways <- intersect(names(interactions_per_pathway_1), names(interactions_per_pathway_2))
-  # check these
-  for(pathway in common_pathways){
-    # we will save the result
-    interaction_numbers <- NULL
-    # grab for that specific pathway
-    nichenet_list_pathway_1 <- interactions_per_pathway_1[[pathway]]
-    nichenet_list_pathway_2 <- interactions_per_pathway_2[[pathway]]
-    # check which cell types we can do
-    cell_types_senders_to_check <- intersect(names(nichenet_list_pathway_1), names(nichenet_list_pathway_2))
-    # check each of these cell types
-    for(cell_type_sending in cell_types_senders_to_check){
-      # subset to that
-      nichenet_receivers_list_1 <- nichenet_list_pathway_1[[cell_type_sending]]
-      nichenet_receivers_list_2 <- nichenet_list_pathway_2[[cell_type_sending]]
-      # now check which of these overlap
-      cell_types_receivers_to_check <- intersect(names(nichenet_receivers_list_1), names(nichenet_receivers_list_2))
-      # check each of these cell types
-      for(cell_type_receiving in cell_types_receivers_to_check){
-        # grab the interactions
-        interactions_1_lr <- nichenet_receivers_list_1[[cell_type_receiving]][['ligand_receptor_network']]
-        interactions_2_lr <- nichenet_receivers_list_2[[cell_type_receiving]][['ligand_receptor_network']]
-        interactions_1_lt <- nichenet_receivers_list_1[[cell_type_receiving]][['ligand_target']]
-        interactions_2_lt <- nichenet_receivers_list_2[[cell_type_receiving]][['ligand_target']]
-        if(by_receptor & by_both == F){
-          # get the interactions from the tables
-          interactions_genes_1 <- get_interactions_from_table(interactions_1_lr, cutoff = cutoff)
-          interactions_genes_2 <- get_interactions_from_table(interactions_2_lr, cutoff = cutoff)
-        }
-        else if(by_both){
-          interactions_genes_1_lr <- get_interactions_from_table(interactions_1_lr, cutoff = cutoff)
-          interactions_genes_2_lr <- get_interactions_from_table(interactions_2_lr, cutoff = cutoff)
-          interactions_genes_1_lt <- get_interactions_from_table(interactions_1_lt, cutoff = cutoff)
-          interactions_genes_2_lt <- get_interactions_from_table(interactions_2_lt, cutoff = cutoff)
-          # get the common ligands for receptor and target
-          interactions_ligands_1 <- get_common_ligands(interactions_genes_1_lr, interactions_1_lt)
-          interactions_ligands_2 <- get_common_ligands(interactions_genes_2_lr, interactions_2_lt)
-          # turn these into regexes
-          interactions_ligands_1_pattern <- paste(interactions_ligands_1, collapse = '_|')
-          interactions_ligands_2_pattern <- paste(interactions_ligands_2, collapse = '_|')
-          # extract the lts that match
-          
-        }
-        else{
-          # get the interactions from the tables
-          interactions_genes_1 <- get_interactions_from_table(interactions_1_lt, cutoff = cutoff)
-          interactions_genes_2 <- get_interactions_from_table(interactions_2_lt, cutoff = cutoff)
-        }
-        
-        # get the outer join of the genes
-        interactions_genes <- unique(c(interactions_genes_1, interactions_genes_2))
-        # count the number of interactions
-        interaction_number <- length(interactions_genes)
-        # create a row
-        interaction_row <- data.frame(from=c(cell_type_sending), to=c(cell_type_receiving), number=c(interaction_number))
-        # if this is the first round through, we will initialize the dataframe
-        if(is.null(interaction_numbers)){
-          interaction_numbers <- interaction_row
-        }
-        else{
-          interaction_numbers <- rbind(interaction_numbers, interaction_row)
-        }
-      }
-    }
-    interactions_per_pathway_combined[[pathway]] <- interaction_numbers
-  }
-  return(interactions_per_pathway_combined)
-}
-
-
-interactions_to_circle_from_table <- function(interactions_table, plot_title='cell communication'){
-  # set the correct column names
-  colnames(interactions_table) <- c('sender', 'receiver', 'connections')
-  # remove the empty connections
-  interactions_table <- interactions_table[interactions_table[['connections']] > 0, ]
-  # add receiver and sender together
-  connections_all_ct <- combine_directions_cells(interactions_table)
-  # okay, I did this somewhere in the past, so afraid I have to do it again
-  colnames(connections_all_ct) <- c('a', 'b')
-  # get the data in a start/stop manner, instead of a size-manner
-  connections_start_stop <- turn_sizes_to_ranges(interactions_table, 'connections', 'sender', 'receiver')
-  # make sure the other plot is gone
-  circos.clear()
-  # start making the plot, set height of track (cell types)
-  circos.par('track.height' = 0.1)
-  xlims <- data.frame(a=rep(0, times=nrow(connections_all_ct)), b=connections_all_ct$b)
-  # start building
-  circos.initialize(sectors = connections_all_ct$a, xlim = xlims)
-  # add track with labels
-  circos.track(connections_all_ct$a, y=connections_all_ct$b, panel.fun = function(x, y){
-    circos.text(CELL_META$xcenter, 
-                CELL_META$ycenter, 
-                CELL_META$sector.index)
-    circos.axis(labels.cex = 0.6, labels.facing = 'outside')
-  })
-  # color the tracks
-  for(cell_type in unique(connections_all_ct$a)){
-    draw.sector(get.cell.meta.data("cell.start.degree", sector.index = cell_type),
-                get.cell.meta.data("cell.end.degree", sector.index = cell_type),
-                rou1 = get.cell.meta.data("cell.top.radius", track.index = 1),
-                rou2 = get.cell.meta.data("cell.bottom.radius", track.index = 1),
-                col = get_color_coding_dict()[[cell_type]])
-  }
-  # draw colour on the sectors, representing the cell types
-  for(cell_type in unique(connections_all_ct$a)){
-    highlight.sector(c(cell_type), track.index = 1, text=label_dict()[[cell_type]], col = '#ffffff00', text.col = '#ffffffff')
-  }
-  # draw the connections
-  apply(connections_start_stop, 1, function(row){
-    if(!is.na(row['sender'])){
-      # grab the color of the sender
-      send_color <- get_color_coding_dict()[[row['sender']]]
-      # and of the receiver
-      receiver_color <- get_color_coding_dict()[[row['receiver']]]
-      # split colors in five
-      ramp_colors <- colorRampPalette(c(send_color, receiver_color))(5)
-      # color slightly more towards the sender, by taking the second color from the 5 levels, and add remove possible existing transparancy
-      connection_color <- substr(ramp_colors[2], 1, 7)
-      # manually add transparancy by adding it to normal 6-colour hex code
-      connection_color <- paste(connection_color, '80', sep = '')
-      # grab the positions on the sender
-      from_start <- as.numeric(row['from_start'])
-      from_stop <- as.numeric(row['from_stop'])
-      # grab the positions on the receiver
-      to_start <- as.numeric(row['to_start'])
-      to_stop <- as.numeric(row['to_stop'])
-      # draw the connection
-      circos.link(row['sender'], c(from_start, from_stop), row['receiver'], c(to_start, to_stop), col = connection_color, directional = 1)
-    }
-  })
-  title(plot_title)
-}
-
-
-plots_to_files_from_tables <- function(communication_tables_per_pathways, path_prepend='./', title_prepend='interactions', ncols=2){
-  # paste together the path to the output
-  output_path <- paste(path_prepend, 'interactions.pdf', sep = '')
-  # check how many pathways there are
-  n_pathways <- length(names(communication_tables_per_pathways))
-  n_row_frac <- n_pathways/ncols
-  n_row <- ceiling(n_row_frac)
-  # set up the  rows and columns
-  par(mfrow=c(n_row,ncols))
-  # we'll save this output
-  pdf(output_path)
-  # check each pathway
-  for(pathway in names(communication_tables_per_pathways)){
-    tryCatch({
-      # get the specific table
-      communications_table <- communication_tables_per_pathways[[pathway]]
-      # create the plot
-      interactions_to_circle_from_table(communications_table, pathway)
-    }, error=function(cond) {
-      print(paste('got error for pathways', pathway))
-      print(cond)
-    }
-    )
-    
-  }
-  # these were all the plots
-  dev.off()
-}
-
-
-tables_to_files <- function(communication_tables_per_pathways, path_prepend='./'){
-  # check each pathway
-  for(pathway in names(communication_tables_per_pathways)){
-    # grab the relevant table
-    pathway_table <- communication_tables_per_pathways[[pathway]]
-    # for writing the file we need to replace any characters we don't like
-    pathway_name_safe <- gsub(' ', '_', pathway)
-    # paste together the full path
-    output_loc <- paste(path_prepend, pathway_name_safe, '.tsv')
-    # write the table
-    write.table(pathway_table, output_loc, sep = '\t', row.names = F, col.names = T)
-  }
-}
-
-
-calculate_outgoing_vs_incoming_from_table <- function(communication_table){
-  for(celltype in unique(communication_table[['from']], communication_table[['to']])){
-    
-  }
 }
 
 get_color_coding_dict <- function(){
@@ -864,6 +647,10 @@ text_color_dict <- function(){
 }
 
 
+####################
+# Main Code        #
+####################
+
 # locations of the files
 interactions_loc <- '/data/cardiology/cell_cell_interactions/nichenet/objects/'
 interactions_Baseline_t24h_v2_loc <- paste(interactions_loc, 'v2_Baseline_vs_t24h_nichenet_onlymajors_perct.rds', sep = '')
@@ -909,13 +696,13 @@ all_interactions_to_percentages(interactions_Baseline_t8w_v3, '/data/cardiology/
 
 # now for the omin database stuff as well
 interactions_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/'
-interactions_loc <- '/data/cardiology/cell_cell_interactions/nichenet/objects/'
-interactions_omin_unweighted_Baseline_t24h_v2_loc <- paste(interactions_loc, 'v2_Baseline_vs_t24h_nichenet_onlymajors_perct.rds', sep = '')
-interactions_omin_unweighted_Baseline_t8w_v2_loc <- paste(interactions_loc, 'v2_Baseline_vs_t8w_nichenet_onlymajor_perct.rds', sep = '')
-interactions_omin_unweighted_UT_Baseline_v2_loc <- paste(interactions_loc, 'v2_UT_vs_Baseline_nichenet_onlymajor_perct.rds', sep = '')
-interactions_omin_unweighted_Baseline_t24h_v3_loc <- paste(interactions_loc, 'v3_Baseline_vs_t24h_nichenet_onlymajors_perct.rds', sep = '')
-interactions_omin_unweighted_Baseline_t8w_v3_loc <- paste(interactions_loc, 'v3_Baseline_vs_t8w_nichenet_onlymajor_perct.rds', sep = '')
-interactions_omin_unweighted_UT_Baseline_v3_loc <- paste(interactions_loc, 'v3_UT_vs_Baseline_nichenet_onlymajor_perct.rds', sep = '')
+interactions_loc <- '/Users/Shared/Relocated Items/Security/data/cardiology/cell_cell_interactions/nichenet/objects/'
+interactions_omin_unweighted_Baseline_t24h_v2_loc <- paste(interactions_loc, 'v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds', sep = '')
+interactions_omin_unweighted_Baseline_t8w_v2_loc <- paste(interactions_loc, 'v2_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds', sep = '')
+interactions_omin_unweighted_UT_Baseline_v2_loc <- paste(interactions_loc, 'v2_UT_vs_Baseline_nichenet_onlymajor_perct_omni_unweighted.rds', sep = '')
+interactions_omin_unweighted_Baseline_t24h_v3_loc <- paste(interactions_loc, 'v3_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds', sep = '')
+interactions_omin_unweighted_Baseline_t8w_v3_loc <- paste(interactions_loc, 'v3_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds', sep = '')
+interactions_omin_unweighted_UT_Baseline_v3_loc <- paste(interactions_loc, 'v3_UT_vs_Baseline_nichenet_onlymajor_perct_omni_unweighted.rds', sep = '')
 
 interactions_omin_unweighted_Baseline_t24h_v2 <- readRDS(interactions_omin_unweighted_Baseline_t24h_v2_loc)
 interactions_omin_unweighted_Baseline_t8w_v2 <- readRDS(interactions_omin_unweighted_Baseline_t8w_v2_loc)
@@ -923,6 +710,11 @@ interactions_omin_unweighted_UT_Baseline_v2 <- readRDS(interactions_omin_unweigh
 interactions_omin_unweighted_Baseline_t24h_v3 <- readRDS(interactions_omin_unweighted_Baseline_t24h_v3_loc)
 interactions_omin_unweighted_Baseline_t8w_v3 <- readRDS(interactions_omin_unweighted_Baseline_t8w_v3_loc)
 interactions_omin_unweighted_UT_Baseline_v3 <- readRDS(interactions_omin_unweighted_UT_Baseline_v3_loc)
+# get the tables
+interaction_numbers_omin_unweighted_Baseline_t24h_v2_byligand <- get_interaction_numbers(interactions_omin_unweighted_Baseline_t24h_v2, by_receptor=F, 0.05)
+interaction_numbers_omin_unweighted_Baseline_t24h_v2_byreceptor <- get_interaction_numbers(interactions_omin_unweighted_Baseline_t24h_v2, by_receptor=T, 0.05)
+interaction_numbers_omin_unweighted_Baseline_t8w_v2_byligand <- get_interaction_numbers(interactions_omin_unweighted_Baseline_t8w_v2, by_receptor=F, 0.05)
+interaction_numbers_omin_unweighted_Baseline_t8w_v2_byreceptor <- get_interaction_numbers(interactions_omin_unweighted_Baseline_t8w_v2, by_receptor=T, 0.05)
 
 
 v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v2, 'timepoint.final', 't24h', 'Baseline', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
