@@ -66,6 +66,49 @@ extract_significant_ligands_and_downstream_genes <- function(nichenet_output, si
   return(interactions)
 }
 
+
+get_max_interaction_per_receptor <- function(nichenet_output, significance_cutoff=0.05){
+  # make a list per receiver
+  max_receptor_values <- list()
+  # check each receiver
+  for(receiver in names(nichenet_output)){
+    # make a list per sender
+    interactions_senders <- list()
+    # check against each sender
+    for(sender in names(nichenet_output[[receiver]])){
+      # extract the ligand-downstream gene matrix
+      if('ligand_receptor_network' %in% names(nichenet_output[[receiver]][[sender]])){
+        ligand_receptor_matrix <- nichenet_output[[receiver]][[sender]][['ligand_receptor_network']]
+        if(nrow(ligand_receptor_matrix) > 0){
+          # extract the ligands
+          ligands <- colnames(ligand_receptor_matrix)
+          # extract the downstream genes
+          receptors <- rownames(ligand_receptor_matrix)
+          # check each combination
+          for(ligand in ligands){
+            for(receptor in receptors){
+              # get the value
+              interaction <- ligand_receptor_matrix[receptor, ligand]
+              # if larger than the cutoff value (0.05 is nichenet default)
+              if(interaction > significance_cutoff){
+                # check if the interaction is already present
+                if (!(receptor %in% names(max_receptor_values))){
+                  max_receptor_values[[receptor]] <- interaction
+                # or if the current interaction is weaker
+                }else if(receptor %in% names(max_receptor_values) & max_receptor_values[[receptor]] < interaction){
+                  max_receptor_values[[receptor]] <- interaction
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return(max_receptor_values)
+}
+
+
 get_unique_ligands_targets <- function(significant_ligands_targets, ligand_column='ligands', target_column='targets'){
   # init lists of ligands and downstream genes
   ligands_significant <- c()
@@ -118,6 +161,31 @@ get_lfs_for_genes <- function(mast_output_loc, condition_combination, genes, cel
 get_absolute_max <- function(vector){
   abs_max <- vector[which.max(abs(vector))]
   return(abs_max)
+}
+
+
+get_max_value_from_lists <- function(lists) {
+  max_value_per_entry <- list()
+  # check each list
+  for(this_list in lists){
+    # check each entry
+    for(entry in names(this_list)){
+      # check if the entry has been seen before
+      if(!(entry %in% names(max_value_per_entry))){
+        # then the only entry is the max entry as well
+        max_value_per_entry[[entry]] <- this_list[[entry]]
+      # otherwise, we have to check if this entry is higher
+      }else{
+        value <- this_list[[entry]]
+        old_value <- max_value_per_entry[[entry]]
+        # and replace if so
+        if(value > old_value){
+          max_value_per_entry[[entry]] <- value
+        }
+      }
+    }
+  }
+  return(max_value_per_entry)
 }
 
 ####################
@@ -236,4 +304,67 @@ pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id
 pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04620', species = kegg.organism)
 pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa05321', species = kegg.organism)
 pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa05417', species = kegg.organism)
+setwd(wd_prev)
+
+
+# get the receptor values
+v2_Baseline_vs_t8w_perct_omni_unweighted_target_values <- get_max_interaction_per_receptor(v2_Baseline_vs_t8w_perct_omni_unweighted)
+# v3 as well
+v3_Baseline_vs_t8w_perct_omni_unweighted_target_values <- get_max_interaction_per_receptor(v3_Baseline_vs_t8w_perct_omni_unweighted)
+# get the max for each gene
+combined_Baseline_vs_t8w_perct_omni_unweighted_target_values <- get_max_value_from_lists(list(v2_Baseline_vs_t8w_perct_omni_unweighted_target_values, v3_Baseline_vs_t8w_perct_omni_unweighted_target_values))
+# get the entrez IDs
+combined_Baseline_vs_t8w_perct_omni_unweighted_target_values_mapping <- bitr(names(combined_Baseline_vs_t8w_perct_omni_unweighted_target_values), fromType = "SYMBOL", toType = "ENTREZID", OrgDb=organism)
+# filter empty results
+combined_Baseline_vs_t8w_perct_omni_unweighted_target_values_mapping <- combined_Baseline_vs_t8w_perct_omni_unweighted_target_values_mapping[!is.na(combined_Baseline_vs_t8w_perct_omni_unweighted_target_values_mapping[['SYMBOL']]) & !is.na(combined_Baseline_vs_t8w_perct_omni_unweighted_target_values_mapping[['ENTREZID']]), ]
+# only include what we can map
+combined_Baseline_vs_t8w_perct_omni_unweighted_target_values <- combined_Baseline_vs_t8w_perct_omni_unweighted_target_values[names(combined_Baseline_vs_t8w_perct_omni_unweighted_target_values) %in% combined_Baseline_vs_t8w_perct_omni_unweighted_target_values_mapping[['SYMBOL']]]
+# swap to entrez
+combined_Baseline_vs_t8w_perct_omni_unweighted_target_names <- combined_Baseline_vs_t8w_perct_omni_unweighted_target_values_mapping[match(names(combined_Baseline_vs_t8w_perct_omni_unweighted_target_values), combined_Baseline_vs_t8w_perct_omni_unweighted_target_values_mapping[['SYMBOL']]), 'ENTREZID']
+combined_Baseline_vs_t8w_perct_omni_unweighted_target_values <- unlist(combined_Baseline_vs_t8w_perct_omni_unweighted_target_values)
+names(combined_Baseline_vs_t8w_perct_omni_unweighted_target_values) <- combined_Baseline_vs_t8w_perct_omni_unweighted_target_names
+# replace the targets with these values instead of the LFCs
+Baseline_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors <- Baseline_vs_t8w_perct_omni_unweighted_values_lfcs
+Baseline_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors[names(combined_Baseline_vs_t8w_perct_omni_unweighted_target_values)] <- combined_Baseline_vs_t8w_perct_omni_unweighted_target_values
+wd_prev <- getwd()
+dir.create(paste(wd_prev, '/cors_Baselinet8w/', sep = ''))
+setwd(paste(wd_prev, '/cors_Baselinet8w/', sep = ''))
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04060', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04061', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04657', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04659', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04620', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa05321', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa05417', species = kegg.organism)
+setwd(wd_prev)
+
+# get the receptor values
+v2_Baseline_vs_t24h_perct_omni_unweighted_target_values <- get_max_interaction_per_receptor(v2_Baseline_vs_t24h_perct_omni_unweighted)
+# v3 as well
+v3_Baseline_vs_t24h_perct_omni_unweighted_target_values <- get_max_interaction_per_receptor(v3_Baseline_vs_t24h_perct_omni_unweighted)
+# get the max for each gene
+combined_Baseline_vs_t24h_perct_omni_unweighted_target_values <- get_max_value_from_lists(list(v2_Baseline_vs_t24h_perct_omni_unweighted_target_values, v3_Baseline_vs_t24h_perct_omni_unweighted_target_values))
+# get the entrez IDs
+combined_Baseline_vs_t24h_perct_omni_unweighted_target_values_mapping <- bitr(names(combined_Baseline_vs_t24h_perct_omni_unweighted_target_values), fromType = "SYMBOL", toType = "ENTREZID", OrgDb=organism)
+# filter empty results
+combined_Baseline_vs_t24h_perct_omni_unweighted_target_values_mapping <- combined_Baseline_vs_t24h_perct_omni_unweighted_target_values_mapping[!is.na(combined_Baseline_vs_t24h_perct_omni_unweighted_target_values_mapping[['SYMBOL']]) & !is.na(combined_Baseline_vs_t24h_perct_omni_unweighted_target_values_mapping[['ENTREZID']]), ]
+# only include what we can map
+combined_Baseline_vs_t24h_perct_omni_unweighted_target_values <- combined_Baseline_vs_t24h_perct_omni_unweighted_target_values[names(combined_Baseline_vs_t24h_perct_omni_unweighted_target_values) %in% combined_Baseline_vs_t24h_perct_omni_unweighted_target_values_mapping[['SYMBOL']]]
+# swap to entrez
+combined_Baseline_vs_t24h_perct_omni_unweighted_target_names <- combined_Baseline_vs_t24h_perct_omni_unweighted_target_values_mapping[match(names(combined_Baseline_vs_t24h_perct_omni_unweighted_target_values), combined_Baseline_vs_t24h_perct_omni_unweighted_target_values_mapping[['SYMBOL']]), 'ENTREZID']
+combined_Baseline_vs_t24h_perct_omni_unweighted_target_values <- unlist(combined_Baseline_vs_t24h_perct_omni_unweighted_target_values)
+names(combined_Baseline_vs_t24h_perct_omni_unweighted_target_values) <- combined_Baseline_vs_t24h_perct_omni_unweighted_target_names
+# replace the targets with these values instead of the LFCs
+Baseline_vs_t24h_perct_omni_unweighted_values_lfcs_and_cors <- Baseline_vs_t24h_perct_omni_unweighted_values_lfcs
+Baseline_vs_t24h_perct_omni_unweighted_values_lfcs_and_cors[names(combined_Baseline_vs_t24h_perct_omni_unweighted_target_values)] <- combined_Baseline_vs_t24h_perct_omni_unweighted_target_values
+wd_prev <- getwd()
+dir.create(paste(wd_prev, '/cors_Baselinet24h/', sep = ''))
+setwd(paste(wd_prev, '/cors_Baselinet24h/', sep = ''))
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04060', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04061', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04657', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04659', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04620', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa05321', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa05417', species = kegg.organism)
 setwd(wd_prev)

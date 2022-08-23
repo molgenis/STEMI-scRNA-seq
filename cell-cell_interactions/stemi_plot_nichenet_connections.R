@@ -682,6 +682,16 @@ plots_to_files_from_tables <- function(communication_tables_per_pathways, path_p
 }
 
 
+tables_to_files <- function(communication_numbers_per_pathway, prepend){
+  # check each pathway
+  for(pathway in names(communication_numbers_per_pathway)){
+    # set up the output location
+    output_loc <- paste(prepend, pathway, '.tsv', sep = '')
+    # write the result
+    write.table(communication_numbers_per_pathway[[pathway]], output_loc, sep = '\t', col.names = T, row.names = F)
+  }
+}
+
 get_color_coding_dict <- function(){
   # set the condition colors
   color_coding <- list()
