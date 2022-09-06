@@ -1,12 +1,15 @@
-#
-# some description of the script
-#
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Roy Oelen
+# Name: stemi_nichenet_analysis.R
+# Function: perform cell-cell interaction analysis using Nichenet
+############################################################################################################################
 
-#
-# libraries
-#
+####################
+# libraries        #
+####################
 
-# required for nichent
+# required for nichenet
 library(nichenetr)
 library(Seurat)
 library(tidyverse)
@@ -15,10 +18,9 @@ library(OmnipathR)
 library(mlrMBO)
 
 
-#
-# functions
-#
-
+####################
+# Functions        #
+####################
 
 do_nichenet_analysis <- function(seurat_object, receiver, sender_celltypes, condition.column, condition.1, condition.2, lr_network, weighted_networks, ligand_target_matrix, cell_type_column='cell_type_lowerres', pct=0.1, min_avg_log2FC=0.25, top_n=20, max_active_ligand_target_links=200, active_ligand_target_links_cutoff=0.33, only_documented_lr=F, test.use='MAST'){
   # we'll do a couple of analyses, so we'll store the results in a list
@@ -481,9 +483,9 @@ get_color_coding_dict <- function(){
 }
 
 
-#
-# main code
-#
+####################
+# Main Code        #
+####################
 
 # where we are working
 read_partition <- 'tmp01'
