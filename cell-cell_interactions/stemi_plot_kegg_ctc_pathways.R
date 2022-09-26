@@ -2,7 +2,7 @@
 ############################################################################################################################
 # Authors: Roy Oelen
 # Name: stemi_plot_kegg_ctc_pathways.R
-# Function:
+# Function: plot the genes coming out as involved in CTC
 ############################################################################################################################
 
 ####################
@@ -14,6 +14,10 @@ library(enrichplot)
 library(pathview)
 library(ggnewscale)
 library(clusterProfiler)
+library(enrichR)
+#library(ggVennDiagram)
+library(VennDiagram)
+
 
 ####################
 # Functions        #
@@ -188,6 +192,219 @@ get_max_value_from_lists <- function(lists) {
   return(max_value_per_entry)
 }
 
+
+combine_lists <- function(list_of_lists, ligand_column='ligands', target_column='targets'){
+  # list of receivers
+  receivers <- list()
+  # check each experiment
+  for (list_name in names(list_of_lists)) {
+    # get each list
+    list_experiment <- list_of_lists[[list_name]]
+    # check each receiver
+    for(receiver in names(list_experiment)){
+      # add to new list if not yet there
+      if (!(receiver %in% names(receivers))){
+        receivers[[receiver]] <- list()
+      }
+      # make a list for the senders
+      senders <- list()
+      # check against each sender
+      for(sender in names(list_experiment[[receiver]])){
+        # add to new list if not there yet
+        if (!(sender %in% names(receivers[[receiver]]))) {
+          receivers[[receiver]][[sender]] <- list()
+          # the two vectors of genes as well
+          receivers[[receiver]][[sender]][[ligand_column]] <- c()
+          receivers[[receiver]][[sender]][[target_column]] <- c()
+        }
+        # extract these ligands
+        ligands <- list_experiment[[receiver]][[sender]][[ligand_column]]
+        # extract the downstream genes
+        downstream_genes <- list_experiment[[receiver]][[sender]][[target_column]]
+        # add to existing entries
+        receivers[[receiver]][[sender]][[ligand_column]] <- unique(c(receivers[[receiver]][[sender]][[ligand_column]], ligands))
+        receivers[[receiver]][[sender]][[target_column]] <- unique(c(receivers[[receiver]][[sender]][[target_column]], downstream_genes))
+      }
+    }
+  }
+  return(receivers)
+}
+
+
+enrich_for_significant_interactions <- function(genes_per_receiver_and_sender, ligand_column='ligands', target_column='targets'){
+  # we will also check for enrichment of specifically sending
+  genes_senders <- list()
+  genes_receivers <- list()
+  # but for each receiver as well
+  results_receivers <- list()
+  # check each receiver
+  for(receiver in names(genes_per_receiver_and_sender)){
+    # init total gene list for senders if not already
+    if (!(receiver %in% names(genes_receivers))) {
+      genes_receivers[[receiver]] <- c()
+    }
+    # add result
+    results_receivers[[receiver]] <- list()
+    # check against each sender
+    for(sender in names(genes_per_receiver_and_sender[[receiver]])){
+      # init total gene list for receivers if not already
+      if (!(receiver %in% names(genes_senders))) {
+        genes_senders[[sender]] <- c()
+      }
+      # extract these ligands
+      ligands <- genes_per_receiver_and_sender[[receiver]][[sender]][[ligand_column]]
+      # extract the downstream genes
+      downstream_genes <- genes_per_receiver_and_sender[[receiver]][[sender]][[target_column]]
+      # do enrichment analysis for the ligands and downstream genes
+      enriched_receiver_sender <- enrichr(genes = c(ligands, downstream_genes), databases = c('Reactome_2016'))
+      # grab the reactome result
+      enriched_receiver_sender_reactome <- enriched_receiver_sender[['Reactome_2016']]
+      # add the result
+      results_receivers[[receiver]][[sender]] <- enriched_receiver_sender_reactome
+      # also add the genes to the total gene list for that specific sender and receiver
+      genes_senders[[sender]] <- unique(c(genes_senders[[sender]], downstream_genes, ligands))
+      genes_receivers[[receiver]] <- unique(c(genes_receivers[[receiver]], downstream_genes, ligands))
+    }
+    # now we have all the genes for the receiver, we can also do that one
+    enriched_receiver_allsenders <- enrichr(genes = genes_receivers[[receiver]], databases = c('Reactome_2016'))
+    enriched_receiver_allsenders_reactome <- enriched_receiver_allsenders[['Reactome_2016']]
+    results_receivers[[receiver]][['all']] <- enriched_receiver_allsenders_reactome
+  }
+  # now that we have done all the senders, we can also do pathway enrichment of those aggregates
+  for (sender in names(genes_senders)) {
+    enriched_receiver_allreceivers <- enrichr(genes = genes_senders[[sender]], databases = c('Reactome_2016'))
+    enriched_receiver_allreceivers_reactome <- enriched_receiver_allreceivers[['Reactome_2016']]
+    results_receivers[['all']][[sender]] <- enriched_receiver_allreceivers_reactome
+  }
+  return(results_receivers)
+}
+
+
+write_enrichment_results <- function(enrichment_per_receiver_and_sender, output_loc){
+  # check each receiver
+  for (receiver in names(enrichment_per_receiver_and_sender)) {
+    # check sender
+    for (sender in names(enrichment_per_receiver_and_sender[[receiver]])){
+      # get a safe file name
+      receiver_safe <- gsub(' |/', '_', receiver)
+      receiver_safe <- gsub('-', '_negative', receiver_safe)
+      receiver_safe <- gsub('\\+', '_positive', receiver_safe)
+      receiver_safe <- gsub('\\)', '', receiver_safe)
+      receiver_safe <- gsub('\\(', '', receiver_safe)
+      sender_safe <- gsub(' |/', '_', sender)
+      sender_safe <- gsub('-', '_negative', sender_safe)
+      sender_safe <- gsub('\\+', '_positive', sender_safe)
+      sender_safe <- gsub('\\)', '', sender_safe)
+      sender_safe <- gsub('\\(', '', sender_safe)
+      # paste together the output path
+      enrichment_output_loc <- paste(output_loc, receiver_safe, '_from_', sender_safe, '.tsv', sep = '')
+      # write the result
+      write.table(enrichment_per_receiver_and_sender[[receiver]][[sender]], enrichment_output_loc, sep = '\t', row.names = F, col.names = T)
+    }
+  }
+}
+
+
+combine_senders_and_combine_receivers <- function(genes_per_receiver_and_sender, ligand_column='ligands', target_column='targets', ){
+  # we will save all genes per receiver, but also all genes per sender
+  senders_and_receivers_combined <- list()
+  # init the where we have combined all the receivers
+  senders_and_receivers_combined[['all']] <- list()
+  # check each receiver
+  for(receiver in names(genes_per_receiver_and_sender)){
+    # init the vector where we have combined all the senders
+    senders_and_receivers_combined[[receiver]][['all']] <- list()
+    senders_and_receivers_combined[[receiver]][['all']] <- list()
+    senders_and_receivers_combined[[receiver]][['all']][[ligand_column]] <- c()
+    senders_and_receivers_combined[[receiver]][['all']][[target_column]] <- c()
+    # check against each sender
+    for(sender in names(genes_per_receiver_and_sender[[receiver]])){
+      # add this sender to the receiver
+      senders_and_receivers_combined[[receiver]][['all']][[ligand_column]] <- unique(c(senders_and_receivers_combined[[receiver]][['all']][[ligand_column]],
+                                                                      genes_per_receiver_and_sender[[receiver]][[sender]][[ligand_column]]))
+      senders_and_receivers_combined[[receiver]][['all']][[target_column]] <- unique(c(senders_and_receivers_combined[[receiver]][['all']][[target_column]],
+                                                                      genes_per_receiver_and_sender[[receiver]][[sender]][[target_column]]))
+      # add this receiver to the sender list as well
+      if (sender %in% names(senders_and_receivers_combined[['all']])) {
+        senders_and_receivers_combined[['all']][[sender]][[ligand_column]] <- unique(c(senders_and_receivers_combined[['all']][[sender]][[ligand_column]],
+                                                                      genes_per_receiver_and_sender[[receiver]][[sender]][[ligand_column]]))
+        senders_and_receivers_combined[['all']][[sender]][[target_column]] <- unique(c(senders_and_receivers_combined[['all']][[sender]][[target_column]],
+                                                                                         genes_per_receiver_and_sender[[receiver]][[sender]][[target_column]]))
+      }
+      else {
+        senders_and_receivers_combined[['all']][[sender]] <- genes_per_receiver_and_sender[[receiver]][[sender]]
+      }
+    }
+  }
+  return(senders_and_receivers_combined)
+}
+
+
+
+plot_gene_overlap <- function(genes_per_receiver_1, genes_per_receiver_2, target_key, output_prepend='./', set_1_name='set_1', set_2_name='set_2', set_1_colour='#FF6066', set_2_colour='#C060A6'){
+  # check each receiver
+  for (receiver in unique(names(genes_per_receiver_1), names(genes_per_receiver_2))){
+    # get the senders
+    senders <- c()
+    if(receiver %in% names(genes_per_receiver_1)){
+      senders <- names(genes_per_receiver_1[[receiver]])
+    }
+    if(receiver %in% names(genes_per_receiver_2)){
+      senders <- c(senders, names(genes_per_receiver_2[[receiver]]))
+    }
+    senders <- unique(senders)
+    # check each sender
+    for (sender in senders) {
+      genes_set_1 <- c()
+      genes_set_2 <- c()
+      # get the genes
+      if (receiver %in% names(genes_per_receiver_1) &
+          sender %in% names(genes_per_receiver_1[[receiver]]) &
+          target_key %in% names(genes_per_receiver_1[[receiver]][[sender]])) {
+        genes_set_1 <- genes_per_receiver_1[[receiver]][[sender]][[target_key]]
+      }
+      if (receiver %in% names(genes_per_receiver_2) &
+          sender %in% names(genes_per_receiver_2[[receiver]]) &
+          target_key %in% names(genes_per_receiver_2[[receiver]][[sender]])) {
+        genes_set_2 <- genes_per_receiver_2[[receiver]][[sender]][[target_key]]
+      }
+      # paste together the output path
+      output_loc_full <- paste(output_prepend, receiver, '_from_', sender, '_', target_key, '.png', sep = '')
+      # create the venn diagram
+      venn.diagram(
+        x = list(genes_set_1, genes_set_2),
+        category.names = c(set_1_name, set_2_name),
+        filename = output_loc_full,
+        output = TRUE,
+
+        # Output features
+        imagetype="png" ,
+        height = 800 ,
+        width = 800 ,
+        resolution = 300,
+        compression = "lzw",
+
+        # Circles
+        lwd = 2,
+        lty = 'blank',
+        fill = c(set_1_colour, set_2_colour),
+
+        # Numbers
+        cex = .6,
+        fontface = "bold",
+        fontfamily = "sans",
+
+        # Set names
+        cat.cex = 0.6,
+        cat.fontface = "bold",
+        cat.default.pos = "outer",
+        cat.fontfamily = "sans",
+        cat.pos = c(-27, 27)
+      )
+    }
+  }
+}
+
 ####################
 # Main Code        #
 ####################
@@ -201,16 +418,16 @@ mast_output_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoi
 # read Baseline vs 24h
 v2_Baseline_vs_t24h_perct_omni_unweighted_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds'
 v2_Baseline_vs_t24h_perct_omni_unweighted <- readRDS(v2_Baseline_vs_t24h_perct_omni_unweighted_loc)
-v2_Baseline_vs_t24h_perct_omni_unweighted_genes <- extract_significant_ligands_and_downstream_genes(v2_Baseline_vs_t24h_perct_omni_unweighted)
+v2_Baseline_vs_t24h_perct_omni_unweighted_genes <- extract_significant_ligands_and_downstream_genes(v2_Baseline_vs_t24h_perct_omni_unweighted, significance_cutoff = 0)
 v2_Baseline_vs_t24h_perct_omni_unweighted_genes_all <- get_unique_ligands_targets(v2_Baseline_vs_t24h_perct_omni_unweighted_genes)
 v3_Baseline_vs_t24h_perct_omni_unweighted_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds'
 v3_Baseline_vs_t24h_perct_omni_unweighted <- readRDS(v3_Baseline_vs_t24h_perct_omni_unweighted_loc)
-v3_Baseline_vs_t24h_perct_omni_unweighted_genes <- extract_significant_ligands_and_downstream_genes(v3_Baseline_vs_t24h_perct_omni_unweighted)
+v3_Baseline_vs_t24h_perct_omni_unweighted_genes <- extract_significant_ligands_and_downstream_genes(v3_Baseline_vs_t24h_perct_omni_unweighted, significance_cutoff = 0)
 v3_Baseline_vs_t24h_perct_omni_unweighted_genes_all <- get_unique_ligands_targets(v3_Baseline_vs_t24h_perct_omni_unweighted_genes)
 # now also the receptors
-v2_Baseline_vs_t24h_perct_omni_unweighted_receptors <- extract_significant_ligands_and_downstream_genes(v2_Baseline_vs_t24h_perct_omni_unweighted, matrix = 'ligand_receptor_network')
+v2_Baseline_vs_t24h_perct_omni_unweighted_receptors <- extract_significant_ligands_and_downstream_genes(v2_Baseline_vs_t24h_perct_omni_unweighted, matrix = 'ligand_receptor_network', significance_cutoff = 0)
 v2_Baseline_vs_t24h_perct_omni_unweighted_receptors_all <- get_unique_ligands_targets(v2_Baseline_vs_t24h_perct_omni_unweighted_receptors)
-v3_Baseline_vs_t24h_perct_omni_unweighted_receptors <- extract_significant_ligands_and_downstream_genes(v3_Baseline_vs_t24h_perct_omni_unweighted, matrix = 'ligand_receptor_network')
+v3_Baseline_vs_t24h_perct_omni_unweighted_receptors <- extract_significant_ligands_and_downstream_genes(v3_Baseline_vs_t24h_perct_omni_unweighted, matrix = 'ligand_receptor_network', significance_cutoff = 0)
 v3_Baseline_vs_t24h_perct_omni_unweighted_receptors_all <- get_unique_ligands_targets(v3_Baseline_vs_t24h_perct_omni_unweighted_receptors)
 
 # merge the version chemistry
@@ -255,16 +472,16 @@ setwd(wd_prev)
 # read Baseline vs 24h
 v2_Baseline_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds'
 v2_Baseline_vs_t8w_perct_omni_unweighted <- readRDS(v2_Baseline_vs_t8w_perct_omni_unweighted_loc)
-v2_Baseline_vs_t8w_perct_omni_unweighted_genes <- extract_significant_ligands_and_downstream_genes(v2_Baseline_vs_t8w_perct_omni_unweighted)
+v2_Baseline_vs_t8w_perct_omni_unweighted_genes <- extract_significant_ligands_and_downstream_genes(v2_Baseline_vs_t8w_perct_omni_unweighted, significance_cutoff = 0)
 v2_Baseline_vs_t8w_perct_omni_unweighted_genes_all <- get_unique_ligands_targets(v2_Baseline_vs_t8w_perct_omni_unweighted_genes)
 v3_Baseline_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds'
 v3_Baseline_vs_t8w_perct_omni_unweighted <- readRDS(v3_Baseline_vs_t8w_perct_omni_unweighted_loc)
-v3_Baseline_vs_t8w_perct_omni_unweighted_genes <- extract_significant_ligands_and_downstream_genes(v3_Baseline_vs_t8w_perct_omni_unweighted)
+v3_Baseline_vs_t8w_perct_omni_unweighted_genes <- extract_significant_ligands_and_downstream_genes(v3_Baseline_vs_t8w_perct_omni_unweighted, significance_cutoff = 0)
 v3_Baseline_vs_t8w_perct_omni_unweighted_genes_all <- get_unique_ligands_targets(v3_Baseline_vs_t8w_perct_omni_unweighted_genes)
 # now also the receptors
-v2_Baseline_vs_t8w_perct_omni_unweighted_receptors <- extract_significant_ligands_and_downstream_genes(v2_Baseline_vs_t8w_perct_omni_unweighted, matrix = 'ligand_receptor_network')
+v2_Baseline_vs_t8w_perct_omni_unweighted_receptors <- extract_significant_ligands_and_downstream_genes(v2_Baseline_vs_t8w_perct_omni_unweighted, matrix = 'ligand_receptor_network', significance_cutoff = 0)
 v2_Baseline_vs_t8w_perct_omni_unweighted_receptors_all <- get_unique_ligands_targets(v2_Baseline_vs_t8w_perct_omni_unweighted_receptors)
-v3_Baseline_vs_t8w_perct_omni_unweighted_receptors <- extract_significant_ligands_and_downstream_genes(v3_Baseline_vs_t8w_perct_omni_unweighted, matrix = 'ligand_receptor_network')
+v3_Baseline_vs_t8w_perct_omni_unweighted_receptors <- extract_significant_ligands_and_downstream_genes(v3_Baseline_vs_t8w_perct_omni_unweighted, matrix = 'ligand_receptor_network', significance_cutoff = 0)
 v3_Baseline_vs_t8w_perct_omni_unweighted_receptors_all <- get_unique_ligands_targets(v3_Baseline_vs_t8w_perct_omni_unweighted_receptors)
 
 # merge the version chemistry
@@ -368,3 +585,38 @@ pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs_and_cors, 
 pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa05321', species = kegg.organism)
 pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa05417', species = kegg.organism)
 setwd(wd_prev)
+
+# combine v2 and v3
+Baseline_vs_t8w_perct_omni_unweighted_genes <- combine_lists(list('v2' = v2_Baseline_vs_t8w_perct_omni_unweighted_genes, 'v3' = v3_Baseline_vs_t8w_perct_omni_unweighted_genes))
+Baseline_vs_t8w_perct_omni_unweighted_receptors <- combine_lists(list('v2' = v2_Baseline_vs_t8w_perct_omni_unweighted_receptors, 'v3' = v3_Baseline_vs_t8w_perct_omni_unweighted_receptors))
+# and then receptors and downstream genes
+Baseline_vs_t8w_perct_omni_unweighted_genes_and_receptors <- combine_lists(list('downstream' = Baseline_vs_t8w_perct_omni_unweighted_genes, 'receptors' = Baseline_vs_t8w_perct_omni_unweighted_receptors))
+# do the enrichment analysis
+Baseline_vs_t8w_perct_omni_unweighted_pathways <- enrich_for_significant_interactions(Baseline_vs_t8w_perct_omni_unweighted_genes_and_receptors)
+
+# and t24h
+Baseline_vs_t24h_perct_omni_unweighted_genes <- combine_lists(list('v2' = v2_Baseline_vs_t24h_perct_omni_unweighted_genes, 'v3' = v3_Baseline_vs_t24h_perct_omni_unweighted_genes))
+Baseline_vs_t24h_perct_omni_unweighted_receptors <- combine_lists(list('v2' = v2_Baseline_vs_t24h_perct_omni_unweighted_receptors, 'v3' = v3_Baseline_vs_t24h_perct_omni_unweighted_receptors))
+Baseline_vs_t24h_perct_omni_unweighted_genes_and_receptors <- combine_lists(list('downstream' = Baseline_vs_t24h_perct_omni_unweighted_genes, 'receptors' = Baseline_vs_t24h_perct_omni_unweighted_receptors))
+Baseline_vs_t24h_perct_omni_unweighted_pathways <- enrich_for_significant_interactions(Baseline_vs_t24h_perct_omni_unweighted_genes_and_receptors)
+
+# write the results
+Baseline_vs_t8w_perct_omni_unweighted_pathways_output_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/pathways/Baseline_t8w_omni_unweighted/'
+write_enrichment_results(Baseline_vs_t8w_perct_omni_unweighted_pathways, Baseline_vs_t8w_perct_omni_unweighted_pathways_output_loc)
+Baseline_vs_t24h_perct_omni_unweighted_pathways_output_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/pathways/Baseline_t24h_omni_unweighted/'
+write_enrichment_results(Baseline_vs_t24h_perct_omni_unweighted_pathways, Baseline_vs_t24h_perct_omni_unweighted_pathways_output_loc)
+
+# plot the gene overlap
+plot_gene_overlap(Baseline_vs_t24h_perct_omni_unweighted_genes, Baseline_vs_t8w_perct_omni_unweighted_genes, target_key = 'ligands', output_prepend = './ctc_genes_Baseline_vs_t24h_or_t8w_', set_1_name = 'Baseline-t24h', set_2_name = 'Baseline-t8w')
+plot_gene_overlap(Baseline_vs_t24h_perct_omni_unweighted_genes, Baseline_vs_t8w_perct_omni_unweighted_genes, target_key = 'targets', output_prepend = './ctc_genes_Baseline_vs_t24h_or_t8w_', set_1_name = 'Baseline-t24h', set_2_name = 'Baseline-t8w')
+plot_gene_overlap(Baseline_vs_t24h_perct_omni_unweighted_receptors, Baseline_vs_t8w_perct_omni_unweighted_receptors, target_key = 'targets', output_prepend = './ctc_receptors_Baseline_vs_t24h_or_t8w_', set_1_name = 'Baseline-t24h', set_2_name = 'Baseline-t8w')
+
+# make lists where we combined both senders and receivers
+Baseline_vs_t24h_perct_omni_unweighted_genes_combined <- combine_senders_and_combine_receivers(Baseline_vs_t24h_perct_omni_unweighted_genes)
+Baseline_vs_t8w_perct_omni_unweighted_genes_combined <- combine_senders_and_combine_receivers(Baseline_vs_t8w_perct_omni_unweighted_genes)
+Baseline_vs_t24h_perct_omni_unweighted_receptors_combined <- combine_senders_and_combine_receivers(Baseline_vs_t24h_perct_omni_unweighted_receptors)
+Baseline_vs_t8w_perct_omni_unweighted_receptors_combined <- combine_senders_and_combine_receivers(Baseline_vs_t8w_perct_omni_unweighted_receptors)
+# and plot overlap again
+plot_gene_overlap(Baseline_vs_t24h_perct_omni_unweighted_genes_combined, Baseline_vs_t8w_perct_omni_unweighted_genes_combined, target_key = 'ligands', output_prepend = './ctc_genes_Baseline_vs_t24h_or_t8w_', set_1_name = 'Baseline-t24h', set_2_name = 'Baseline-t8w')
+plot_gene_overlap(Baseline_vs_t24h_perct_omni_unweighted_genes_combined, Baseline_vs_t8w_perct_omni_unweighted_genes_combined, target_key = 'targets', output_prepend = './ctc_genes_Baseline_vs_t24h_or_t8w_', set_1_name = 'Baseline-t24h', set_2_name = 'Baseline-t8w')
+plot_gene_overlap(Baseline_vs_t24h_perct_omni_unweighted_receptors_combined, Baseline_vs_t8w_perct_omni_unweighted_receptors_combined, target_key = 'targets', output_prepend = './ctc_receptors_Baseline_vs_t24h_or_t8w_', set_1_name = 'Baseline-t24h', set_2_name = 'Baseline-t8w')
