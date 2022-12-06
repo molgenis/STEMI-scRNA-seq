@@ -32,6 +32,7 @@ library(clusterProfiler)
 library(enrichR)
 #library(ggVennDiagram)
 library(VennDiagram)
+library(data.table)
 ```
 
 ```{r functions, include=FALSE}
@@ -167,6 +168,7 @@ get_lfs_for_genes <- function(mast_output_loc, condition_combination, genes=NULL
       }
       # get the lfs
       lfcs <- de_output[match(genes_to_get, rownames(de_output)), lfc_column]
+
       # turn into a dataframe
       lfcs_column <- data.frame(lfcs=lfcs)
       colnames(lfcs_column) <- cell_type
@@ -183,6 +185,9 @@ get_lfs_for_genes <- function(mast_output_loc, condition_combination, genes=NULL
         # remove the extra column
         lfc_dataframe[['Row.names']] <- NULL
       }
+    }
+    else{
+      print(paste('no output for', cell_type, ':', full_output_path))
     }
   }
   return(lfc_dataframe)
@@ -257,6 +262,140 @@ combine_lists <- function(list_of_lists, ligand_column='ligands', target_column=
   return(receivers)
 }
 
+
+write_significant_genes <- function(nichenet_output, output_prepend, significance_cutoff_lt=0.00, matrix_lt='ligand_target', significance_cutoff_lr=0.00, matrix_lr='ligand_receptor_network'){
+  # we will keep 'all' for each sender in addition to per combination
+  all_genes_sender <- list()
+  # check each receiver
+  for(receiver in names(nichenet_output)){
+    # we will keep 'all' for each receiver as well
+    all_genes_receiver <- c()
+    # make a safe name
+    receiver_safe <- gsub(' |/', '_', receiver)
+    receiver_safe <- gsub('-', '_negative', receiver_safe)
+    receiver_safe <- gsub('\\+', '_positive', receiver_safe)
+    receiver_safe <- gsub('\\)', '', receiver_safe)
+    receiver_safe <- gsub('\\(', '', receiver_safe)
+    # check against each sender
+    for(sender in names(nichenet_output[[receiver]])){
+      # make the receiver safe
+      sender_safe <- gsub(' |/', '_', sender)
+      sender_safe <- gsub('-', '_negative', sender_safe)
+      sender_safe <- gsub('\\+', '_positive', sender_safe)
+      sender_safe <- gsub('\\)', '', sender_safe)
+      sender_safe <- gsub('\\(', '', sender_safe)
+      # and we'll save the significant ones
+      ligands_receptors_significant <- c()
+      # check which ligand-receptors are significant
+      if(matrix_lr %in% names(nichenet_output[[receiver]][[sender]])){
+        matrix_ligand_receptor <- nichenet_output[[receiver]][[sender]][[matrix_lr]]
+        if(nrow(matrix_ligand_receptor) > 0){
+          # extract the ligands
+          ligands <- colnames(matrix_ligand_receptor)
+          # extract the downstream genes
+          receptors <- rownames(matrix_ligand_receptor)
+          # check each combination
+          for(ligand in ligands){
+            for(receptor in receptors){
+              # get the value
+              interaction <- matrix_ligand_receptor[receptor, ligand]
+              # if larger than the cutoff value (0.05 is nichenet default)
+              if(interaction > significance_cutoff_lr){
+                ligands_receptors_significant <- c(ligands_receptors_significant, ligand, receptor)
+              }
+            }
+          }
+        }
+      }
+      # and we'll save the significant ones
+      ligands_targets_significant <- c()
+      # check which ligand-targets are significant
+      if(matrix_lt %in% names(nichenet_output[[receiver]][[sender]])){
+        matrix_ligand_target <- nichenet_output[[receiver]][[sender]][[matrix_lt]]
+        if(nrow(matrix_ligand_target) > 0){
+          # extract the ligands
+          ligands <- colnames(matrix_ligand_target)
+          # extract the downstream genes
+          targets <- rownames(matrix_ligand_target)
+          # check each combination
+          for(ligand in ligands){
+            for(target in targets){
+              # get the value
+              interaction <- matrix_ligand_target[target, ligand]
+              # if larger than the cutoff value (0.05 is nichenet default)
+              if(interaction > significance_cutoff_lt){
+                ligands_targets_significant <- c(ligands_targets_significant, ligand, target)
+              }
+            }
+          }
+        }
+      }
+      # paste together the output path
+      genes_output_loc <- paste(output_prepend, receiver_safe, '_from_', sender_safe, '.tsv', sep = '')
+      # collect the result
+      significant_genes <- unique(c(ligands_receptors_significant, ligands_targets_significant))
+      # replace dot with dash again
+      significant_genes <- gsub('\\.', '-', significant_genes)
+      # write the result
+      write.table(data.frame(x = significant_genes), genes_output_loc, col.names = F, row.names = F, quote = F)
+      # and to add to all of the receiver together
+      all_genes_receiver <- c(all_genes_receiver, significant_genes)
+      # and to the list of all senders together
+      if (!(receiver %in% names(all_genes_sender))) {
+        all_genes_sender[[receiver]] <- c()
+      }
+      all_genes_sender[[receiver]] <- c(all_genes_sender[[receiver]], significant_genes)
+    }
+    all_genes_receiver <- unique(all_genes_receiver)
+    # paste together the output path
+    genes_all_receiver_output_loc <- paste(output_prepend, receiver_safe, '_from_', 'all', '.tsv', sep = '')
+    # write the result
+    write.table(data.frame(x = all_genes_receiver), genes_all_receiver_output_loc, col.names = F, row.names = F, quote = F)
+  }
+  # and now for all per sender as well
+  for (sender in names(all_genes_sender)) {
+    all_genes_sender_list <- unique(all_genes_sender[[sender]])
+    # paste together the output path
+    genes_all_sender_output_loc <- paste(output_prepend, 'all', '_from_', sender, '.tsv', sep = '')
+    # write the result
+    write.table(data.frame(x = all_genes_sender_list), genes_all_sender_output_loc, col.names = F, row.names = F, quote = F)
+  }
+}
+
+
+combine_gene_lists <- function(output_loc_original, output_combined_prepend, cell_types, prepends_to_combine=c('v2_', 'v3_')){
+  # check each cell type
+  for (cell_type_receiver in cell_types) {
+    # against each cell type
+    for (cell_type_sender in cell_types) {
+      # we will have a list of genes
+      genes_list <- c()
+      # check each prepend
+      for (prepend in prepends_to_combine) {
+        # paste together the output location
+        input_full_loc <- paste(output_loc_original, prepend, cell_type_receiver, '_from_', cell_type_sender, '.tsv', sep = '')
+        # see if we can read the file
+        if (!file.exists(input_full_loc) ) {
+          message(paste('no output found with path', input_full_loc))
+        }
+        else if (file.size(input_full_loc) == 0L) {
+          message(paste('output is empty for', input_full_loc))
+        }
+        else {
+          genes_this_set <- read.table(input_full_loc, header = F)[['V1']]
+          # add to total set
+          genes_list <- c(genes_list, genes_this_set)
+        }
+      }
+      # combine the output
+      genes_list <- unique(genes_list)
+      # paste together an output path
+      output_full_loc <- paste(output_combined_prepend, cell_type_receiver, '_from_', cell_type_sender, '.tsv', sep = '')
+      # write the result
+      write.table(data.frame(x = genes_list), output_full_loc, row.names = F, col.names = F, quote = F)
+    }
+  }
+}
 
 enrich_for_significant_interactions <- function(genes_per_receiver_and_sender, ligand_column='ligands', target_column='targets'){
   # we will also check for enrichment of specifically sending
@@ -452,7 +591,7 @@ get_further_entries <- function(cascade_matrix, genes_to_fetch, genes_already_fe
 }
 
 
-get_downstream_genes_per_receptor <- function(ligand_receptor_matrix, receiver, mast_output_loc, condition_combination, cascade_matrix, significance_cutoff=0){
+get_downstream_genes_per_receptor <- function(ligand_receptor_matrix, receiver, mast_output_loc, condition_combination, cascade_matrix, significance_cutoff=0, lfc_column='avg_logFC'){
   # extract the ligands
   ligands <- colnames(ligand_receptor_matrix)
   # extract the downstream genes
@@ -473,14 +612,18 @@ get_downstream_genes_per_receptor <- function(ligand_receptor_matrix, receiver, 
   # get the total gene list
   all_genes <- get_further_entries(cascade_matrix, significant_receptors, c())
   # get all the LFCs
-  lfcs <- get_lfs_for_genes(mast_output_loc = mast_output_loc, condition_combination = condition_combination, cell_types = c(receiver), genes = all_genes)
+  lfcs <- get_lfs_for_genes(mast_output_loc = mast_output_loc, condition_combination = condition_combination, cell_types = c(receiver), genes = all_genes, lfc_column = lfc_column)
   # make a names list with the summed lfcs per receptor
   sums_per_receptor <- list()
   # check each receptor
   for (receptor in significant_receptors){
     genes_receptor <-  get_further_entries(cascade_matrix, c(receptor), c())
     # get the lfcs
-    summed_lfc <- sum(abs(lfcs[intersect(rownames(lfcs), genes_receptor), receiver]))
+    summed_lfc <- 0
+    # check if there was any DE result
+    if (!(is.null(lfcs))){
+      summed_lfc <- sum(abs(lfcs[intersect(rownames(lfcs), genes_receptor), receiver]))
+    }
     sums_per_receptor[[receptor]] <- summed_lfc
   }
   return(sums_per_receptor)
@@ -681,6 +824,106 @@ pathwview_per_celltype_combination <- function(nichenet_output, output_loc, mast
 }
 
 
+filter_gene_lists <- function(gene_lists_loc, filter_list, output_loc, list.regex = NULL) {
+  # list the files in the directory
+  original_files <- list.files(gene_lists_loc, full.names = F, pattern = list.regex)
+  # check each file
+  for (original_file in original_files) {
+    # get the basename
+    original_file_basename <- sub(pattern = "(.*?)\\..*$", replacement = "\\1", x = original_file)
+    # get the full path again
+    full_original_path <- paste(gene_lists_loc, original_file, sep = '')
+    if (file.size(full_original_path) == 0L) {
+        message(paste('output is empty for', full_original_path))
+    }
+    else {
+      # read the file
+      genes <- read.table(full_original_path, header = F)$V1
+      # filter the genes
+      filtered_genes <- setdiff(genes, filter_list)
+      # write the result
+      output_loc_full <- paste(output_loc, original_file_basename, '_filtered.txt', sep = '')
+      write.table(data.frame(x = filtered_genes), output_loc_full, row.names = F, col.names = F, quote = F)
+    }
+  }
+}
+
+
+get_significant_interactions <- function(nichenet_output, matrix_name, significance_cutoff=0){
+  # save a dataframe
+  interaction_table <- NULL
+  # check each receiver
+  for(receiver in names(nichenet_output)){
+    # check against each sender
+    for(sender in names(nichenet_output[[receiver]])){
+      # see if there were interactions described
+      if(matrix_name %in% names(nichenet_output[[receiver]][[sender]])){
+        # extract the matrix
+        ligand_target <- nichenet_output[[receiver]][[sender]][[matrix_name]]
+        if(nrow(ligand_target) > 0){
+           # extract the ligands
+          ligands <- colnames(ligand_target)
+          # extract the downstream genes
+          targets <- rownames(ligand_target)
+          # check each combination
+          for(ligand in ligands){
+            for(target in targets){
+              # get the value
+              interaction <- ligand_target[target, ligand]
+              # check if the interaction is enough
+              if (interaction > significance_cutoff) {
+                # make a new row
+                row <- data.frame(receiver=c(receiver), sender=c(sender), ligand=c(ligand), receptor=c(target), interaction=c(interaction))
+                if (is.null(interaction_table)) {
+                  interaction_table <- row
+                }
+                else{
+                  interaction_table <- rbind(interaction_table, row)
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return(interaction_table)
+}
+
+
+get_downstream_lfc_sums_per_receptor <- function(nichenet_output, mast_output_loc, condition_combination, cascade_matrix=NULL, significance_cutoff=0, lfc_column='avg_logFC'){
+  # initialize the table
+  full_lfc_df <- NULL
+  # check each receiver
+  for(receiver in names(nichenet_output)){
+    # check against each sender
+    for(sender in names(nichenet_output[[receiver]])){
+      # extract the ligand-receptor gene matrix
+      if('ligand_receptor_network' %in% names(nichenet_output[[receiver]][[sender]])){
+        ligand_receptor_matrix <- nichenet_output[[receiver]][[sender]][['ligand_receptor_network']]
+        if(nrow(ligand_receptor_matrix) > 0){
+          # get the downstream genes
+          downstream_genes <- get_downstream_genes_per_receptor(ligand_receptor_matrix = ligand_receptor_matrix, receiver = receiver, mast_output_loc = mast_output_loc, condition_combination = condition_combination, cascade_matrix = cascade_matrix, significance_cutoff = significance_cutoff, lfc_column = lfc_column)
+          # get specifically the gene names
+          genes <- names(downstream_genes)
+          # get the actual values
+          lfc_sums <- as.vector(unlist(downstream_genes))
+          # create a dataframe
+          lfc_df <- data.frame(receiver = rep(receiver, times = length(genes)), sender = rep(sender, times = length(genes)), receptor = genes, lfc_sum = lfc_sums)
+          # add to the big dataframe
+          if (is.null(full_lfc_df)) {
+            full_lfc_df <- lfc_df
+          }
+          else{
+            full_lfc_df <- rbind(full_lfc_df, lfc_df)
+          }
+        }
+      }
+    }
+  }
+  return(full_lfc_df)
+}
+
 ```
 
 ```{r setup, include=FALSE}
@@ -695,18 +938,18 @@ organism <- 'org.Hs.eg.db'
 # mast output location
 mast_output_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/differential_expression/MAST/results/stemi_meta_paired_lores_20200707/rna/'
 # read Baseline vs 24h
-v2_Baseline_vs_t24h_perct_omni_unweighted_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds'
+v2_Baseline_vs_t24h_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds'
 v2_Baseline_vs_t24h_perct_omni_unweighted <- readRDS(v2_Baseline_vs_t24h_perct_omni_unweighted_loc)
-v3_Baseline_vs_t24h_perct_omni_unweighted_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds'
+v3_Baseline_vs_t24h_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds'
 v3_Baseline_vs_t24h_perct_omni_unweighted <- readRDS(v3_Baseline_vs_t24h_perct_omni_unweighted_loc)
 # read Baseline vs 24h
-v2_Baseline_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds'
+v2_Baseline_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds'
 v2_Baseline_vs_t8w_perct_omni_unweighted <- readRDS(v2_Baseline_vs_t8w_perct_omni_unweighted_loc)
-v3_Baseline_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds'
+v3_Baseline_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds'
 v3_Baseline_vs_t8w_perct_omni_unweighted <- readRDS(v3_Baseline_vs_t8w_perct_omni_unweighted_loc)
-v2_t24h_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_t24h_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds'
+v2_t24h_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v2_t24h_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds'
 v2_t24h_vs_t8w_perct_omni_unweighted <- readRDS(v2_t24h_vs_t8w_perct_omni_unweighted_loc)
-v3_t24h_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_t24h_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds'
+v3_t24h_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v3_t24h_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds'
 v3_t24h_vs_t8w_perct_omni_unweighted <- readRDS(v3_t24h_vs_t8w_perct_omni_unweighted_loc)
 
 
@@ -747,7 +990,7 @@ Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_mapping <- bitr(Baseline_
 # get the IDs which are not duplicated, and are not NA
 Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_mapping <- Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_mapping[!is.na(Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_mapping[['ENTREZID']]), ]
 # now get the LFCs
-Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_lfcs <- get_lfs_for_genes(mast_output_loc, 'Baselinet24h', Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_mapping[['SYMBOL']])
+Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_lfcs <- get_lfs_for_genes(mast_output_loc, 'Baselinet24h', Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_mapping[['SYMBOL']], lfc_column = 'metafc')
 # set to zero if empty
 Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_lfcs[is.na(Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_lfcs)] <- 0
 # get the max absolute LFC
@@ -812,7 +1055,7 @@ Baseline_vs_t8w_perct_omni_unweighted_ligands_targets_mapping <- bitr(Baseline_v
 # get the IDs which are not duplicated, and are not NA
 Baseline_vs_t8w_perct_omni_unweighted_ligands_targets_mapping <- Baseline_vs_t8w_perct_omni_unweighted_ligands_targets_mapping[!is.na(Baseline_vs_t8w_perct_omni_unweighted_ligands_targets_mapping[['ENTREZID']]), ]
 # now get the LFCs
-Baseline_vs_t8w_perct_omni_unweighted_ligands_targets_lfcs <- get_lfs_for_genes(mast_output_loc, 'Baselinet8w', Baseline_vs_t8w_perct_omni_unweighted_ligands_targets_mapping[['SYMBOL']])
+Baseline_vs_t8w_perct_omni_unweighted_ligands_targets_lfcs <- get_lfs_for_genes(mast_output_loc, 'Baselinet8w', Baseline_vs_t8w_perct_omni_unweighted_ligands_targets_mapping[['SYMBOL']], lfc_column = 'metafc')
 # set to zero if empty
 Baseline_vs_t8w_perct_omni_unweighted_ligands_targets_lfcs[is.na(Baseline_vs_t8w_perct_omni_unweighted_ligands_targets_lfcs)] <- 0
 # get the max absolute LFC
@@ -1064,6 +1307,14 @@ t24h_vs_t8w_perct_omni_unweighted_pathways <- enrich_for_significant_interaction
 ```{r, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 
+# write the resulting genes
+write_significant_genes(Baseline_vs_t24h_perct_omni_unweighted_genes_and_receptors, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/Baseline_vs_t24h_perct_omni_unweighted_genes_and_receptors.txt')
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
 # write the results
 Baseline_vs_t8w_perct_omni_unweighted_pathways_output_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/pathways/Baseline_t8w_omni_unweighted/'
 write_enrichment_results(Baseline_vs_t8w_perct_omni_unweighted_pathways, Baseline_vs_t8w_perct_omni_unweighted_pathways_output_loc)
@@ -1108,13 +1359,166 @@ Baseline_vs_t8w_perct_omni_unweighted_summed_lfcs <- apply(Baseline_vs_t8w_perct
 
 ```
 
-```{r, include=TRUE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
 
 mast_output_loc_v2 <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v2_paired_lores_lfc01minpct01ncountrna_20201209/rna/'
 #pathwview_per_celltype_combination(nichenet_output = v2_Baseline_vs_t24h_perct_omni_unweighted, output_loc = './', mast_output_loc_v2, pathways.ids = c('hsa04060','hsa04061','hsa04657','hsa04659','hsa04620','hsa05321','hsa05417'))
 pathwview_per_celltype_combination(nichenet_output = v2_Baseline_vs_t24h_perct_omni_unweighted, output_loc = './v2_', mast_output_loc_v2, 'Baselinet24h', pathways.ids = c('hsa04060','hsa04061','hsa04657','hsa04659','hsa04620','hsa05321','hsa05417'),cascade_matrix=weighted_networks$gr, significance_cutoff=0)
 mast_output_loc_v3 <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20201209/rna/'
 pathwview_per_celltype_combination(nichenet_output = v3_Baseline_vs_t24h_perct_omni_unweighted, output_loc = './v3_', mast_output_loc_v3, 'Baselinet24h', pathways.ids = c('hsa04060','hsa04061','hsa04657','hsa04659','hsa04620','hsa05321','hsa05417'),cascade_matrix=weighted_networks$gr, significance_cutoff=0)
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+write_significant_genes(nichenet_output = v2_Baseline_vs_t24h_perct_omni_unweighted, output_prepend = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/Baseline_t24h/v2_')
+write_significant_genes(nichenet_output = v3_Baseline_vs_t24h_perct_omni_unweighted, output_prepend = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/Baseline_t24h/v3_')
+write_significant_genes(nichenet_output = v2_Baseline_vs_t8w_perct_omni_unweighted, output_prepend = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/Baseline_t8w/v2_')
+write_significant_genes(nichenet_output = v3_Baseline_vs_t8w_perct_omni_unweighted, output_prepend = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/Baseline_t8w/v3_')
+write_significant_genes(nichenet_output = v2_t24h_vs_t8w_perct_omni_unweighted, output_prepend = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/t24h_t8w/v2_')
+write_significant_genes(nichenet_output = v3_t24h_vs_t8w_perct_omni_unweighted, output_prepend = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/t24h_t8w/v3_')
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+combine_gene_lists(output_loc_original =  '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/Baseline_t24h/', output_combined_prepend = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/Baseline_t24h/combined_', cell_types = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK', 'all'))
+combine_gene_lists(output_loc_original =  '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/Baseline_t8w/', output_combined_prepend = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/Baseline_t8w/combined_', cell_types = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK', 'all'))
+combine_gene_lists(output_loc_original =  '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/t24h_t8w/', output_combined_prepend = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/t24h_t8w/combined_', cell_types = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK', 'all'))
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+read_partition <- 'tmp01'
+# try with the omni data
+ligand_target_matrix_omni_unweighted_loc <-paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/omni/', 'ligand_target_matrixNoweights.rds', sep = '')
+lr_network_omni_loc <- paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/omni/','lr_Network_Omnipath.rds', sep = '')
+unweighted_networks_omni_loc <- paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/omni/','weighted_networksNonSourceWeights.rds', sep = '')
+# there are weighted matrices as well
+ligand_target_matrix_omni_weighted_loc <-paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/omni/', 'ligand_target_matrixWithweights.rds', sep = '')
+weighted_networks_omni_loc <- paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/omni/','weighted_networksWithSourceWeights.rds', sep = '')
+# read network data
+ligand_target_matrix_omni_unweighted = readRDS(ligand_target_matrix_omni_unweighted_loc)
+ligand_target_matrix_omni_weighted = readRDS(ligand_target_matrix_omni_weighted_loc)
+lr_network_omni = readRDS(lr_network_omni_loc)
+unweighted_networks_omni = readRDS(unweighted_networks_omni_loc)
+weighted_networks_omni = readRDS(weighted_networks_omni_loc)
+
+
+# make a background set
+all_genes_possible <- c(unweighted_networks_omni[['lr_sig']][['from']],
+                        unweighted_networks_omni[['lr_sig']][['to']],
+                        unweighted_networks_omni[['gr']][['from']],
+                        unweighted_networks_omni[['gr']][['to']]
+                        )
+all_genes_possible <- unique(all_genes_possible)
+# write that
+write.table(data.frame(x = all_genes_possible), '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/possible_genes.txt', row.names = F, col.names = F, quote = F)
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+filter_gene_lists(gene_lists_loc = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/Baseline_t24h/', filter_list = unique(c(unweighted_networks_omni[['lr_sig']][['from']], unweighted_networks_omni[['lr_sig']][['to']])), output_loc = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes_no_lr/Baseline_t24h/', list.regex = 'combined_*')
+filter_gene_lists(gene_lists_loc = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/Baseline_t8w/', filter_list = unique(c(unweighted_networks_omni[['lr_sig']][['from']], unweighted_networks_omni[['lr_sig']][['to']])), output_loc = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes_no_lr/Baseline_t8w/', list.regex = 'combined_*')
+filter_gene_lists(gene_lists_loc = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/t24h_t8w/', filter_list = unique(c(unweighted_networks_omni[['lr_sig']][['from']], unweighted_networks_omni[['lr_sig']][['to']])), output_loc = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes_no_lr/t24h_t8w/', list.regex = 'combined_*')
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get interactions for each set
+lr_v2_Baseline_vs_t24h_perct_omni_unweighted <- data.table(get_significant_interactions(v2_Baseline_vs_t24h_perct_omni_unweighted, 'ligand_receptor_network'))
+lr_v3_Baseline_vs_t24h_perct_omni_unweighted <- data.table(get_significant_interactions(v3_Baseline_vs_t24h_perct_omni_unweighted, 'ligand_receptor_network'))
+lr_v2_Baseline_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v2_Baseline_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+lr_v3_Baseline_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v3_Baseline_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+lr_v2_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v2_t24h_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+lr_v3_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v3_t24h_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+
+# set the column name of the iteraction to be different for each set
+lr_v2_Baseline_vs_t24h_perct_omni_unweighted[['v2_Baseline_vs_t24h']] <- lr_v2_Baseline_vs_t24h_perct_omni_unweighted[['interaction']]
+lr_v2_Baseline_vs_t24h_perct_omni_unweighted[['interaction']] <- NULL
+lr_v3_Baseline_vs_t24h_perct_omni_unweighted[['v3_Baseline_vs_t24h']] <- lr_v3_Baseline_vs_t24h_perct_omni_unweighted[['interaction']]
+lr_v3_Baseline_vs_t24h_perct_omni_unweighted[['interaction']] <- NULL
+lr_v2_Baseline_vs_t8w_perct_omni_unweighted[['v2_Baseline_vs_t8w']] <- lr_v2_Baseline_vs_t8w_perct_omni_unweighted[['interaction']]
+lr_v2_Baseline_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+lr_v3_Baseline_vs_t8w_perct_omni_unweighted[['v3_Baseline_vs_t8w']] <- lr_v3_Baseline_vs_t8w_perct_omni_unweighted[['interaction']]
+lr_v3_Baseline_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+lr_v2_t24h_vs_t8w_perct_omni_unweighted[['v2_t24h_vs_t8w']] <- lr_v2_t24h_vs_t8w_perct_omni_unweighted[['interaction']]
+lr_v2_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+lr_v3_t24h_vs_t8w_perct_omni_unweighted[['v3_t24h_vs_t8w']] <- lr_v3_t24h_vs_t8w_perct_omni_unweighted[['interaction']]
+lr_v3_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+
+# merge all of them
+lr_all <- merge(lr_v2_Baseline_vs_t24h_perct_omni_unweighted, lr_v3_Baseline_vs_t24h_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+lr_all <- merge(lr_all, lr_v2_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+lr_all <- merge(lr_all, lr_v3_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+lr_all <- merge(lr_all, lr_v2_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+lr_all <- merge(lr_all, lr_v3_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get the summed LFC for each receptor
+summed_lfcs_v2_Baseline_vs_t24h_perct_omni_unweighted <- get_downstream_lfc_sums_per_receptor(v2_Baseline_vs_t24h_perct_omni_unweighted, mast_output_loc='/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v2_paired_lores_lfc01minpct01ncountrna_20201209/rna/', 'Baselinet24h', cascade_matrix=unweighted_networks_omni$gr, significance_cutoff=0)
+
+summed_lfcs_v3_Baseline_vs_t24h_perct_omni_unweighted <- get_downstream_lfc_sums_per_receptor(v3_Baseline_vs_t24h_perct_omni_unweighted, mast_output_loc='/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20201209/rna/', 'Baselinet24h', cascade_matrix=unweighted_networks_omni$gr, significance_cutoff=0)
+
+summed_lfcs_v2_Baseline_vs_t8w_perct_omni_unweighted <- get_downstream_lfc_sums_per_receptor(v2_Baseline_vs_t8w_perct_omni_unweighted, mast_output_loc='/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v2_paired_lores_lfc01minpct01ncountrna_20201209/rna/', 'Baselinet8w', cascade_matrix=unweighted_networks_omni$gr, significance_cutoff=0)
+
+summed_lfcs_v3_Baseline_vs_t8w_perct_omni_unweighted <- get_downstream_lfc_sums_per_receptor(v3_Baseline_vs_t8w_perct_omni_unweighted, mast_output_loc='/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20201209/rna/', 'Baselinet8w', cascade_matrix=unweighted_networks_omni$gr, significance_cutoff=0)
+
+summed_lfcs_v2_t24h_vs_t8w_perct_omni_unweighted <- get_downstream_lfc_sums_per_receptor(v2_t24h_vs_t8w_perct_omni_unweighted, mast_output_loc='/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v2_paired_lores_lfc01minpct01ncountrna_20201209/rna/', 't24ht8w', cascade_matrix=unweighted_networks_omni$gr, significance_cutoff=0)
+
+summed_lfcs_v3_t24h_vs_t8w_perct_omni_unweighted <- get_downstream_lfc_sums_per_receptor(v3_t24h_vs_t8w_perct_omni_unweighted, mast_output_loc='/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20201209/rna/', 't24ht8w', cascade_matrix=unweighted_networks_omni$gr, significance_cutoff=0)
+
+# now combine this with the receptor values
+llfc_v2_Baseline_vs_t24h_perct_omni_unweighted <- data.table(get_significant_interactions(v2_Baseline_vs_t24h_perct_omni_unweighted, 'ligand_receptor_network'))
+llfc_v3_Baseline_vs_t24h_perct_omni_unweighted <- data.table(get_significant_interactions(v3_Baseline_vs_t24h_perct_omni_unweighted, 'ligand_receptor_network'))
+llfc_v2_Baseline_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v2_Baseline_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+llfc_v3_Baseline_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v3_Baseline_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+llfc_v2_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v2_t24h_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+llfc_v3_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v3_t24h_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+
+# add the summed LFCs
+llfc_v2_Baseline_vs_t24h_perct_omni_unweighted <- merge(llfc_v2_Baseline_vs_t24h_perct_omni_unweighted, summed_lfcs_v2_Baseline_vs_t24h_perct_omni_unweighted, by = c('receiver', 'sender', 'receptor'), all = T)
+llfc_v3_Baseline_vs_t24h_perct_omni_unweighted <- merge(llfc_v3_Baseline_vs_t24h_perct_omni_unweighted, summed_lfcs_v3_Baseline_vs_t24h_perct_omni_unweighted, by = c('receiver', 'sender', 'receptor'), all = T)
+llfc_v2_Baseline_vs_t8w_perct_omni_unweighted <- merge(llfc_v2_Baseline_vs_t8w_perct_omni_unweighted, summed_lfcs_v2_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'receptor'), all = T)
+llfc_v3_Baseline_vs_t8w_perct_omni_unweighted <- merge(llfc_v3_Baseline_vs_t8w_perct_omni_unweighted, summed_lfcs_v3_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'receptor'), all = T)
+llfc_v2_t24h_vs_t8w_perct_omni_unweighted <- merge(llfc_v2_t24h_vs_t8w_perct_omni_unweighted, summed_lfcs_v2_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'receptor'), all = T)
+llfc_v3_t24h_vs_t8w_perct_omni_unweighted <- merge(llfc_v3_t24h_vs_t8w_perct_omni_unweighted, summed_lfcs_v3_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'receptor'), all = T)
+
+# set the names
+llfc_v2_Baseline_vs_t24h_perct_omni_unweighted[['v2_Baseline_vs_t24h']] <- llfc_v2_Baseline_vs_t24h_perct_omni_unweighted[['lfc_sum']]
+llfc_v2_Baseline_vs_t24h_perct_omni_unweighted[['interaction']] <- NULL
+llfc_v2_Baseline_vs_t24h_perct_omni_unweighted[['lfc_sum']] <- NULL
+llfc_v3_Baseline_vs_t24h_perct_omni_unweighted[['v3_Baseline_vs_t24h']] <- llfc_v3_Baseline_vs_t24h_perct_omni_unweighted[['lfc_sum']]
+llfc_v3_Baseline_vs_t24h_perct_omni_unweighted[['interaction']] <- NULL
+llfc_v3_Baseline_vs_t24h_perct_omni_unweighted[['lfc_sum']] <- NULL
+llfc_v2_Baseline_vs_t8w_perct_omni_unweighted[['v2_Baseline_vs_t8w']] <- llfc_v2_Baseline_vs_t8w_perct_omni_unweighted[['lfc_sum']]
+llfc_v2_Baseline_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+llfc_v2_Baseline_vs_t8w_perct_omni_unweighted[['lfc_sum']] <- NULL
+llfc_v3_Baseline_vs_t8w_perct_omni_unweighted[['v3_Baseline_vs_t8w']] <- llfc_v3_Baseline_vs_t8w_perct_omni_unweighted[['lfc_sum']]
+llfc_v3_Baseline_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+llfc_v3_Baseline_vs_t8w_perct_omni_unweighted[['lfc_sum']] <- NULL
+llfc_v2_t24h_vs_t8w_perct_omni_unweighted[['v2_t24h_vs_t8w']] <- llfc_v2_t24h_vs_t8w_perct_omni_unweighted[['lfc_sum']]
+llfc_v2_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+llfc_v2_t24h_vs_t8w_perct_omni_unweighted[['lfc_sum']] <- NULL
+llfc_v3_t24h_vs_t8w_perct_omni_unweighted[['v3_t24h_vs_t8w']] <- llfc_v3_t24h_vs_t8w_perct_omni_unweighted[['lfc_sum']]
+llfc_v3_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+llfc_v3_t24h_vs_t8w_perct_omni_unweighted[['lfc_sum']] <- NULL
+
+# merge all of them
+llfc_all <- merge(llfc_v2_Baseline_vs_t24h_perct_omni_unweighted, llfc_v3_Baseline_vs_t24h_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+llfc_all <- merge(llfc_all, llfc_v2_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+llfc_all <- merge(llfc_all, llfc_v3_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+llfc_all <- merge(llfc_all, llfc_v2_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+llfc_all <- merge(llfc_all, llfc_v3_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
 
 ```
