@@ -33,6 +33,10 @@ library(enrichR)
 #library(ggVennDiagram)
 library(VennDiagram)
 library(data.table)
+library(circlize)
+library(ggplot2)
+library(cowplot)
+
 ```
 
 ```{r functions, include=FALSE}
@@ -874,6 +878,10 @@ get_significant_interactions <- function(nichenet_output, matrix_name, significa
               if (interaction > significance_cutoff) {
                 # make a new row
                 row <- data.frame(receiver=c(receiver), sender=c(sender), ligand=c(ligand), receptor=c(target), interaction=c(interaction))
+                # for ligand-target matrices this is the opposite
+                if (matrix_name == 'ligand_target') {
+                  row <- data.frame(receiver=c(receiver), sender=c(sender), ligand=c(target), target=c(ligand), interaction=c(interaction))
+                }
                 if (is.null(interaction_table)) {
                   interaction_table <- row
                 }
@@ -923,6 +931,584 @@ get_downstream_lfc_sums_per_receptor <- function(nichenet_output, mast_output_lo
   }
   return(full_lfc_df)
 }
+
+
+check_ligand_receptor_and_target_numbers <- function(lt_connections, lr_connections, ligand_column='ligand', receptor_column='receptor', target_column='target', sender_column='sender', receiver_column='receiver', trim_zero=T, target_interaction_column='interaction', receptor_interaction_column='interaction'){
+  # check each ligand
+  unique_ligands <- unique(c(lr_connections[[ligand_column]], lt_connections[[ligand_column]]))
+  # check each cell type
+  unique_celltypes <- unique(c(lt_connections[[sender_column]], lt_connections[[receiver_column]], lr_connections[[sender_column]], lr_connections[[receiver_column]]))
+  # create an empty dataframe
+  nr_of_combinations <- length(unique_celltypes) * (length(unique_celltypes) - 1) * length(unique_ligands)
+  target_and_receptor_numbers <- data.frame(sender = rep(NA, times = nr_of_combinations), receiver = rep(NA, times = nr_of_combinations), ligand = rep(NA, times = nr_of_combinations), nr_receptors = rep(0, times = nr_of_combinations), nr_targets = rep(0, times = nr_of_combinations))
+  # keep an index to add to the dataframe
+  i <- 1
+  # turn into dataframes
+  lt_connections <- data.frame(lt_connections)
+  lr_connections <- data.frame(lr_connections)
+  # check each sender
+  for (sender in unique_celltypes) {
+    # against each receiver
+    for (receiver in unique_celltypes) {
+      # only if the sender and receiver are different of course
+      if (sender != receiver) {
+        # check each ligand
+        for (ligand in unique_ligands) {
+          # get the number of receptors for the ligand
+          nr_receptors <- nrow(lr_connections[lr_connections[[sender_column]] == sender &
+                                              lr_connections[[receiver_column]] == receiver &
+                                              lr_connections[[ligand_column]] == ligand &
+                                              !is.na(lr_connections[[receptor_interaction_column]]) &
+                                              lr_connections[[receptor_interaction_column]] > 0, ])
+
+          # and the number of targets for the ligand
+          nr_targets <- nrow(lt_connections[lt_connections[[sender_column]] == sender &
+                                            lt_connections[[receiver_column]] == receiver &
+                                            lt_connections[[ligand_column]] == ligand &
+                                            !is.na(lt_connections[[target_interaction_column]]) &
+                                            lt_connections[[target_interaction_column]] > 0, ])
+          # add to the dataframe
+          target_and_receptor_numbers[i, c('sender', 'receiver', 'ligand', 'nr_receptors', 'nr_targets')] <- c(sender, receiver, ligand, nr_receptors, nr_targets)
+          # increase index
+          i <- i + 1
+        }
+      }
+    }
+  }
+  # set the numbers to be actual numbers
+  target_and_receptor_numbers[['nr_receptors']] <- as.numeric(target_and_receptor_numbers[['nr_receptors']])
+  target_and_receptor_numbers[['nr_targets']] <- as.numeric(target_and_receptor_numbers[['nr_targets']])
+  # if requested, remove the rows where both the receptors and targets are zero
+  if (trim_zero) {
+    target_and_receptor_numbers <- target_and_receptor_numbers[target_and_receptor_numbers[['nr_receptors']] > 0 | target_and_receptor_numbers[['nr_targets']] > 0, ]
+  }
+  return(target_and_receptor_numbers)
+}
+
+
+get_distinct_downstream_gene_numbers <- function(lt_connections, lr_connections, ligand_column='ligand', receptor_column='receptor', target_column='target', sender_column='sender', receiver_column='receiver', target_interaction_column='interaction', receptor_interaction_column='interaction'){
+  # get the ligand numbers
+  nr_recep_target_per_ligand <- data.frame(check_ligand_receptor_and_target_numbers(lt_connections = lt_connections, lr_connections = lr_connections, ligand_column=ligand_column, receptor_column=receptor_column, target_column=target_column, sender_column=sender_column, receiver_column=receiver_column, target_interaction_column=target_interaction_column, receptor_interaction_column=receptor_interaction_column))
+  # get the cell types present
+  cell_types <- unique(c(nr_recep_target_per_ligand[[sender_column]], nr_recep_target_per_ligand[[receiver_column]]))
+  # create an empty dataframe
+  induced_genes <- data.frame(matrix(data = NA, nrow = length(cell_types) * (length(cell_types) - 1), ncol = 4))
+  colnames(induced_genes) <- c('sender', 'receiver', 'nr_downstream_genes', 'induced_genes')
+  # keep an index
+  i <- 1
+  # check each cell type
+  for (sender in cell_types) {
+    # against each other cell type
+    for(receiver in cell_types) {
+      # of course only when they are different
+      if (receiver != sender) {
+        # first get the ligands that have both a receptor link, and induce downstream DE effects
+        connections_subset <- nr_recep_target_per_ligand[
+            nr_recep_target_per_ligand[[sender_column]] == sender &
+            nr_recep_target_per_ligand[[receiver_column]] == receiver &
+            nr_recep_target_per_ligand[['nr_receptors']] > 0 &
+            nr_recep_target_per_ligand[['nr_targets']] > 0, ]
+        # then extract those ligands, if there are any
+        if (nrow(connections_subset) > 0) {
+          ligands_with_consequences <- connections_subset[[ligand_column]]
+          # now get the unique downstream genes beloninging to those ligands that are significant
+          downstream_genes <- unique(
+            lt_connections[
+              lt_connections[[sender_column]] == sender &
+              lt_connections[[receiver_column]] == receiver &
+              lt_connections[[ligand_column]] %in% ligands_with_consequences &
+              !is.na(lt_connections[[target_interaction_column]]) &
+              lt_connections[[target_interaction_column]] > 0,
+              target_column]
+          )
+          # and we need how many
+          nr_downstream_genes <- length(downstream_genes)
+          # add this entry
+          if (nr_downstream_genes > 0) {
+            induced_genes[i, ] <- c(sender, receiver, nr_downstream_genes, paste(downstream_genes, collapse = ','))
+          }
+          else{
+            induced_genes[i, ] <- c(sender, receiver, nr_downstream_genes, NA)
+          }
+        }
+        else{
+          induced_genes[i, ] <- c(sender, receiver, 0, NA)
+        }
+        i <- i + 1
+      }
+    }
+  }
+  # set the type of the numbers
+  induced_genes[['nr_downstream_genes']] <- as.numeric(induced_genes[['nr_downstream_genes']])
+  return(induced_genes)
+}
+
+ligand_numbers_to_interactions <- function(nr_recep_target_per_ligand, sender_column='sender', receiver_column='receiver', ligand_column='ligand', nr_recep_column='nr_receptors', nr_tar_column='nr_targets') {
+  # get the cell types present
+  cell_types <- unique(c(nr_recep_target_per_ligand[[sender_column]], nr_recep_target_per_ligand[[receiver_column]]))
+  # create an empty dataframe
+  connecting_ligands <- data.frame(matrix(data = NA, nrow = length(cell_types) * (length(cell_types) - 1), ncol = 3))
+  colnames(connecting_ligands) <- c('sender', 'receiver', 'nr_connections')
+  # keep an index
+  i <- 1
+  # check each cell type
+  for (sender in cell_types) {
+    # against each other cell type
+    for(receiver in cell_types) {
+      # of course only when they are different
+      if (receiver != sender) {
+        # check now many connections, so there are both downstream genes and receptor connections
+        nr_connections <- nrow(nr_recep_target_per_ligand[
+            nr_recep_target_per_ligand[[sender_column]] == sender &
+            nr_recep_target_per_ligand[[receiver_column]] == receiver &
+            nr_recep_target_per_ligand[[nr_recep_column]] > 0 &
+            nr_recep_target_per_ligand[[nr_tar_column]] > 0, ])
+        # add at the index
+        connecting_ligands[i, ] <- c(sender, receiver, nr_connections)
+        # update the index
+        i <- i + 1
+      }
+    }
+  }
+  # set numeric for the number of connections column
+  connecting_ligands[['nr_connections']] <- as.numeric(connecting_ligands[['nr_connections']])
+  return(connecting_ligands)
+}
+
+
+ligand_target_numbers_to_interactions <- function(lr_connections, lt_connections, ligand_column='ligand', receptor_column='receptor', target_column='target', sender_column='sender', receiver_column='receiver', target_interaction_column='interaction', receptor_interaction_column='interaction'){
+    # get the ligand numbers
+  nr_recep_target_per_ligand <- data.frame(check_ligand_receptor_and_target_numbers(lt_connections = lt_connections, lr_connections = lr_connections, ligand_column=ligand_column, receptor_column=receptor_column, target_column=target_column, sender_column=sender_column, receiver_column=receiver_column, target_interaction_column=target_interaction_column, receptor_interaction_column=receptor_interaction_column))
+  # get the cell types present
+  cell_types <- unique(c(nr_recep_target_per_ligand[[sender_column]], nr_recep_target_per_ligand[[receiver_column]]))
+  # create an empty dataframe
+  lt_connection_numbers <- data.frame(matrix(data = NA, nrow = length(cell_types) * (length(cell_types) - 1), ncol = 3))
+  colnames(lt_connection_numbers) <- c('sender', 'receiver', 'nr_lt_links')
+  # keep an index
+  i <- 1
+  # check each cell type
+  for (sender in cell_types) {
+    # against each other cell type
+    for(receiver in cell_types) {
+      # of course only when they are different
+      if (receiver != sender) {
+        # first get the ligands that have both a receptor link, and induce downstream DE effects
+        connections_subset <- nr_recep_target_per_ligand[
+            nr_recep_target_per_ligand[[sender_column]] == sender &
+            nr_recep_target_per_ligand[[receiver_column]] == receiver &
+            nr_recep_target_per_ligand[['nr_receptors']] > 0 &
+            nr_recep_target_per_ligand[['nr_targets']] > 0, ]
+        # set a default for the number of ligand-target entries
+        nr_lt_links <- 0
+        # if there are still connections, then we need those ligands
+        if (nrow(connections_subset) > 0) {
+          ligands_with_effects <- unique(connections_subset[[ligand_column]])
+          # now check how many have downstream genes
+          downstream_effects_subset <- lt_connections[lt_connections[[sender_column]] == sender &
+                                                        lt_connections[[receiver_column]] == receiver &
+                                                        lt_connections[[ligand_column]] %in% ligands_with_effects &
+                                                        !is.na(lt_connections[[target_interaction_column]]) &
+                                                        lt_connections[[target_interaction_column]] > 0,
+                                                      ]
+          # and check how many
+          nr_lt_links <- nrow(downstream_effects_subset)
+        }
+        # add to the table
+        lt_connection_numbers[i, c('sender', 'receiver', 'nr_lt_links')] <- c(sender, receiver, nr_lt_links)
+        # update index
+        i <- i +1
+      }
+    }
+  }
+  # set the type of the numbers
+  lt_connection_numbers[['nr_lt_links']] <- as.numeric(lt_connection_numbers[['nr_lt_links']])
+  return(lt_connection_numbers)
+}
+
+get_color_coding_dict <- function(){
+  # set the condition colors
+  color_coding <- list()
+  color_coding[["UTBaseline"]] <- "khaki2"
+  color_coding[["UTt24h"]] <- "khaki4"
+  color_coding[["UTt8w"]] <- "paleturquoise1"
+  color_coding[["Baselinet24h"]] <- "paleturquoise3"
+  color_coding[["Baselinet8w"]] <- "rosybrown1"
+  color_coding[["t24ht8w"]] <- "rosybrown3"
+  color_coding[["UT\nBaseline"]] <- "khaki2"
+  color_coding[["UT\nt24h"]] <- "khaki4"
+  color_coding[["UT\nt8w"]] <- "paleturquoise1"
+  color_coding[["Baseline\nt24h"]] <- "paleturquoise3"
+  color_coding[["Baseline\nt8w"]] <- "rosybrown1"
+  color_coding[["t24h\nt8w"]] <- "rosybrown3"
+  color_coding[["UT-Baseline"]] <- "khaki2"
+  color_coding[["UT-t24h"]] <- "khaki4"
+  color_coding[["UT-t8w"]] <- "paleturquoise1"
+  color_coding[["Baseline-t24h"]] <- "paleturquoise3"
+  color_coding[["Baseline-t8w"]] <- "rosybrown1"
+  color_coding[["t24h-t8w"]] <- "rosybrown3"
+  color_coding[["UT-t0"]] <- "khaki2"
+  color_coding[["UT-t24h"]] <- "khaki4"
+  color_coding[["UT-t8w"]] <- "paleturquoise1"
+  color_coding[["HC-t0"]] <- "khaki2"
+  color_coding[["t0-HC"]] <- "khaki2"
+  color_coding[["HC-t24h"]] <- "khaki4"
+  color_coding[["t24h-HC"]] <- "khaki4"
+  color_coding[["HC-t8w"]] <- "paleturquoise1"
+  color_coding[["t8w-HC"]] <- "paleturquoise1"
+  color_coding[["t0-t24h"]] <- "#FF6066" #"paleturquoise3"
+  color_coding[["t24h-t0"]] <- "#FF6066" #"paleturquoise3"
+  color_coding[["t0-t8w"]] <- "#C060A6" #"rosybrown1"
+  color_coding[["t8w-t0"]] <- "#C060A6" #"rosybrown1"
+  color_coding[["t24h-t8w"]] <- "#C00040" #"rosybrown3"
+  color_coding[["t8w-t24h"]] <- "#C00040" #"rosybrown3"
+  # set condition colors
+  color_coding[["HC"]] <- "grey"
+  color_coding[["t0"]] <- "pink"
+  color_coding[["t24h"]] <- "red"
+  color_coding[["t8w"]] <- "purple"
+  # set the cell type colors
+  color_coding[["Bulk"]] <- "black"
+  color_coding[["CD4T"]] <- "#153057"
+  color_coding[["CD8T"]] <- "#009DDB"
+  color_coding[["monocyte"]] <- "#EDBA1B"
+  color_coding[["NK"]] <- "#E64B50"
+  color_coding[["B"]] <- "#71BC4B"
+  color_coding[["DC"]] <- "#965EC8"
+  color_coding[["CD4+ T"]] <- "#153057"
+  color_coding[["CD8+ T"]] <- "#009DDB"
+  # other cell type colors
+  color_coding[["HSPC"]] <- "#009E94"
+  color_coding[["platelet"]] <- "#9E1C00"
+  color_coding[["plasmablast"]] <- "#DB8E00"
+  color_coding[["other T"]] <- "#FF63B6"
+  return(color_coding)
+}
+
+
+label_dict <- function(){
+  label_dict <- list()
+  # condition combinations
+  label_dict[['UTBaseline']] <- 'UT-Baseline'
+  label_dict[['UTt24h']] <- 'UT-t24h'
+  label_dict[['UTt8w']] <- 'UT-t8w'
+  label_dict[['Baselinet24h']] <- 'Baseline-t24h'
+  label_dict[['Baselinet8w']] <- 'Baseline-t8w'
+  label_dict[['t24ht8w']] <- 't24h-t8w'
+  label_dict[['UTBaseline']] <- 'HC-t0'
+  label_dict[['UTt24h']] <- 'HC-t24h'
+  label_dict[['UTt8w']] <- 'HC-t8w'
+  label_dict[['Baselinet24h']] <- 't0-t24h'
+  label_dict[['Baselinet8w']] <- 't0-t8w'
+  # conditions
+  label_dict[['UT']] <- 'HC'
+  label_dict[['Baseline']] <- 't0'
+  label_dict[['t24h']] <- 't24h'
+  label_dict[['t8w']] <- 't8w'
+  # major cell types
+  label_dict[["Bulk"]] <- "bulk-like"
+  label_dict[["CD4T"]] <- "CD4+ T"
+  label_dict[["CD8T"]] <- "CD8+ T"
+  label_dict[["monocyte"]] <- "monocyte"
+  label_dict[["NK"]] <- "NK"
+  label_dict[["B"]] <- "B"
+  label_dict[["DC"]] <- "DC"
+  label_dict[["HSPC"]] <- "HSPC"
+  label_dict[["plasmablast"]] <- "plasmablast"
+  label_dict[["platelet"]] <- "platelet"
+  label_dict[["T_other"]] <- "other T"
+  # minor cell types
+  label_dict[["CD4_TCM"]] <- "CD4 TCM"
+  label_dict[["Treg"]] <- "T regulatory"
+  label_dict[["CD4_Naive"]] <- "CD4 naive"
+  label_dict[["CD4_CTL"]] <- "CD4 CTL"
+  label_dict[["CD8_TEM"]] <- "CD8 TEM"
+  label_dict[["cMono"]] <- "cMono"
+  label_dict[["CD8_TCM"]] <- "CD8 TCM"
+  label_dict[["ncMono"]] <- "ncMono"
+  label_dict[["cDC2"]] <- "cDC2"
+  label_dict[["B_intermediate"]] <- "B intermediate"
+  label_dict[["NKdim"]] <- "NK dim"
+  label_dict[["pDC"]] <- "pDC"
+  label_dict[["ASDC"]] <- "ASDC"
+  label_dict[["CD8_Naive"]] <- "CD8 naive"
+  label_dict[["MAIT"]] <- "MAIT"
+  label_dict[["CD8_Proliferating"]] <- "CD8 proliferating"
+  label_dict[["CD4_TEM"]] <- "CD4 TEM"
+  label_dict[["B_memory"]] <- "B memory"
+  label_dict[["NKbright"]] <- "NK bright"
+  label_dict[["B_naive"]] <- "B naive"
+  label_dict[["gdT"]] <- "gamma delta T"
+  label_dict[["CD4_Proliferating"]] <- "CD4 proliferating"
+  label_dict[["NK_Proliferating"]] <- "NK proliferating"
+  label_dict[["cDC1"]] <- "cDC1"
+  label_dict[["ILC"]] <- "ILC"
+  label_dict[["dnT"]] <- "double negative T"
+  return(label_dict)
+}
+
+
+text_color_dict <- function(){
+  text_color_dict <- list()
+  # set the cell type colors
+  text_color_dict[["Bulk"]] <- "#000000ff"
+  text_color_dict[["CD4T"]] <- "#000000ff"
+  text_color_dict[["CD8T"]] <- "#000000ff"
+  text_color_dict[["monocyte"]] <- "#ffffffff"
+  text_color_dict[["NK"]] <- "#000000ff"
+  text_color_dict[["B"]] <- "#fffffff"
+  text_color_dict[["DC"]] <- "#000000ff"
+  text_color_dict[["CD4+ T"]] <- "#000000ff"
+  text_color_dict[["CD8+ T"]] <- "#000000ff"
+  # other cell type colors
+  text_color_dict[["HSPC"]] <- "#000000ff"
+  text_color_dict[["platelet"]] <- "#000000ff"
+  text_color_dict[["plasmablast"]] <- "#000000ff"
+  text_color_dict[["other T"]] <- "#000000ff"
+  return(text_color_dict)
+}
+
+
+turn_sizes_to_ranges <- function(link_sizes_df, size_column, from_column, to_column){
+  # get the possible entries
+  entries <- unique(c(link_sizes_df[[from_column]], link_sizes_df[[to_column]]))
+  # create the dataframe to store everything in
+  link_df <- data.frame(matrix(, nrow=(length(entries))*(length(entries)-1)/2, ncol=6))
+  colnames(link_df) <- c(from_column, to_column, 'from_start', 'from_stop','to_start', 'to_stop')
+  # we'll add entries by index, that is a lot faster than rbinding new rows
+  i <- 1
+  # check each entry
+  for(x in 1:(length(entries))){
+    # the column on the horizontal axis is the number, and we'll grab the entry for that number
+    from_entry <- entries[x]
+    # from the bottom left and from the top right are the same, and the entry against itself is always empty
+    for(y in (1):(length(entries))){
+      # grab on the vertical axis
+      to_entry <- entries[y]
+      # store the link size
+      link_size <- NA
+      # get the entry if it exists
+      if(nrow(link_sizes_df[link_sizes_df[[from_column]] == from_entry & link_sizes_df[[to_column]] == to_entry, ]) > 0){
+        link_size <- as.numeric(link_sizes_df[link_sizes_df[[from_column]] == from_entry & link_sizes_df[[to_column]] == to_entry, size_column])
+      }
+      # if this link exists, we can continue
+      if(!is.na(link_size)){
+        max_from <- max(c(0,
+                          as.numeric(link_df[!is.na(link_df[[from_column]]) & !is.na(link_df[[to_column]]) &
+                                               link_df[[from_column]] == from_entry, 'from_stop']),
+                          as.numeric(link_df[!is.na(link_df[[from_column]]) & !is.na(link_df[[to_column]]) &
+                                               link_df[[to_column]] == from_entry, 'to_stop'])
+        )
+        )
+        max_to <- max(c(0,
+                        as.numeric(link_df[!is.na(link_df[[to_column]]) & !is.na(link_df[[to_column]]) &
+                                             link_df[[from_column]] == to_entry, 'from_stop']),
+                        as.numeric(link_df[!is.na(link_df[[to_column]]) & !is.na(link_df[[to_column]]) &
+                                             (link_df[[to_column]] == to_entry), 'to_stop'])
+        )
+        )
+
+        # now we are either zero or the max of both entries, we'll turn that into the actual entries
+        link_df[i, from_column] <- from_entry
+        link_df[i, to_column] <- to_entry
+        link_df[i, 'from_start'] <- max_from
+        link_df[i, 'from_stop'] <- (max_from + link_size)
+        link_df[i, 'to_start'] <- max_to
+        link_df[i, 'to_stop'] <- (max_to + link_size)
+        # update the index
+        i <- i + 1
+      }
+    }
+  }
+  return(link_df)
+}
+
+
+combine_directions_cells <- function(slim_connection_df, cell_types){
+  # we will save the sum of the incoming and outgoing connections per cell type
+  total_sum_per_cell_type <- NULL
+  # we will check each sender
+  for(cell_type in unique(c(slim_connection_df[['sender']], slim_connection_df[['receiver']]))){
+    # check that sender against each receiver
+    sent_connections <- sum(slim_connection_df[!is.na(slim_connection_df[['connections']]) & slim_connection_df[['sender']] == cell_type, 'connections'])
+    # check the incoming the connections
+    incoming_connections <- sum(slim_connection_df[!is.na(slim_connection_df[['connections']]) & slim_connection_df[['receiver']] == cell_type, 'connections'])
+    # add these two together
+    total_connections <- sent_connections + incoming_connections
+    # turn this into a row for tht dataframe
+    connection_row <- data.frame(cell_type=c(cell_type), connections=total_connections)
+    # add to dataframe
+    if(is.null(total_sum_per_cell_type)){
+      total_sum_per_cell_type <- connection_row
+    }
+    else{
+      total_sum_per_cell_type <- rbind(total_sum_per_cell_type, connection_row)
+    }
+  }
+  return(total_sum_per_cell_type)
+}
+
+
+interactions_to_circle_from_table <- function(interactions_table, plot_title='cell communication'){
+  # set the correct column names
+  colnames(interactions_table) <- c('sender', 'receiver', 'connections')
+  # remove the empty connections
+  interactions_table <- interactions_table[interactions_table[['connections']] > 0, ]
+  # add receiver and sender together
+  connections_all_ct <- combine_directions_cells(interactions_table)
+  # okay, I did this somewhere in the past, so afraid I have to do it again
+  colnames(connections_all_ct) <- c('a', 'b')
+  # get the data in a start/stop manner, instead of a size-manner
+  connections_start_stop <- turn_sizes_to_ranges(interactions_table, 'connections', 'sender', 'receiver')
+  # make sure the other plot is gone
+  circos.clear()
+  # start making the plot, set height of track (cell types)
+  circos.par('track.height' = 0.1)
+  xlims <- data.frame(a=rep(0, times=nrow(connections_all_ct)), b=connections_all_ct$b)
+  # start building
+  circos.initialize(sectors = connections_all_ct$a, xlim = xlims)
+  # add track with labels
+  circos.track(connections_all_ct$a, y=connections_all_ct$b, panel.fun = function(x, y){
+    circos.text(CELL_META$xcenter,
+                CELL_META$ycenter,
+                CELL_META$sector.index)
+    circos.axis(labels.cex = 0.6, labels.facing = 'outside')
+  })
+  # color the tracks
+  for(cell_type in unique(connections_all_ct$a)){
+    draw.sector(get.cell.meta.data("cell.start.degree", sector.index = cell_type),
+                get.cell.meta.data("cell.end.degree", sector.index = cell_type),
+                rou1 = get.cell.meta.data("cell.top.radius", track.index = 1),
+                rou2 = get.cell.meta.data("cell.bottom.radius", track.index = 1),
+                col = get_color_coding_dict()[[cell_type]])
+  }
+  # draw colour on the sectors, representing the cell types
+  for(cell_type in unique(connections_all_ct$a)){
+    highlight.sector(c(cell_type), track.index = 1, text=label_dict()[[cell_type]], col = '#ffffff00', text.col = '#ffffffff')
+  }
+  # draw the connections
+  apply(connections_start_stop, 1, function(row){
+    if(!is.na(row['sender'])){
+      # grab the color of the sender
+      send_color <- get_color_coding_dict()[[row['sender']]]
+      # and of the receiver
+      receiver_color <- get_color_coding_dict()[[row['receiver']]]
+      # split colors in five
+      ramp_colors <- colorRampPalette(c(send_color, receiver_color))(5)
+      # color slightly more towards the sender, by taking the second color from the 5 levels, and add remove possible existing transparancy
+      connection_color <- substr(ramp_colors[2], 1, 7)
+      # manually add transparancy by adding it to normal 6-colour hex code
+      connection_color <- paste(connection_color, '80', sep = '')
+      # grab the positions on the sender
+      from_start <- as.numeric(row['from_start'])
+      from_stop <- as.numeric(row['from_stop'])
+      # grab the positions on the receiver
+      to_start <- as.numeric(row['to_start'])
+      to_stop <- as.numeric(row['to_stop'])
+      # draw the connection
+      circos.link(row['sender'], c(from_start, from_stop), row['receiver'], c(to_start, to_stop), col = connection_color, directional = 1)
+    }
+  })
+  title(plot_title)
+}
+
+
+get_de_vs_induced_genes_per_celltype <- function(downstream_gene_table, mast_output_path, condition_1, condition_2, significance_column='p_val_adj', pval_cutoff=0.05, sender_column='sender', receiver_column='receiver', gene_column='induced_genes'){
+  # get the cell types present
+  cell_types <- unique(c(downstream_gene_table[[sender_column]], downstream_gene_table[[receiver_column]]))
+  # create a table
+  de_gene_source <- data.frame(matrix(NA, nrow = length(cell_types), ncol = 5))
+  colnames(de_gene_source) <- c('cell_type', 'nr_de', 'nr_induced', 'nr_de_induced', 'nr_de_noninduced')
+  # keep an index
+  i <- 1
+  # check each cell type
+  for (cell_type in cell_types) {
+    # if there is no output, we will just assume there is nothing
+    nr_de_genes <- 0
+    # set there to be zero induced an genes, in case there are no entries
+    nr_genes_induced <- 0
+    # which also means that there will be nothing induced
+    nr_de_genes_induced <- 0
+    nr_de_genes_noninduced <- 0
+    # paste together the output path
+    mast_output_path_full <- paste(mast_output_path, cell_type, condition_1, condition_2, '.tsv', sep = '')
+    # check if the file exists
+    if (file.exists(mast_output_path_full)) {
+      # read the table
+      mast_output <- read.table(mast_output_path_full, sep = '\t', header = T, row.names = 1)
+      # get the significant entries
+      mast_output_significant <- mast_output[mast_output[[significance_column]] < pval_cutoff, ]
+      # get genes
+      if (nrow(mast_output_significant) > 0) {
+        genes_de <- rownames(mast_output_significant)
+        # we want to know how many
+        nr_de_genes <- length(genes_de)
+        # get the genes that were induced
+        entries_receiving_celltype <- downstream_gene_table[downstream_gene_table[[receiver_column]] == cell_type &
+                                                            !is.na(downstream_gene_table[[gene_column]]), ]
+        # now check if there are any entries
+        if (nrow(entries_receiving_celltype) > 0) {
+          # first paste together all of the entries
+          all_genes_induced_string <- paste(entries_receiving_celltype[[gene_column]], collapse = ',')
+          # then split by comma
+          all_genes_induced <- unlist(strsplit(all_genes_induced_string, split = ','))
+          # then make unique
+          all_genes_induced <- unique(all_genes_induced)
+          # check which overlap with the DE genes (sanity check, should be all)
+          de_genes_induced <- intersect(genes_de, all_genes_induced)
+          # and which don't (again, a sanity check)
+          de_genes_noninduced <- setdiff(genes_de, all_genes_induced)
+          # now get some numbers
+          nr_genes_induced <- length(all_genes_induced)
+          nr_de_genes_induced <- length(de_genes_induced)
+          nr_de_genes_noninduced <- length(de_genes_noninduced)
+        }else{
+          # if not, that means also that was is there, is not induced
+          nr_de_genes_noninduced <- nr_de_genes
+        }
+      }
+    }
+    # add entry to table
+    de_gene_source[i, ] <- c(cell_type, nr_de_genes, nr_genes_induced, nr_de_genes_induced, nr_de_genes_noninduced)
+    # update index
+    i <- i + 1
+  }
+  # set the correct types
+  de_gene_source[['nr_de']] <- as.numeric(de_gene_source[['nr_de']])
+  de_gene_source[['nr_induced']] <- as.numeric(de_gene_source[['nr_induced']])
+  de_gene_source[['nr_de_induced']] <- as.numeric(de_gene_source[['nr_de_induced']])
+  de_gene_source[['nr_de_noninduced']] <- as.numeric(de_gene_source[['nr_de_noninduced']])
+  return(de_gene_source)
+}
+
+
+plot_de_induced_vs_noninduced <- function(induced_vs_noninduced_table, cell_type_column='cell_type', induced_column='nr_de_induced', noninduced_column='nr_de_noninduced', paper_style=T, legendless=F){
+  # split the induced versus noninduced
+  induced_entries <- induced_vs_noninduced_table[, c(cell_type_column, induced_column)]
+  noninduced_entries <- induced_vs_noninduced_table[, c(cell_type_column, noninduced_column)]
+  # harmonize column names
+  colnames(induced_entries) <- c('cell_type', 'nr_de_genes')
+  colnames(noninduced_entries) <- c('cell_type', 'nr_de_genes')
+  # add a designation for induced vs non-induced
+  induced_entries[['induced']] <- 'induced'
+  noninduced_entries[['induced']] <- 'not induced'
+  # combine below one another
+  entries <- rbind(induced_entries, noninduced_entries)
+  # build the plot
+  p <- ggplot(mapping = aes(x = entries[['cell_type']], y = entries[['nr_de_genes']], fill = entries[['induced']])) +
+    geom_bar(stat = 'identity', position='stack') +
+    scale_fill_manual(name = 'induced by ligands', values = list('not induced' = 'blue', 'induced' = 'red')) +
+    xlab('cell type') +
+    ylab('number of differentially expressed genes')
+  # add paper style
+  if (paper_style) {
+    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  if(legendless){
+    p <- p + theme(legend.position = 'none')
+  }
+  return(p)
+}
+
 
 ```
 
@@ -1465,17 +2051,47 @@ lr_all <- merge(lr_all, lr_v3_t24h_vs_t8w_perct_omni_unweighted, by = c('receive
 ```{r, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 
+# get interactions for each set
+lt_v2_Baseline_vs_t24h_perct_omni_unweighted <- data.table(get_significant_interactions(v2_Baseline_vs_t24h_perct_omni_unweighted, 'ligand_target'))
+lt_v3_Baseline_vs_t24h_perct_omni_unweighted <- data.table(get_significant_interactions(v3_Baseline_vs_t24h_perct_omni_unweighted, 'ligand_target'))
+lt_v2_Baseline_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v2_Baseline_vs_t8w_perct_omni_unweighted, 'ligand_target'))
+lt_v3_Baseline_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v3_Baseline_vs_t8w_perct_omni_unweighted, 'ligand_target'))
+lt_v2_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v2_t24h_vs_t8w_perct_omni_unweighted, 'ligand_target'))
+lt_v3_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v3_t24h_vs_t8w_perct_omni_unweighted, 'ligand_target'))
+
+# set the column name of the iteraction to be different for each set
+lt_v2_Baseline_vs_t24h_perct_omni_unweighted[['v2_Baseline_vs_t24h']] <- lt_v2_Baseline_vs_t24h_perct_omni_unweighted[['interaction']]
+lt_v2_Baseline_vs_t24h_perct_omni_unweighted[['interaction']] <- NULL
+lt_v3_Baseline_vs_t24h_perct_omni_unweighted[['v3_Baseline_vs_t24h']] <- lt_v3_Baseline_vs_t24h_perct_omni_unweighted[['interaction']]
+lt_v3_Baseline_vs_t24h_perct_omni_unweighted[['interaction']] <- NULL
+lt_v2_Baseline_vs_t8w_perct_omni_unweighted[['v2_Baseline_vs_t8w']] <- lt_v2_Baseline_vs_t8w_perct_omni_unweighted[['interaction']]
+lt_v2_Baseline_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+lt_v3_Baseline_vs_t8w_perct_omni_unweighted[['v3_Baseline_vs_t8w']] <- lt_v3_Baseline_vs_t8w_perct_omni_unweighted[['interaction']]
+lt_v3_Baseline_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+lt_v2_t24h_vs_t8w_perct_omni_unweighted[['v2_t24h_vs_t8w']] <- lt_v2_t24h_vs_t8w_perct_omni_unweighted[['interaction']]
+lt_v2_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+lt_v3_t24h_vs_t8w_perct_omni_unweighted[['v3_t24h_vs_t8w']] <- lt_v3_t24h_vs_t8w_perct_omni_unweighted[['interaction']]
+lt_v3_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+
+# merge all of them
+lt_all <- merge(lt_v2_Baseline_vs_t24h_perct_omni_unweighted, lt_v3_Baseline_vs_t24h_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'target'), all = T)
+lt_all <- merge(lt_all, lt_v2_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'target'), all = T)
+lt_all <- merge(lt_all, lt_v3_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'target'), all = T)
+lt_all <- merge(lt_all, lt_v2_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'target'), all = T)
+lt_all <- merge(lt_all, lt_v3_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'target'), all = T)
+# set correct column name
+colnames(lt_all) <- gsub('receptor', 'target', colnames(lt_all))
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
 # get the summed LFC for each receptor
 summed_lfcs_v2_Baseline_vs_t24h_perct_omni_unweighted <- get_downstream_lfc_sums_per_receptor(v2_Baseline_vs_t24h_perct_omni_unweighted, mast_output_loc='/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v2_paired_lores_lfc01minpct01ncountrna_20201209/rna/', 'Baselinet24h', cascade_matrix=unweighted_networks_omni$gr, significance_cutoff=0)
-
 summed_lfcs_v3_Baseline_vs_t24h_perct_omni_unweighted <- get_downstream_lfc_sums_per_receptor(v3_Baseline_vs_t24h_perct_omni_unweighted, mast_output_loc='/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20201209/rna/', 'Baselinet24h', cascade_matrix=unweighted_networks_omni$gr, significance_cutoff=0)
-
 summed_lfcs_v2_Baseline_vs_t8w_perct_omni_unweighted <- get_downstream_lfc_sums_per_receptor(v2_Baseline_vs_t8w_perct_omni_unweighted, mast_output_loc='/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v2_paired_lores_lfc01minpct01ncountrna_20201209/rna/', 'Baselinet8w', cascade_matrix=unweighted_networks_omni$gr, significance_cutoff=0)
-
 summed_lfcs_v3_Baseline_vs_t8w_perct_omni_unweighted <- get_downstream_lfc_sums_per_receptor(v3_Baseline_vs_t8w_perct_omni_unweighted, mast_output_loc='/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20201209/rna/', 'Baselinet8w', cascade_matrix=unweighted_networks_omni$gr, significance_cutoff=0)
-
 summed_lfcs_v2_t24h_vs_t8w_perct_omni_unweighted <- get_downstream_lfc_sums_per_receptor(v2_t24h_vs_t8w_perct_omni_unweighted, mast_output_loc='/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v2_paired_lores_lfc01minpct01ncountrna_20201209/rna/', 't24ht8w', cascade_matrix=unweighted_networks_omni$gr, significance_cutoff=0)
-
 summed_lfcs_v3_t24h_vs_t8w_perct_omni_unweighted <- get_downstream_lfc_sums_per_receptor(v3_t24h_vs_t8w_perct_omni_unweighted, mast_output_loc='/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20201209/rna/', 't24ht8w', cascade_matrix=unweighted_networks_omni$gr, significance_cutoff=0)
 
 # now combine this with the receptor values
@@ -1521,4 +2137,100 @@ llfc_all <- merge(llfc_all, llfc_v3_Baseline_vs_t8w_perct_omni_unweighted, by = 
 llfc_all <- merge(llfc_all, llfc_v2_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
 llfc_all <- merge(llfc_all, llfc_v3_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
 
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+r_vs_t_v3_Baseline_vs_t24h_perct_omni_unweighted <- check_ligand_receptor_and_target_numbers(lt_connections = data.frame(lt_v3_Baseline_vs_t24h_perct_omni_unweighted), lr_connections = data.frame(lr_v3_Baseline_vs_t24h_perct_omni_unweighted), target_interaction_column = 'v3_Baseline_vs_t24h', receptor_interaction_column = 'v3_Baseline_vs_t24h')
+ligand_connection_numbers_v3_Baseline_vs_t24h_perct_omni_unweighted <- ligand_numbers_to_interactions(r_vs_t_v3_Baseline_vs_t24h_perct_omni_unweighted)
+r_vs_t_v3_Baseline_vs_t8w_perct_omni_unweighted <- check_ligand_receptor_and_target_numbers(lt_connections = data.frame(lt_v3_Baseline_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lt_v3_Baseline_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_Baseline_vs_t8w', receptor_interaction_column = 'v3_Baseline_vs_t8w')
+ligand_connection_numbers_v3_Baseline_vs_t8w_perct_omni_unweighted <- ligand_numbers_to_interactions(r_vs_t_v3_Baseline_vs_t8w_perct_omni_unweighted)
+r_vs_t_v3_t24h_vs_t8w_perct_omni_unweighted <- check_ligand_receptor_and_target_numbers(lr_connections = data.frame(lr_v3_t24h_vs_t8w_perct_omni_unweighted), lt_connections = data.frame(lt_v3_t24h_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_t24h_vs_t8w', receptor_interaction_column = 'v3_t24h_vs_t8w')
+ligand_connection_numbers_v3_t24h_vs_t8w_perct_omni_unweighted <- ligand_numbers_to_interactions(r_vs_t_v3_t24h_vs_t8w_perct_omni_unweighted)
+```
+
+```{r, include=TRUE}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(ligand_connection_numbers_v3_Baseline_vs_t24h_perct_omni_unweighted, plot_title = 'communicating ligands t0 vs t24h (v3 chemistry)')
+```
+
+```{r, include=TRUE}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(ligand_connection_numbers_v3_Baseline_vs_t8w_perct_omni_unweighted, plot_title = 'communicating ligands t0 vs t6-8w (v3 chemistry)')
+```
+
+```{r, include=TRUE}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(ligand_connection_numbers_v3_t24h_vs_t8w_perct_omni_unweighted, plot_title = 'communicating ligands t24h vs t6-8w (v3 chemistry)')
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+# now based on the downstream genes
+downstream_gene_nrs_Baseline_vs_t24h <- get_distinct_downstream_gene_numbers(lt_connections = data.frame(lt_v3_Baseline_vs_t24h_perct_omni_unweighted), lr_connections = data.frame(lr_v3_Baseline_vs_t24h_perct_omni_unweighted), target_interaction_column = 'v3_Baseline_vs_t24h', receptor_interaction_column = 'v3_Baseline_vs_t24h')
+downstream_gene_nrs_Baseline_vs_t8w <- get_distinct_downstream_gene_numbers(lt_connections = data.frame(lt_v3_Baseline_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v3_Baseline_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_Baseline_vs_t8w', receptor_interaction_column = 'v3_Baseline_vs_t8w')
+downstream_gene_nrs_t24h_vs_t8w <- get_distinct_downstream_gene_numbers(lt_connections = data.frame(lt_v3_t24h_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v3_t24h_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_t24h_vs_t8w', receptor_interaction_column = 'v3_t24h_vs_t8w')
+```
+
+```{r, include=TRUE}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(downstream_gene_nrs_Baseline_vs_t24h[, c('sender', 'receiver', 'nr_downstream_genes')], plot_title = 'induced DE t0 vs t24h (v3 chemistry)')
+```
+
+```{r, include=TRUE}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(downstream_gene_nrs_Baseline_vs_t8w[, c('sender', 'receiver', 'nr_downstream_genes')], plot_title = 'induced DE t0 vs t6-8w (v3 chemistry)')
+```
+
+```{r, include=TRUE}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(downstream_gene_nrs_t24h_vs_t8w[, c('sender', 'receiver', 'nr_downstream_genes')], plot_title = 'induced DE t24h vs t6-8w (v3 chemistry)')
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# now based on the combinations of ligand and downstream genes
+lt_nrs_Baseline_vs_t24h <- ligand_target_numbers_to_interactions(lt_connections = data.frame(lt_v3_Baseline_vs_t24h_perct_omni_unweighted), lr_connections = data.frame(lr_v3_Baseline_vs_t24h_perct_omni_unweighted), target_interaction_column = 'v3_Baseline_vs_t24h', receptor_interaction_column = 'v3_Baseline_vs_t24h')
+lt_nrs_Baseline_vs_t8w <- ligand_target_numbers_to_interactions(lt_connections = data.frame(lt_v3_Baseline_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v3_Baseline_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_Baseline_vs_t8w', receptor_interaction_column = 'v3_Baseline_vs_t8w')
+lt_nrs_t24h_vs_t8w <- ligand_target_numbers_to_interactions(lt_connections = data.frame(lt_v3_t24h_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v3_t24h_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_t24h_vs_t8w', receptor_interaction_column = 'v3_t24h_vs_t8w')
+
+```
+
+```{r, include=TRUE, fig.width=5, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(lt_nrs_Baseline_vs_t24h[, c('sender', 'receiver', 'nr_lt_links')], plot_title = 'active ligand-target links\nt0 vs t24h (v3 chemistry)')
+```
+
+```{r, include=TRUE, fig.width=5, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(lt_nrs_Baseline_vs_t8w[, c('sender', 'receiver', 'nr_lt_links')], plot_title = 'active ligand-target links\nt0 vs t6-8w (v3 chemistry)')
+```
+
+```{r, include=TRUE, fig.width=5, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(lt_nrs_t24h_vs_t8w[, c('sender', 'receiver', 'nr_lt_links')], plot_title = 'active ligand-target links\nt24h vs t6-8w (v3 chemistry)')
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# now get the induced vs non-induced numbers
+induced_noninduced_v3_Baseline_vs_t24h <- get_de_vs_induced_genes_per_celltype(downstream_gene_nrs_Baseline_vs_t24h, mast_output_path = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20201209/rna/', condition_1 = 'Baseline', condition_2 = 't24h')
+induced_noninduced_v3_Baseline_vs_t8w <- get_de_vs_induced_genes_per_celltype(downstream_gene_nrs_Baseline_vs_t8w, mast_output_path = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20201209/rna/', condition_1 = 'Baseline', condition_2 = 't8w')
+induced_noninduced_v3_t24h_vs_t8w <- get_de_vs_induced_genes_per_celltype(downstream_gene_nrs_t24h_vs_t8w, mast_output_path = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20201209/rna/', condition_1 = 't24h', condition_2 = 't8w')
+
+```
+
+```{r, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+plot_grid(
+  plot_de_induced_vs_noninduced(induced_noninduced_v3_Baseline_vs_t24h, legendless = T) + ggtitle('t0 vs t24h differentially expressed genes') + ylim(0,600),
+  plot_de_induced_vs_noninduced(induced_noninduced_v3_Baseline_vs_t8w, legendless = T) + ggtitle('t0 vs t6-8w differentially expressed genes') + ylim(0,600) + ylab(''),
+  plot_de_induced_vs_noninduced(induced_noninduced_v3_t24h_vs_t8w, legendless = T) + ggtitle('t24h vs t6-8w differentially expressed genes') + ylim(0,600),
+  get_legend(plot_de_induced_vs_noninduced(induced_noninduced_v3_Baseline_vs_t24h, legendless = F) + ggtitle('t0 vs t24h differentially expressed genes')),
+  nrow = 2,
+  ncol = 2
+)
 ```
