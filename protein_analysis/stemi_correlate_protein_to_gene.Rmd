@@ -1,0 +1,415 @@
+---
+title: "stemi_correlate_protein_to_gene"
+output: html_document
+date: "2022-12-14"
+---
+
+```{r header, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Roy Oelen
+# Name: stemi_correlate_protein_to_gene.Rmd
+# Function: correlate the protein olink data, to the RNA expression
+############################################################################################################################
+```
+
+```{r libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# libraries        #
+####################
+
+# to read the Seurat object
+library(Seurat)
+# to perform parallel operations
+library(iterators)
+library(foreach)
+library(doParallel)
+# write to Excel
+library(xlsx) # NOT IN CONTAINER
+
+```
+
+```{r functions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# Functions        #
+####################
+
+olink_to_plottable_table <- function(olink, split_char='\\.'){
+  id_and_timepoint_df <- NULL
+  # check the rownames
+  for(id_and_timepoint in rownames(olink)){
+    # split into id and timepoint
+    id_and_timepoint_split <- strsplit(id_and_timepoint, split_char)
+    id <- id_and_timepoint_split[[1]][[1]]
+    timepoint <- id_and_timepoint_split[[1]][[2]]
+    # turn into row
+    id_and_timepoint_row <- data.frame(id=c(id), timepoint=c(timepoint))
+    # add to dataframe
+    if(is.null(id_and_timepoint_df)){
+      id_and_timepoint_df <- id_and_timepoint_row
+    }
+    else{
+      id_and_timepoint_df <- rbind(id_and_timepoint_df, id_and_timepoint_row)
+    }
+  }
+  # add new columns to original data
+  olink <- cbind(id_and_timepoint_df, olink)
+  return(olink)
+}
+
+
+olinkid_to_genesymbol <- function(olink_ids, olinkid_to_uid_loc, uniprotid_to_gs_loc){
+    # read mapping of olink ID to uniprot ID
+    olinkid_to_uid <- read.table(olinkid_to_uid_loc, sep = '\t', header = T, stringsAsFactors = F)
+    # get the uid
+    uid <- olinkid_to_uid[match(olink_ids, olinkid_to_uid$OlinkID), 'Uniprot.ID']
+    # if there is a gene symbol mapping, do that one as well
+    uniprotid_to_gs <- read.table(uniprotid_to_gs_loc, sep = '\t', header = T, stringsAsFactors = F)
+    gs <- uniprotid_to_gs[match(uid, uniprotid_to_gs$From), 'To']
+    # put result into table
+    mapping <- data.frame(olinkid = olink_ids, uid = uid, gs = gs)
+    return(mapping)
+}
+
+
+create_mean_expression_table <- function(seurat_object, interested_genes, timepoint, celltype, participant_column='assignment.final', celltype_column='celltype.final', timepoint_column='timepoint.final', assay='SCT', slot='counts'){
+  # subset to genes that are not empty
+  genes_to_use <- interested_genes[!is.na(interested_genes)]
+  # subset to the condition
+  seurat_object_subset <- seurat_object[, !is.na(seurat_object@meta.data[[participant_column]]) &
+                                          !is.na(seurat_object@meta.data[[celltype_column]]) & 
+                                          seurat_object@meta.data[[celltype_column]] == celltype &
+                                          !is.na(seurat_object@meta.data[[timepoint_column]]) &
+                                          seurat_object@meta.data[[timepoint_column]] == timepoint]
+  # get the genes that we have expression data for
+  genes_to_use <- intersect(interested_genes, rownames(seurat_object_subset))
+  # set ident
+  Idents(object = seurat_object_subset) <- participant_column
+  # use built-in average expression function
+  mean_expression_matrix <- AverageExpression(seurat_object_subset, assays = c(assay), slot = slot, features = genes_to_use)[[assay]]
+  return(mean_expression_matrix)
+}
+
+
+create_mean_expression_matrices_per_celltype <- function(seurat_object, interested_genes, timepoint, celltypes=NULL, participant_column='assignment.final', celltype_column='celltype.final', timepoint_column='timepoint.final', assay='SCT', slot='counts') {
+  # get the celltypes to consider
+  cell_types_to_use <- unique(seurat_object@meta.data[[celltype_column]])
+  if (!is.null(celltypes)) {
+    celltypes_to_use <- intersect(cell_types_to_use, celltypes)
+  }
+  # and for each cell type
+  expression_matrix_per_celltype <- foreach(cell_type = cell_types_to_use) %dopar% {
+    create_mean_expression_table(seurat_object = seurat_object, interested_genes = interested_genes, timepoint = timepoint, celltype = cell_type, participant_column = participant_column, celltype_column = celltype_column, timepoint_column = timepoint_column, assay = assay, slot = slot)
+  }
+  names(expression_matrix_per_celltype) <- cell_types_to_use
+  return(expression_matrix_per_celltype)
+}
+
+
+create_mean_expression_matrices_per_timepoint <- function(seurat_object, interested_genes, timepoints=NULL, celltypes=NULL, participant_column='assignment.final', celltype_column='celltype.final', timepoint_column='timepoint.final', assay='SCT', slot='counts') {
+  # get the timepoints to consider
+  timepoints_to_use <- unique(seurat_object@meta.data[[timepoint_column]])
+  if (!is.null(timepoints)) {
+    timepoints_to_use <- intersect(timepoints_to_use, timepoints)
+  }
+  # now check each timepoint
+  expression_matrix_per_timepoint <- foreach(timepoint = timepoints_to_use) %dopar% {
+    mean_expression_timepoint <- create_mean_expression_matrices_per_celltype(seurat_object, interested_genes, timepoint = timepoint, celltypes = celltypes, participant_column = participant_column, celltype_column = celltype_column, timepoint_column = timepoint_column, assay = assay, slot = slot)
+  }
+  names(expression_matrix_per_timepoint) <- timepoints_to_use
+  return(expression_matrix_per_timepoint)
+}
+
+
+create_protein_rna_correlation_table <- function(protein_table, rna_table, protein_to_gene_table, olinkid_column='olinkid', genesymbol_column='gs', olink_sample_column='id', correlation_method='spearman') {
+  # get the olink IDs that we have gene symbols for
+  olinks_with_gs <- intersect(colnames(protein_table), protein_to_gene_table[[olinkid_column]])
+  # and no NA values of course
+  olinks_with_gs <- olinks_with_gs[!is.na(olinks_with_gs)]
+  # subset to those proteins
+  protein_shared_genes <- protein_table[, olinks_with_gs]
+  # get those gene names
+  gene_names_proteins <- protein_to_gene_table[match(colnames(protein_shared_genes), protein_to_gene_table[[olinkid_column]]), genesymbol_column]
+  # and set those as column names for the protein data instead of the olink IDs
+  colnames(protein_shared_genes) <- gene_names_proteins
+  # set the rownames to be the identifiers (we only removed columns, the rows should be the same as before filtering)
+  rownames(protein_shared_genes) <- protein_table[[olink_sample_column]]
+  # now we also need to check which genes we have the RNA data for
+  genes_with_rna <- rownames(rna_table)
+  # and see how that overlaps
+  genes_rna_and_protein <- intersect(genes_with_rna, gene_names_proteins)
+  # and of course, we need to check which samples we share
+  samples_shared <- intersect(colnames(rna_table), rownames(protein_shared_genes))
+  # then subset both of them
+  protein_shared_genes <- protein_shared_genes[samples_shared, genes_rna_and_protein]
+  rna_table <- rna_table[genes_rna_and_protein, samples_shared]
+  # these are the genes we'll consider then
+  genes <- rownames(rna_table)
+  # now we can calculate correlations
+  correlations <- foreach (gene = genes) %dopar% {
+    # get the protein values
+    protein_values <- protein_shared_genes[[gene]]
+    # and rna values
+    rna_values <- as.vector(unlist(rna_table[gene, ]))
+    # calculate the correlation
+    correlation <- cor(protein_values, rna_values, method = correlation_method)
+    return(correlation)
+  }
+  # now put the results in a dataframe
+  correlation_table <- data.frame(gene = genes, correlation = unlist(as.vector(correlations)))
+  return(correlation_table)
+}
+
+
+create_protein_rna_correlation_table_per_celltype <- function(protein_table, rna_table_per_celltype, protein_to_gene_table, olinkid_column='olinkid', genesymbol_column='gs', olink_sample_column='id') {
+  # we will check per celltype
+  cell_types <- names(rna_table_per_celltype)
+  # in parallel
+  correlation_per_celltype <- foreach(cell_type = cell_types) %dopar% {
+    correlation_celltype <- create_protein_rna_correlation_table(protein_table = protein_table, rna_table = rna_table_per_celltype[[cell_type]], protein_to_gene_table = protein_to_gene_table, olinkid_column = olinkid_column, genesymbol_column = genesymbol_column, olink_sample_column = olink_sample_column)
+    return(correlation_celltype)
+  }
+  # set list names
+  names(correlation_per_celltype) <- cell_types
+  return(correlation_per_celltype)
+}
+
+
+transform_timepoint_lane_table <- function(timepoint_lane_table, lane_column='ExpNr') {
+  # init the table
+  transformed_table <- NULL
+  # get the column names
+  colnames_original_table <- colnames(timepoint_lane_table)
+  # the timepoints are all columns except for the lane
+  timepoints <- setdiff(colnames_original_table, lane_column)
+  # check each lane
+  for (row_num in 1:nrow(timepoint_lane_table)) {
+    # grab the row
+    row <- timepoint_lane_table[row_num, ]
+    # get the lane
+    lane <- row[[lane_column]]
+    # check each timepoint
+    for (timepoint in timepoints) {
+      # get the participants for that timepoint
+      participant_string <- row[[timepoint]]
+      # then split them by the comma
+      participants <- unlist(strsplit(participant_string, split = ','))
+      # turn into a tidy little dataframe
+      entry_lane <- data.frame(participant = participants, timepoint = rep(timepoint, times = length(participants)), lane = rep(lane, times = length(participants)))
+      # add to our new table
+      if (is.null(transformed_table)) {
+        transformed_table <- entry_lane
+      }else {
+        transformed_table <- rbind(transformed_table, entry_lane)
+      }
+    }
+  }
+  return(transformed_table)
+}
+
+
+correlation_results_to_excel <- function(correlations_per_timepoint_and_celltype, output_loc) {
+  # create a new workbook
+  wb = createWorkbook()
+  # check each timepoint
+  for (timepoint in names(correlations_per_timepoint_and_celltype)) {
+    # check each cell type
+    for (celltype in names(correlations_per_timepoint_and_celltype[[timepoint]])) {
+      # create the name for the sheet
+      sheet_name <- paste(timepoint, celltype, sep = '_')
+      # create the sheet
+      sheet = createSheet(wb, sheet_name)
+      # add dataframe to sheet
+      addDataFrame(correlations_per_timepoint_and_celltype[[timepoint]][[celltype]], sheet = sheet, startColumn=1, row.names=FALSE)
+    }
+  }
+  saveWorkbook(wb, output_loc)
+}
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# Main Code        #
+####################
+
+# location of various files
+olinkid_to_uid_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/olink/olinkid_to_uniprotid.tsv'
+uniprotid_to_gs_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/olink/uniprot_to_genesymbol.tsv'
+gs_to_ens_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/features_v3.tsv'
+olink_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/olink/20200442_Groot_NPX-QC_format_fixed.tsv'
+inclusion_list_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata/included_participants.txt'
+metadata_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata//cardio.integrated.20210301.metadata.tsv'
+
+# load mapping files
+gs_to_ens <- read.table(gs_to_ens_loc, sep = '\t', header = F)
+uniprotid_to_gs <- read.table(uniprotid_to_gs_loc, sep = '\t', header = T)
+olinkid_to_uid <- read.table(olinkid_to_uid_loc, sep = '\t', header = T)
+
+# and read the actual data
+olink <- read.table(olink_loc, sep = '\t', header = T, row.names = 1)
+# covert so that the timepoint is split as a separate column
+olink_plottable <- olink_to_plottable_table(olink)
+# get the gene symbols
+symbol_table <- olinkid_to_genesymbol(colnames(olink), olinkid_to_uid_loc = olinkid_to_uid_loc, uniprotid_to_gs_loc = uniprotid_to_gs_loc)
+```
+
+```{r seurat, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# read Seurat object
+cardio_integrated_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/seurat/cardio.integrated.20210301.rds'
+cardio_integrated <- readRDS(cardio_integrated_loc)
+
+```
+
+```{r average_rna, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get the interested genes
+interested_genes = unique(symbol_table$gs)
+# without empty ones
+interested_genes <- interested_genes[!is.na(interested_genes)]
+
+# create mean expression matrices
+mean_expression_matrices_timepoint_celltype <- create_mean_expression_matrices_per_timepoint(seurat_object = cardio_integrated, interested_genes = unique(symbol_table$gs), participant_column = 'assignment.final', timepoint_column = 'timepoint.final', celltype_column = 'cell_type_lowerres')
+# also for bulk
+cardio_integrated@meta.data[['bulk']] <- 'bulk'
+mean_expression_matrices_timepoint_bulk <- create_mean_expression_matrices_per_timepoint(seurat_object = cardio_integrated, interested_genes = unique(symbol_table$gs), participant_column = 'assignment.final', timepoint_column = 'timepoint.final', celltype_column = 'bulk')
+
+```
+
+```{r lane_annotations, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# location of the samples and their timepoint and lane
+stemi_timepoint_lane_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata/stemi-sampleIDs.txt'
+# read the table
+stemi_timepoint_lane <- read.table(stemi_timepoint_lane_loc, sep = '\t', header = T)
+# transform into a format more suitable to what we want it for
+stemi_participant_timepoint_lane <- transform_timepoint_lane_table(stemi_timepoint_lane)
+# add the chemistry
+stemi_participant_timepoint_lane[['chem']] <- NA
+stemi_participant_timepoint_lane[startsWith(stemi_participant_timepoint_lane[['lane']], '18'), 'chem'] <- 'v2'
+stemi_participant_timepoint_lane[startsWith(stemi_participant_timepoint_lane[['lane']], '19'), 'chem'] <- 'v3'
+
+```
+
+```{r bulk_correlations, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# bulk correlations Baseline
+correlations_baseline_bulk <- create_protein_rna_correlation_table(protein_table = olink_plottable[olink_plottable$timepoint == 'Baseline', setdiff(colnames(olink_plottable), 'timepoint')], rna_table = mean_expression_matrices_timepoint_bulk[['Baseline']][['bulk']], protein_to_gene_table = symbol_table)
+# bulk correlations t24h
+correlations_t24h_bulk <- create_protein_rna_correlation_table(protein_table = olink_plottable[olink_plottable$timepoint == 't24h', setdiff(colnames(olink_plottable), 'timepoint')], rna_table = mean_expression_matrices_timepoint_bulk[['t24h']][['bulk']], protein_to_gene_table = symbol_table)
+# bulk correlations t8w
+correlations_t8w_bulk <- create_protein_rna_correlation_table(protein_table = olink_plottable[olink_plottable$timepoint == 't8w', setdiff(colnames(olink_plottable), 'timepoint')], rna_table = mean_expression_matrices_timepoint_bulk[['t8w']][['bulk']], protein_to_gene_table = symbol_table)
+
+```
+
+```{r print_bulk_correlations_Baseline, include=TRUE}
+
+print(
+  correlations_baseline_bulk
+)
+
+```
+
+```{r print_bulk_correlations_t24h, include=TRUE}
+
+print(
+  correlations_t24h_bulk
+)
+
+```
+
+```{r print_bulk_correlations_t8w, include=TRUE}
+
+print(
+  correlations_t8w_bulk
+)
+
+```
+
+```{r bulk_correlations_per_chem, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# correlations were not looking great, maybe per chemistry it is better
+
+# bulk correlations Baseline
+correlations_baseline_bulk_v2 <- create_protein_rna_correlation_table(protein_table = olink_plottable[olink_plottable$timepoint == 'Baseline' & olink_plottable[['id']] %in% stemi_participant_timepoint_lane[stemi_participant_timepoint_lane[['chem']] == 'v2' & stemi_participant_timepoint_lane[['timepoint']] == 'Baseline', 'participant'], setdiff(colnames(olink_plottable), 'timepoint')], rna_table = mean_expression_matrices_timepoint_bulk[['Baseline']][['bulk']], protein_to_gene_table = symbol_table)
+# bulk correlations t24h
+correlations_t24h_bulk_v2 <- create_protein_rna_correlation_table(protein_table = olink_plottable[olink_plottable$timepoint == 't24h' & olink_plottable[['id']] %in% stemi_participant_timepoint_lane[stemi_participant_timepoint_lane[['chem']] == 'v2' & stemi_participant_timepoint_lane[['timepoint']] == 't24h', 'participant'], setdiff(colnames(olink_plottable), 'timepoint')], rna_table = mean_expression_matrices_timepoint_bulk[['t24h']][['bulk']], protein_to_gene_table = symbol_table)
+# bulk correlations t8w
+correlations_t8w_bulk_v2 <- create_protein_rna_correlation_table(protein_table = olink_plottable[olink_plottable$timepoint == 't8w' & olink_plottable[['id']] %in% stemi_participant_timepoint_lane[stemi_participant_timepoint_lane[['chem']] == 'v2' & stemi_participant_timepoint_lane[['timepoint']] == 't8w', 'participant'], setdiff(colnames(olink_plottable), 'timepoint')], rna_table = mean_expression_matrices_timepoint_bulk[['t8w']][['bulk']], protein_to_gene_table = symbol_table)
+
+# bulk correlations Baseline
+correlations_baseline_bulk_v3 <- create_protein_rna_correlation_table(protein_table = olink_plottable[olink_plottable$timepoint == 'Baseline' & olink_plottable[['id']] %in% stemi_participant_timepoint_lane[stemi_participant_timepoint_lane[['chem']] == 'v3' & stemi_participant_timepoint_lane[['timepoint']] == 'Baseline', 'participant'], setdiff(colnames(olink_plottable), 'timepoint')], rna_table = mean_expression_matrices_timepoint_bulk[['Baseline']][['bulk']], protein_to_gene_table = symbol_table)
+# bulk correlations t24h
+correlations_t24h_bulk_v3 <- create_protein_rna_correlation_table(protein_table = olink_plottable[olink_plottable$timepoint == 't24h' & olink_plottable[['id']] %in% stemi_participant_timepoint_lane[stemi_participant_timepoint_lane[['chem']] == 'v3' & stemi_participant_timepoint_lane[['timepoint']] == 't24h', 'participant'], setdiff(colnames(olink_plottable), 'timepoint')], rna_table = mean_expression_matrices_timepoint_bulk[['t24h']][['bulk']], protein_to_gene_table = symbol_table)
+# bulk correlations t8w
+correlations_t8w_bulk_v3 <- create_protein_rna_correlation_table(protein_table = olink_plottable[olink_plottable$timepoint == 't8w' & olink_plottable[['id']] %in% stemi_participant_timepoint_lane[stemi_participant_timepoint_lane[['chem']] == 'v3' & stemi_participant_timepoint_lane[['timepoint']] == 't8w', 'participant'], setdiff(colnames(olink_plottable), 'timepoint')], rna_table = mean_expression_matrices_timepoint_bulk[['t8w']][['bulk']], protein_to_gene_table = symbol_table)
+
+```
+
+```{r celltype_correlations, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# per celltype correlations Baseline
+correlations_baseline_per_celltype <- create_protein_rna_correlation_table_per_celltype(protein_table = olink_plottable[olink_plottable$timepoint == 'Baseline', setdiff(colnames(olink_plottable), 'timepoint')], rna_table_per_celltype = mean_expression_matrices_timepoint_celltype[['Baseline']], protein_to_gene_table = symbol_table)
+# per celltype correlations t24h
+correlations_t24h_per_celltype <- create_protein_rna_correlation_table_per_celltype(protein_table = olink_plottable[olink_plottable$timepoint == 't24h', setdiff(colnames(olink_plottable), 'timepoint')], rna_table_per_celltype = mean_expression_matrices_timepoint_celltype[['t24h']], protein_to_gene_table = symbol_table)
+# per celltype correlations t8w
+correlations_t8w_per_celltype <- create_protein_rna_correlation_table_per_celltype(protein_table = olink_plottable[olink_plottable$timepoint == 't8w', setdiff(colnames(olink_plottable), 'timepoint')], rna_table_per_celltype = mean_expression_matrices_timepoint_celltype[['t8w']], protein_to_gene_table = symbol_table)
+
+```
+
+```{r celltype_correlations_per_chem, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# per chemistry as well
+# per celltype correlations Baseline
+correlations_baseline_per_celltype_v2 <- create_protein_rna_correlation_table_per_celltype(protein_table = olink_plottable[olink_plottable$timepoint == 'Baseline' & olink_plottable[['id']] %in% stemi_participant_timepoint_lane[stemi_participant_timepoint_lane[['chem']] == 'v2' & stemi_participant_timepoint_lane[['timepoint']] == 'Baseline', 'participant'], setdiff(colnames(olink_plottable), 'timepoint')], rna_table_per_celltype = mean_expression_matrices_timepoint_celltype[['Baseline']], protein_to_gene_table = symbol_table)
+# per celltype correlations t24h
+correlations_t24h_per_celltype_v2 <- create_protein_rna_correlation_table_per_celltype(protein_table = olink_plottable[olink_plottable$timepoint == 't24h' & olink_plottable[['id']] %in% stemi_participant_timepoint_lane[stemi_participant_timepoint_lane[['chem']] == 'v2' & stemi_participant_timepoint_lane[['timepoint']] == 't24', 'participant'], setdiff(colnames(olink_plottable), 'timepoint')], rna_table_per_celltype = mean_expression_matrices_timepoint_celltype[['t24h']], protein_to_gene_table = symbol_table)
+# per celltype correlations t8w
+correlations_t8w_per_celltype_v2 <- create_protein_rna_correlation_table_per_celltype(protein_table = olink_plottable[olink_plottable$timepoint == 't8w' & olink_plottable[['id']] %in% stemi_participant_timepoint_lane[stemi_participant_timepoint_lane[['chem']] == 'v2' & stemi_participant_timepoint_lane[['timepoint']] == 't8w', 'participant'], setdiff(colnames(olink_plottable), 'timepoint')], rna_table_per_celltype = mean_expression_matrices_timepoint_celltype[['t8w']], protein_to_gene_table = symbol_table)
+# per celltype correlations Baseline
+correlations_baseline_per_celltype_v3 <- create_protein_rna_correlation_table_per_celltype(protein_table = olink_plottable[olink_plottable$timepoint == 'Baseline' & olink_plottable[['id']] %in% stemi_participant_timepoint_lane[stemi_participant_timepoint_lane[['chem']] == 'v3' & stemi_participant_timepoint_lane[['timepoint']] == 'Baseline', 'participant'], setdiff(colnames(olink_plottable), 'timepoint')], rna_table_per_celltype = mean_expression_matrices_timepoint_celltype[['Baseline']], protein_to_gene_table = symbol_table)
+# per celltype correlations t24h
+correlations_t24h_per_celltype_v3 <- create_protein_rna_correlation_table_per_celltype(protein_table = olink_plottable[olink_plottable$timepoint == 't24h' & olink_plottable[['id']] %in% stemi_participant_timepoint_lane[stemi_participant_timepoint_lane[['chem']] == 'v3' & stemi_participant_timepoint_lane[['timepoint']] == 't24', 'participant'], setdiff(colnames(olink_plottable), 'timepoint')], rna_table_per_celltype = mean_expression_matrices_timepoint_celltype[['t24h']], protein_to_gene_table = symbol_table)
+# per celltype correlations t8w
+correlations_t8w_per_celltype_v3 <- create_protein_rna_correlation_table_per_celltype(protein_table = olink_plottable[olink_plottable$timepoint == 't8w' & olink_plottable[['id']] %in% stemi_participant_timepoint_lane[stemi_participant_timepoint_lane[['chem']] == 'v3' & stemi_participant_timepoint_lane[['timepoint']] == 't8w', 'participant'], setdiff(colnames(olink_plottable), 'timepoint')], rna_table_per_celltype = mean_expression_matrices_timepoint_celltype[['t8w']], protein_to_gene_table = symbol_table)
+
+```
+
+```{r celltype_correlations_per_chem, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# add bulk to the other celltypes
+correlations_baseline_per_celltype[['bulk']] <- correlations_baseline_bulk
+correlations_t24h_per_celltype[['bulk']] <- correlations_t24h_bulk
+correlations_t8w_per_celltype[['bulk']] <- correlations_t8w_bulk
+correlations_baseline_per_celltype_v2[['bulk']] <- correlations_baseline_bulk_v2
+correlations_t24h_per_celltype_v2[['bulk']] <- correlations_t24h_bulk_v2
+correlations_t8w_per_celltype_v2[['bulk']] <- correlations_t8w_bulk_v2
+# and the timepoints and chemistries
+correlations_per_timepoint <- list(
+  'Baseline_both' = correlations_baseline_per_celltype,
+  'Baseline_v2' = correlations_baseline_per_celltype_v2,
+  'Baseline_v3' = correlations_baseline_per_celltype_v3,
+  't24h_both' = correlations_t24h_per_celltype,
+  't24h_v2' = correlations_t24h_per_celltype_v2,
+  't24h_v3' = correlations_t24h_per_celltype_v3,
+  't8w_both' = correlations_t8w_per_celltype,
+  't8w_v2' = correlations_t8w_per_celltype_v2,
+  't8w_v3' = correlations_t8w_per_celltype_v3
+)
+# get the workbook
+correlation_results_to_excel(correlations_per_timepoint, '~/stemi_olink_rna_correlations.xlsx')
+```
+
