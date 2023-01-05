@@ -1,0 +1,546 @@
+---
+title: "stemi_link_peakckmb_to_celltype_proportions"
+author: "Roy Oelen"
+date: "2023-01-04"
+output: html_document
+---
+
+```{r header, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Roy Oelen
+# Name: stemi_link_peakckmb_to_celltype_proportions.Rmd
+# Function:
+############################################################################################################################
+```
+
+```{r libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# libraries        #
+####################
+
+library(compositions) # NOT IN CONTAINER
+
+```
+
+```{r functions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# Functions        #
+####################
+
+olink_to_plottable_table <- function(olink, split_char='\\.'){
+  id_and_timepoint_df <- NULL
+  # check the rownames
+  for(id_and_timepoint in rownames(olink)){
+    # split into id and timepoint
+    id_and_timepoint_split <- strsplit(id_and_timepoint, split_char)
+    id <- id_and_timepoint_split[[1]][[1]]
+    timepoint <- id_and_timepoint_split[[1]][[2]]
+    # turn into row
+    id_and_timepoint_row <- data.frame(id=c(id), timepoint=c(timepoint))
+    # add to dataframe
+    if(is.null(id_and_timepoint_df)){
+      id_and_timepoint_df <- id_and_timepoint_row
+    }
+    else{
+      id_and_timepoint_df <- rbind(id_and_timepoint_df, id_and_timepoint_row)
+    }
+  }
+  # add new columns to original data
+  olink <- cbind(id_and_timepoint_df, olink)
+  return(olink)
+}
+
+
+# calculating peak CK-MB values of every participant
+add_peak_ck_mb <- function(clinvar_object){
+  # subset to the ckmb variables
+  ckmb <- clinvar[, grep('ck_mb', colnames(clinvar_object))]
+  # change the NA variables to -1
+  ckmb[is.na(ckmb)] <- -1
+  # get the maximum
+  max_ckmb <- apply(ckmb, 1, max)
+  # replace a -1 with NA, this means there was no real variable
+  max_ckmb[max_ckmb == -1] <- NA
+  # paste onto the existing object
+  clinvar_object$peak_ck_mb <- max_ckmb
+  return(clinvar_object)
+}
+
+
+calc_age_in_days <- function(date_of_birth_string, split_character='/', day_of_month_col=1, month_of_year_col=2, year_col=3){
+  # split the string
+  split_string <- strsplit(date_of_birth_string, split = split_character)[[1]]
+  day = as.numeric(split_string[day_of_month_col])
+  month = as.numeric(split_string[month_of_year_col])
+  year = as.numeric(split_string[year_col])
+  # create new string as input for the Date library
+  standard_data_string <- paste(day, month, year, sep = '/')
+  # turn into date object
+  birth <- as.Date(standard_data_string, format='%d/%m/%Y')
+  # get now
+  now_string <- Sys.Date()
+  # convert to Date as well
+  now <- as.Date(now_string, format='%Y-%m-%d')
+  # get the time between now and the birth
+  age_days <- difftime(now, birth, units = 'days')
+  return(age_days)
+}
+
+
+make_celltypes_safe <- function(cell_types){
+  # get a safe file name
+  cell_type_safes <- gsub(' |/', '_', cell_types)
+  cell_type_safes <- gsub('-', '_negative', cell_type_safes)
+  cell_type_safes <- gsub('\\+', '_positive', cell_type_safes)
+  cell_type_safes <- gsub('\\)', '', cell_type_safes)
+  cell_type_safes <- gsub('\\(', '', cell_type_safes)
+  return(cell_type_safes)
+}
+
+
+get_color_coding_dict <- function(){
+  color_coding <- list()
+  # set the cell type colors for immune
+  color_coding[["Bulk"]] <- "black"
+  color_coding[["CD4T"]] <- "#153057"
+  color_coding[["CD8T"]] <- "#009DDB"
+  color_coding[["T_cells"]] <- "#009DDB"
+  color_coding[["monocyte"]] <- "#EDBA1B"
+  color_coding[["Monocytes"]] <- "#EDBA1B"
+  color_coding[["NK"]] <- "#E64B50"
+  color_coding[["B"]] <- "#71BC4B"
+  color_coding[["B_cells"]] <- "#71BC4B"
+  color_coding[["DC"]] <- "#965EC8"
+  color_coding[["Dendritic_cells"]] <- "#965EC8"
+  color_coding[["CD4+ T"]] <- "#153057"
+  color_coding[["CD8+ T"]] <- "#009DDB"
+  color_coding[["megakaryocyte"]] <- "#009E94"
+  color_coding[["platelet"]] <- "#9E1C00"
+  color_coding[["plasmablast"]] <- "#DB8E00"
+  color_coding[["hemapoietic stem"]] <- "#FF63B6"
+  color_coding[["Mast_cells"]] <- "#80EB34"
+  color_coding[["unknown"]] <- "gray"
+  return(color_coding)
+}
+label_dict <- function(){
+  label_dict <- list()
+  # conditions
+  # major cell types
+  label_dict[["Bulk"]] <- "bulk-like"
+  label_dict[["CD4T"]] <- "CD4+ T"
+  label_dict[["CD8T"]] <- "CD8+ T"
+  label_dict[["monocyte"]] <- "monocyte"
+  label_dict[["NK"]] <- "NK"
+  label_dict[["B"]] <- "B"
+  label_dict[["DC"]] <- "DC"
+  label_dict[["plasmablast"]] <- "plasmablast"
+  label_dict[["plasma B"]] <- "plasmablast"
+  label_dict[["platelet"]] <- "platelet"
+  label_dict[["megakaryocyte"]] <- "megakaryocyte"
+  label_dict[["hemapoietic stem"]] <- "hemapoietic stem"
+  label_dict[["unknown"]] <- "unknown"
+  return(label_dict)
+}
+
+
+celltypes_to_numbers <- function(celltype_and_assignment, donor_column='assignment.final', celltype_column='cell_type_lowerres') {
+  # get the counts per cell type
+  cell_type_counts <- as.data.frame(table(celltype_and_assignment[, c(donor_column, celltype_column)]))
+  # rename the columns
+  colnames(cell_type_counts) <- c('donor', 'celltype', 'count')
+  # get the total counts per donor
+  total_counts <- table(celltype_and_assignment[, c(donor_column)])
+  # now add the fractions to the celltype table
+  cell_type_counts[['fraction']] <- apply(cell_type_counts, 1, function(x){
+    # extract the count
+    count <- as.numeric(x['count'])
+    # the donor
+    donor <- x['donor']
+    # extract the total for this donor from the other table
+    total_count <- as.numeric(total_counts[donor])
+    # calculate the fraction
+    fraction <- count / total_count
+    return(fraction)
+  })
+  return(cell_type_counts)
+}
+
+
+plot_celltype_numbers <- function(cell_counts, donor_column='donor', celltype_column='celltype', count_column='count', use_label_mapping=T, use_colour_mapping=T, paper_style=T) {
+  # change the celltype label if requested
+  if (use_label_mapping) {
+    cell_counts[[celltype_column]] <- as.vector(unlist(label_dict()[as.character(cell_counts[[celltype_column]])]))
+  }
+  # standardize names
+  cell_counts[['cell_type']] <- cell_counts[[celltype_column]]
+  cell_counts[['donor']] <- cell_counts[[donor_column]]
+  cell_counts[['number']] <- cell_counts[[count_column]]
+  # make plot
+  p <- ggplot(data = cell_counts, mapping = aes(x = donor, y = number, fill = cell_type)) + geom_bar(position='stack', stat='identity')
+  # change colours if requested
+  if (use_colour_mapping) {
+    p <- p + scale_fill_manual(name = 'cell type', values = get_color_coding_dict())
+  }
+  # paper style if requested
+  if (paper_style) {
+    p <- p + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  # rotate labels
+  p <- p + theme(axis.text.x = element_text(angle = 90))
+  return(p)
+}
+
+
+vertical_to_horizontal_table <- function(count_table, keep_column='donor', split_column='celltype', number_column='fraction') {
+  # get the unique variables
+  keeps <- unique(count_table[[keep_column]])
+  splits <- unique(as.character(count_table[[split_column]]))
+  # create a new table
+  wide_table <- matrix(data = NA, nrow = length(keeps), ncol = length(splits) + 1)
+  rownames(wide_table) <- keeps
+  colnames(wide_table) <- c(keep_column, splits)
+  
+  # now check each keep
+  for (keep in keeps) {
+    # now check each split
+    for (split in splits) {
+      # subset to that combination
+      combination <- count_table[count_table[[keep_column]] == keep &
+                                   count_table[[split_column]] == split, ]
+      # check if there is any value
+      if (nrow(combination) > 0) {
+        # there should always be only one value
+        value_combination <- combination[1, number_column][1]
+        # set that to be the wide table
+        wide_table[keep, split] <- value_combination
+      }
+    }
+  }
+  # turn into dataframe
+  wide_table <- data.frame(wide_table)
+  # add donor as a column as well
+  wide_table[[keep_column]] <- keeps
+  return(wide_table)
+}
+
+
+perform_linear_model_from_proportions <- function(celltype_proportions, clinical_variables, dependent_variable='peak_ck_mb', corrections=c('age', 'gender'), donor_column_proportions='donor', donor_column_clinvars='record_id', donor_prepend_clinvar='TEST_', family='lm') {
+  # modify the clinvar donor column if there is a prepend
+  if (!is.null(donor_prepend_clinvar)) {
+    clinical_variables[[donor_column_clinvars]] <- paste(donor_prepend_clinvar, as.character(clinical_variables[[donor_column_clinvars]]), sep = '')
+  }
+  # add the clinical variables
+  celltype_proportions[, c(dependent_variable, corrections)] <- clinical_variables[match(as.character(celltype_proportions[[donor_column_proportions]]), as.character(clinical_variables[[donor_column_clinvars]])), c(dependent_variable, corrections)]
+  # get the independant variables, which are all columns, except for the donor and the dependant variable
+  independants <- setdiff(colnames(celltype_proportions), c(donor_column_proportions, dependent_variable))
+  # build the formula
+  predicting_formula_part <- paste(independants, collapse = '+')
+  formula_regression <- paste(dependent_variable, predicting_formula_part, sep = '~')
+  # perform the actual regression
+  regression <- NULL
+  if (family == 'lm') {
+    regression <- lm(formula = as.formula(formula_regression), data = celltype_proportions)
+  } else {
+    regression <- glm(formula = as.formula(formula_regression), data = celltype_proportions, family = family)
+  }
+  return(regression)
+}
+
+perform_linear_model_from_predictors <- function(celltype_proportions, clinical_variables, independant_variables=c('peak_ck_mb', 'age', 'gender'), donor_column_proportions='donor', donor_column_clinvars='record_id', donor_prepend_clinvar='TEST_', family='quasibinomial') {
+  # modify the clinvar donor column if there is a prepend
+  if (!is.null(donor_prepend_clinvar)) {
+    clinical_variables[[donor_column_clinvars]] <- paste(donor_prepend_clinvar, as.character(clinical_variables[[donor_column_clinvars]]), sep = '')
+  }
+  # add the clinical variables
+  celltype_proportions[, independant_variables] <- clinical_variables[match(as.character(celltype_proportions[[donor_column_proportions]]), as.character(clinical_variables[[donor_column_clinvars]])), independant_variables]
+  # we know what to predict from
+  formula_dependants <- paste(independant_variables, collapse = '+')
+  # save the result per celltype
+  result_per_celltype <- list()
+  # the celltypes are the columns that are not the donor and the dependant variables
+  celltypes <- setdiff(colnames(celltype_proportions), c(donor_column_proportions, independant_variables))
+  # check each celltype
+  for (celltype in celltypes) {
+    # build the full formula
+    formula_regression <- paste(celltype, formula_dependants, sep = '~')
+    # perform the regression
+    regression <- NULL
+    if (family == 'lm') {
+      regression <- lm(formula = as.formula(formula_regression), data = celltype_proportions)
+    } else {
+      regression <- glm(formula = as.formula(formula_regression), data = celltype_proportions, family = family)
+    }
+    result_per_celltype[[celltype]] <- regression
+  }
+  return(result_per_celltype)
+}
+
+
+model_per_celltype_to_table <- function(models_per_celltype) {
+  # get the cell types
+  cell_types <- names(models_per_celltype)
+  # we know what to extract
+  variables_per_clinical_variable <- c('p', 'estimate', 'se', 't')
+  # we'll initialize the table
+  result_table <- NULL
+  # and check each cell type
+  for (cell_type in cell_types) {
+    # extract that entry
+    result_celltype <- models_per_celltype[[cell_type]]
+    # extract the number of observations
+    n <- length(result_celltype$residuals)
+    summary_celltype <- summary(result_celltype)
+    family <- 'lm'
+    if (!is.null(summary_celltype$family)) {
+      family <- summary_celltype$family[1]$family
+    }
+    terms <- setdiff(rownames(summary_celltype$coefficients), '(Intercept)')
+    # check if we have a result table yet
+    if (is.null(result_table)) {
+      # combine the terms with the variables we will extract
+      combined_variables_df <- expand.grid(terms, variables_per_clinical_variable)
+      combined_variables_columns <- paste(combined_variables_df[[1]], combined_variables_df[[2]], sep = '.')
+      # create an empty table
+      result_table <- matrix(data = NA, nrow = length(cell_types), ncol = length(combined_variables_columns) + 3)
+      # each celltype is a row
+      rownames(result_table) <- cell_types
+      # we will store the celltype, family, nr of samples, and the statistics for each independant celltype
+      colnames(result_table) <- c('celltype', 'family', 'n', combined_variables_columns)
+    }
+    # add for this celltype
+    result_table[cell_type, 'celltype'] <- cell_type
+    result_table[cell_type, 'n'] <- n
+    result_table[cell_type, 'family'] <- family
+    # now check each term
+    for (term in terms) {
+      # get from the coefficients
+      p <- as.numeric(summary_celltype$coefficients[term, 'Pr(>|t|)'])
+      se <- as.numeric(summary_celltype$coefficients[term, 'Std. Error'])
+      t <- as.numeric(summary_celltype$coefficients[term, 't value'])
+      estimate <- as.numeric(summary_celltype$coefficients[term, 'Estimate'])
+      # and add to the table
+      result_table[cell_type, paste(term, 'p', sep = '.')] <- p
+      result_table[cell_type, paste(term, 'se', sep = '.')] <- se
+      result_table[cell_type, paste(term, 't', sep = '.')] <- t
+      result_table[cell_type, paste(term, 'estimate', sep = '.')] <- estimate
+    }
+  }
+  result_table <- data.frame(result_table)
+  # convert to the correct types, from matrix to dataframe, some numbers are characters
+  for (i in 3:ncol(result_table)) {
+    result_table[[i]] <- as.numeric(result_table[[i]])
+  }
+  return(result_table)
+}
+
+model_per_celltype_per_timepoint_to_table <- function(results_per_timepoint, add_mtc=T) {
+  # we will add everything together
+  table_per_timepoint <- list()
+  # check each timepoint
+  for (timepoint in names(results_per_timepoint)) {
+    # get the results
+    timepoint_table <- model_per_celltype_to_table(results_per_timepoint[[timepoint]])
+    # add the timepoint as a column
+    timepoint_table[['timepoint']] <- timepoint
+    # add to the list
+    table_per_timepoint[[timepoint]] <- timepoint_table
+  }
+  # now add all together
+  all_timepoints_table <- do.call("rbind", table_per_timepoint)
+  # add multiple corrections if requested
+  if (add_mtc) {
+    # get the columns that have a P-value
+    columns_with_p <- colnames(all_timepoints_table)[grep('\\.p$', colnames(all_timepoints_table))]
+    # we need to get all those P values
+    p_values_per_column <- list()
+    # check each column
+    for (column in columns_with_p) {
+      p_values_per_column[[column]] <- all_timepoints_table[[column]]
+    }
+    # add all p values into a vector
+    p_values_all <- do.call("c", p_values_per_column)
+    # do fdr correction
+    fdr_all <- p.adjust(p_values_all, method = 'BH')
+    # and bonferroni
+    bonferroni_all <- p.adjust(p_values_all, method = 'bonferroni')
+    # now we can add the corrected values
+    for (column in columns_with_p) {
+      # we extracted the origin p values before
+      p_original_column <- p_values_per_column[[column]]
+      # we can map each p value to the corrected p values we created
+      fdr_of_column <- fdr_all[match(p_original_column, p_values_all)]
+      bonferroni_of_column <- bonferroni_all[match(p_original_column, p_values_all)]
+      # and add them to the original dataframe
+      all_timepoints_table[[paste(column, 'fdr', sep = '.')]] <- fdr_of_column
+      all_timepoints_table[[paste(column, 'bonferroni', sep = '.')]] <- bonferroni_of_column
+    }
+  }
+  # now we want to reorder everything just a bit
+  first_columns <- c('timepoint', 'celltype', 'n', 'family')
+  non_first_columns <- setdiff(colnames(all_timepoints_table), first_columns)
+  non_first_columns <- non_first_columns[order(non_first_columns)]
+  all_timepoints_table <- all_timepoints_table[, c(first_columns, non_first_columns)]
+  return(all_timepoints_table)
+}
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# Main Code        #
+####################
+
+# directory to start
+project_dir <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/'
+project_dir <- '/Users/royoelen/blokland-2020/v1/'
+# location of various files
+olinkid_to_uid_loc <- paste(project_dir, 'protein_data/olink/olinkid_to_uniprotid.tsv', sep = '')
+uniprotid_to_gs_loc <- paste(project_dir, 'protein_data/olink/uniprot_to_genesymbol.tsv', sep = '')
+gs_to_ens_loc <- paste(project_dir, 'protein_data/features_v3.tsv', sep = '')
+olink_loc <- paste(project_dir, 'protein_data/olink/20200442_Groot_NPX-QC_format_fixed.tsv', sep = '')
+inclusion_list_loc <- paste(project_dir, 'metadata/included_participants.txt', sep = '')
+metadata_loc <- paste(project_dir, 'metadata/cardio.integrated.20210301.metadata.tsv', sep = '')
+clinvar_loc <- paste(project_dir, 'clinical_parameters/scRNAseq_clinical_data_20200910_final_notextfields.tsv', sep = '')
+
+# load mapping files
+gs_to_ens <- read.table(gs_to_ens_loc, sep = '\t', header = F)
+uniprotid_to_gs <- read.table(uniprotid_to_gs_loc, sep = '\t', header = T)
+olinkid_to_uid <- read.table(olinkid_to_uid_loc, sep = '\t', header = T)
+
+# and read the actual data
+olink <- read.table(olink_loc, sep = '\t', header = T, row.names = 1)
+# covert so that the timepoint is split as a separate column
+olink_plottable <- olink_to_plottable_table(olink)
+
+# get the participants to include
+inclusion_list <- read.table(inclusion_list_loc, header = F)$V1
+# subset to the ones we want to include
+olink_plottable <- olink_plottable[!is.na(olink_plottable[['id']]) & olink_plottable[['id']] %in% inclusion_list, ]
+
+# read the metadata
+metadata <- read.table(metadata_loc, sep = '\t', header = T, row.names = 1)
+```
+
+```{r read_clinvars, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# read the clinvar table
+clinvar <- read.table(clinvar_loc, header = T, sep = '\t', dec = ',', stringsAsFactors = F)
+# calculate the peak ck_mb
+clinvar <- add_peak_ck_mb(clinvar)
+# add log of peak and baseline ckmb
+clinvar$log_peak_ck_mb <- log(clinvar$peak_ck_mb)
+clinvar$log_ck_mb <- log(clinvar$ck_mb)
+# add the age
+clinvar$age <- apply(clinvar, 1, function(x){
+  age <- calc_age_in_days(as.character(x[['date_birth']]), split_character =  '/', year_col = 3, month_of_year_col = 2, day_of_month_col = 1)
+  return(age)
+})
+
+```
+
+```{r who_where, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+# check which participants are where, first make a table with those participants
+participants <- data.frame(participant = inclusion_list)
+# then add the check for each participant
+participants[['Baseline']] <- apply(participants, 1, function(x){
+  return(x['participant'] %in% olink_plottable[olink_plottable[['timepoint']] == 'Baseline', 'id'])
+})
+participants[['t24h']] <- apply(participants, 1, function(x){
+  return(x['participant'] %in% olink_plottable[olink_plottable[['timepoint']] == 't24h', 'id'])
+})
+participants[['t8w']] <- apply(participants, 1, function(x){
+  return(x['participant'] %in% olink_plottable[olink_plottable[['timepoint']] == 't8w', 'id'])
+})
+print(participants)
+
+```
+
+```{r counts, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+# get counts for each timepoint
+baseline_counts <- celltypes_to_numbers(metadata[metadata[['timepoint.final']] == 'Baseline', ])
+t24h_counts <- celltypes_to_numbers(metadata[metadata[['timepoint.final']] == 't24h', ])
+t8w_counts <- celltypes_to_numbers(metadata[metadata[['timepoint.final']] == 't8w', ])
+
+```
+
+```{r counts_convert, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+# get counts for each timepoint
+baseline_counts_wide <- vertical_to_horizontal_table(baseline_counts, number_column = 'count')
+t24h_counts_wide <- vertical_to_horizontal_table(t24h_counts, number_column = 'count')
+t8w_counts_wide <- vertical_to_horizontal_table(t8w_counts, number_column = 'count')
+
+```
+
+```{r add_clinical, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+# get counts for each timepoint
+baseline_regression <- perform_linear_model_from_proportions(baseline_counts_wide, clinvar, family = 'poisson')
+t24h_regression <- perform_linear_model_from_proportions(t24h_counts_wide, clinvar, family = 'poisson')
+t8w_regression <- perform_linear_model_from_proportions(t8w_counts_wide, clinvar, family = 'poisson')
+
+```
+
+```{r counts_convert, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+# get counts for each timepoint
+baseline_proportions_wide <- vertical_to_horizontal_table(baseline_counts)
+t24h_proportions_wide <- vertical_to_horizontal_table(t24h_counts)
+t8w_proportions_wide <- vertical_to_horizontal_table(t8w_counts)
+
+```
+
+```{r add_clinical_quasibinomial, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+# get counts for each timepoint
+baseline_regressions_proportions <- perform_linear_model_from_predictors(baseline_proportions_wide, clinvar, family = 'quasibinomial')
+t24h_regressions_proportions <- perform_linear_model_from_predictors(t24h_proportions_wide, clinvar, family = 'quasibinomial')
+t8w_regressions_proportions <- perform_linear_model_from_predictors(t8w_proportions_wide, clinvar, family = 'quasibinomial')
+# combine combinations
+quasibinomial_regressed <- model_per_celltype_per_timepoint_to_table(list('baseline' = baseline_regressions_proportions, 't24h' = t24h_regressions_proportions, 't8w' = t8w_regressions_proportions))
+
+```
+
+```{r show_quasibinomial, include=TRUE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+print(
+  quasibinomial_regressed[order(quasibinomial_regressed[['peak_ck_mb.p.fdr']]), ]
+)
+
+```
+
+```{r do_clr, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+# do clr normalization, we need to supply all but the 'donor' column to 'clr'
+baseline_proportions_clr <- cbind(baseline_proportions_wide[, c('donor'), drop = F], clr(baseline_proportions_wide[, c(2:ncol(baseline_counts_wide))]))
+t24h_proportions_clr <- cbind(t24h_proportions_wide[, c('donor'), drop = F], clr(t24h_proportions_wide[, c(2:ncol(t24h_counts_wide))]))
+t8w_proportions_clr <- cbind(t8w_proportions_wide[, c('donor'), drop = F], clr(t8w_proportions_wide[, c(2:ncol(t8w_counts_wide))]))
+```
+
+```{r add_clinical_clr, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+# get counts for each timepoint
+baseline_regressions_clr <- perform_linear_model_from_predictors(baseline_proportions_clr, clinvar, family = 'lm')
+t24h_regressions_clr <- perform_linear_model_from_predictors(t24h_proportions_clr, clinvar, family = 'lm')
+t8w_regressions_clr <- perform_linear_model_from_predictors(t8w_proportions_clr, clinvar, family = 'lm')
+# combine combinations
+clr_transform_regressed <- model_per_celltype_per_timepoint_to_table(list('baseline' = baseline_regressions_clr, 't24h' = t24h_regressions_clr, 't8w' = t8w_regressions_clr))
+```
+
+```{r show_clr, include=TRUE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+print(
+  clr_transform_regressed[order(clr_transform_regressed[['peak_ck_mb.p.fdr']]), ]
+)
+
+```
