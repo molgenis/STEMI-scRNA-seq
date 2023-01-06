@@ -1,0 +1,161 @@
+---
+title: "stemi_get_mast_de_lfcs"
+author: "Roy Oelen"
+date: "2023-01-06"
+output: html_document
+---
+
+```{r header, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Roy Oelen
+# Name: stemi_get_mast_de_lfcs.Rmd
+# Function:
+############################################################################################################################
+```
+
+```{r libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# libraries        #
+####################
+
+library(data.table)
+
+```
+
+```{r functions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# Functions        #
+####################
+
+get_gene_and_lfc_seurat_mast <- function(mast_output_loc, p_val_column='p_val_adj', p_val_cutoff=0.05){
+  # read the output
+  de_output <- read.table(mast_output_loc, header = T, row.names = 1, sep = '\t', stringsAsFactors = F)
+  # subset to what is significant
+  de_output_significant <- de_output[de_output[[p_val_column]] < p_val_cutoff, ]
+  return(de_output_significant)
+}
+
+
+get_gene_and_lfc_limma <- function(limma_output_loc, p_val_column='adj.P.Val', p_val_cutoff=0.05){
+  # read the output
+  de_output <- read.table(limma_output_loc, header = T, row.names = 1, sep = '\t', stringsAsFactors = F)
+  # subset to what is significant
+  de_output_significant <- de_output[de_output[[p_val_column]] < p_val_cutoff, ]
+  return(de_output_significant)
+}
+
+
+get_gene_and_lfc_standalone_mast <- function(mast_output_loc, p_val_column='bonferroni', p_val_cutoff=0.05, contrast='inflammation_statusNI'){
+  # read the output
+  de_output <- read.table(mast_output_loc, header = T, sep = '\t', stringsAsFactors = F)
+  # subset to just the contrast we care about
+  de_output_contrast <- de_output[de_output[['contrast']] == contrast &
+                                    de_output[['component']] == 'H', ]
+  # subset to just what is significant
+  de_output_contrast_significant <- de_output_contrast[de_output_contrast[[p_val_column]] < p_val_cutoff, ]
+  # we can now safely set the rownames to be the genes, as with one contrast, there is only one entry per gene
+  rownames(de_output_contrast_significant) <- de_output_contrast_significant[['primerid']]
+  return(de_output_contrast_significant)
+}
+
+
+get_de_output <- function(de_output_loc, de_method, p_val_column='bonferroni', p_val_cutoff=0.05, contrast='inflammation_statusNI'){
+  # use the correct method
+  de_output <- NULL
+  if (de_method == 'mast_standalone') {
+    de_output <- get_gene_and_lfc_standalone_mast(de_output_loc, p_val_column = p_val_column, p_val_cutoff = p_val_cutoff)
+  }
+  else if (de_method == 'mast_seurat') {
+    de_output <- get_gene_and_lfc_seurat_mast(de_output_loc, p_val_column = p_val_column, p_val_cutoff = p_val_cutoff)
+  }
+  else if (de_method == 'limma'){
+    de_output <- get_gene_and_lfc_limma(de_output_loc, p_val_column = p_val_column, p_val_cutoff = p_val_cutoff)
+  }
+  else{
+    print('de_method not valid, valid options are: mast_standalone, mast_seurat, limma')
+  }
+  return(de_output)
+}
+
+
+get_de_output_per_condition_celltype <- function(de_output_loc, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), condition_combinations=c('Baselinet24h', 'Baselinet8w', 't24ht8w'), de_method='mast_seurat', p_val_column='p_val_adj', p_val_cutoff=0.05){
+  # store per combination
+  de_per_combination <- list()
+  # check each combination
+  for (combination in condition_combinations) {
+    # store per celltype
+    de_per_celltype <- list()
+    # check each cell type
+    for (cell_type in cell_types) {
+      # combine the full path
+      full_path <- paste(de_output_loc, cell_type, combination, '.tsv', sep = '')
+      # check if the file exists
+      if (file.exists(full_path)) {
+        # get the output
+        output_celltype <- get_de_output(de_output_loc = full_path, 
+                                         de_method = de_method,
+                                         p_val_column = p_val_column, 
+                                         p_val_cutoff = p_val_cutoff)
+        # put in the list
+        de_per_celltype[[cell_type]] <- output_celltype
+      }
+    }
+    # add timepoints to list
+    de_per_combination[[combination]] <- de_per_celltype
+  }
+  return(de_per_combination)
+}
+
+
+get_de_lfcs_per_celltype <- function(de_output_per_celltype_and_condition, lfc_column='avg_logFC'){
+  # we will store per cell type, that is most informative
+  lfcs_per_celltype <- list()
+  # check each timepoint
+  for (timepoint in names(de_output_per_celltype_and_condition)) {
+    # check each celltype
+    for (celltype in names(de_output_per_celltype_and_condition[[timepoint]])) {
+      # fetch the table
+      output_ct_timepoint <- de_output_per_celltype_and_condition[[timepoint]][[celltype]]
+      # get the genes
+      genes <- rownames(output_ct_timepoint)
+      # get the flcs
+      lfcs <- output_ct_timepoint[[lfc_column]]
+      # turn into a table
+      table_gene_lfc <- data.table(gene = genes, lfc = lfcs)
+      # make sure that the lfc has the name of the condition combination
+      colnames(table_gene_lfc) <- c('gene', timepoint)
+      # add it to the existing table
+      if (celltype %in% names(lfcs_per_celltype)) {
+        lfcs_per_celltype[[celltype]] <- merge(x = lfcs_per_celltype[[celltype]], y = table_gene_lfc, by = 'gene', all = T)
+      } else {
+        lfcs_per_celltype[[celltype]] <- table_gene_lfc
+      }
+    }
+  }
+  return(lfcs_per_celltype)
+}
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# Main Code        #
+####################
+
+de_output_loc_v3 <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20210301/rna/'
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get all the tables
+de_tables_v3 <- get_de_output_per_condition_celltype(de_output_loc_v3)
+# get per condition
+de_lfc_per_celltype_v3 <- get_de_lfcs_per_celltype(de_tables_v3)
+```
