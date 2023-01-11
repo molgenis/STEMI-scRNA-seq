@@ -169,10 +169,6 @@ do_enrichr <- function(mast.output.loc, pathway.output.loc, de_method='mast_seur
 ```{r libraries, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 ####################
-# Functions        #
-####################
-
-####################
 # Main Code        #
 ####################
 

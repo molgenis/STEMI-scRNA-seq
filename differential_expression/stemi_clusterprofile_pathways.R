@@ -50,31 +50,39 @@ do_cluster_profiler <- function(mast.output.loc, pathway.output.loc, cell.types=
       names(log.fcs) <- de.output[['entrezid']]
       # run clusterprofiler
       cc.result <- gseKEGG(geneList     = log.fcs,
-                           organism     = kegg.organism,
-                           nPerm        = nPerm,
-                           minGSSize    = minGSSize,
-                           maxGSSize    = maxGSSize,
-                           pvalueCutoff = pvalueCutoff,
-                           pAdjustMethod = pAdjustMethod,
-                           keyType       = "ncbi-geneid")
-      
+                     organism     = kegg.organism,
+                     nPerm        = nPerm,
+                     minGSSize    = minGSSize,
+                     maxGSSize    = maxGSSize,
+                     pvalueCutoff = pvalueCutoff,
+                     pAdjustMethod = pAdjustMethod,
+                     keyType       = "ncbi-geneid")
+
       # extract the resulting table
       cc.table <- cc.result@result
       # check if there is a result
       if(nrow(cc.table) > 0){
         # paste the output path together
         cc.table.loc <- paste(pathway.output.loc, 'table/', cell.type, '_', condition.combination, '.tsv', sep = '')
+        if(!dir.exists(paste(pathway.output.loc, 'table/', sep = ''))){
+          # create it if it does not
+          dir.create(paste(pathway.output.loc, 'table/', sep = ''), recursive = T)
+        }
         # write the result
         write.table(cc.table, cc.table.loc, sep = '\t', quote = F, row.names = F, col.names = T)
-        
+
         # create the dotplot
         cc.dotplot <- dotplot(cc.result, showCategory = 10, title = "Enriched Pathways" , split=".sign") + facet_grid(.~.sign)
         # paste the output path together
         cc.dotplot.folder <- paste(pathway.output.loc, 'dotplot/', sep = '')
         cc.dotplot.file <- paste(cell.type, '_', condition.combination, '.pdf', sep = '')
+        if(!dir.exists(cc.dotplot.folder)){
+          # create it if it does not
+          dir.create(cc.dotplot.folder, recursive = T)
+        }
         # save the dotplot
         ggsave(filename = cc.dotplot.file, path = cc.dotplot.folder, plot = cc.dotplot, width = 10, height = 10)
-        
+
         # get the similarity matrix
         cc.simmatrix <- pairwise_termsim(cc.result)
         # create the emmaplot
@@ -82,9 +90,13 @@ do_cluster_profiler <- function(mast.output.loc, pathway.output.loc, cell.types=
         # paste the output path together
         cc.emmaplot.folder <- paste(pathway.output.loc, 'emmaplot/', sep = '')
         cc.emmaplot.file <- paste(cell.type, '_', condition.combination, '.pdf', sep = '')
+        if(!dir.exists(cc.emmaplot.folder)){
+          # create it if it does not
+          dir.create(cc.emmaplot.folder, recursive = T)
+        }
         # save the emmaplot
         ggsave(filename = cc.emmaplot.file, path = cc.emmaplot.folder, plot = cc.emmaplot, width = 10, height = 10)
-        
+
         # now we need to set the working directory for the pathview plots
         pathview.plot.folder <- paste(pathway.output.loc, 'pathview/', cell.type, '_', condition.combination, '/', sep = '')
         # check if the directory exists
@@ -116,14 +128,13 @@ do_cluster_profiler <- function(mast.output.loc, pathway.output.loc, cell.types=
 ####################
 
 # the path of the mast meta output
-mast.meta.output.loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/differential_expression/MAST/results/stemi_meta_paired_lores_20200707/rna/'
+mast.meta.output.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/rna/'
 # the path of the pathway output
-pathway.output.loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/pathways/clusterprofiler/stemi_meta_paired_lores_20200707/rna/'
+pathway.output.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/kegg/MAST/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/rna/'
 # and the specific plots/tables
 pathway.output.tables.loc <- paste(pathway.output.loc, 'table/', sep = '')
 pathway.output.dotplots.loc <- paste(pathway.output.loc, 'dotplot/', sep = '')
 pathway.output.emmaplots.loc <- paste(pathway.output.loc, 'emmaplot/', sep = '')
 pathway.output.pathviewplots.loc <- paste(pathway.output.loc, 'pathview/', sep = '')
 # do the profiler
-do_cluster_profiler(mast.output.loc = mast.meta.output.loc, pathway.output.loc = pathway.output.loc, condition.combinations = c('UTBaseline', 'Baselinet24h', 'Baselinet8w'), pvalueCutoff = 0.05)
-
+do_cluster_profiler(mast.output.loc = mast.meta.output.loc, pathway.output.loc = pathway.output.loc, condition.combinations = c('UTBaseline', 'Baselinet24h', 'Baselinet8w', 't24ht8w'), pvalueCutoff = 0.05)
