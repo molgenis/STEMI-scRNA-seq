@@ -1,0 +1,579 @@
+---
+title: "stemi_ctc_downstream_gene_expression"
+author: "Roy Oelen"
+date: "2023-01-11"
+output: html_document
+---
+
+```{r header, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Roy Oelen
+# Name: stemi_ctc_downstream_gene_expression.Rmd
+# Function:
+############################################################################################################################
+```
+
+```{r libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# libraries        #
+####################
+
+# for faster table merging
+library(data.table)
+# for reading the single cell dataa
+library(Seurat)
+# for plots
+library(ggplot2)
+# for parallel calculating
+library(foreach)
+library(doParallel)
+
+```
+
+```{r functions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# Functions        #
+####################
+
+get_significant_interactions <- function(nichenet_output, matrix_name, significance_cutoff=0){
+  # save a dataframe
+  interaction_table <- NULL
+  # check each receiver
+  for(receiver in names(nichenet_output)){
+    # check against each sender
+    for(sender in names(nichenet_output[[receiver]])){
+      # see if there were interactions described
+      if(matrix_name %in% names(nichenet_output[[receiver]][[sender]])){
+        # extract the matrix
+        ligand_target <- nichenet_output[[receiver]][[sender]][[matrix_name]]
+        if(nrow(ligand_target) > 0){
+           # extract the ligands
+          ligands <- colnames(ligand_target)
+          # extract the downstream genes
+          targets <- rownames(ligand_target)
+          # check each combination
+          for(ligand in ligands){
+            for(target in targets){
+              # get the value
+              interaction <- ligand_target[target, ligand]
+              # check if the interaction is enough
+              if (interaction > significance_cutoff) {
+                # make a new row
+                row <- data.frame(receiver=c(receiver), sender=c(sender), ligand=c(ligand), receptor=c(target), interaction=c(interaction))
+                # for ligand-target matrices this is the opposite
+                if (matrix_name == 'ligand_target') {
+                  row <- data.frame(receiver=c(receiver), sender=c(sender), ligand=c(target), target=c(ligand), interaction=c(interaction))
+                }
+                if (is.null(interaction_table)) {
+                  interaction_table <- row
+                }
+                else{
+                  interaction_table <- rbind(interaction_table, row)
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return(interaction_table)
+}
+
+
+# get the gene expression from from the assay and slot
+get_gene_expression = function(seurat_object, genes, assay='SCT', slot='data', metadata_columns=c('assignment.final', 'timepoint.final', 'cell_type')){
+  # init the expression matrix
+  expression_matrix <- NULL
+  if (assay == 'SCT' & slot == 'counts'){
+    expression_matrix <- as.data.frame(t(as.matrix(seurat_object@assays$SCT@counts[intersect(genes, rownames(seurat_object@assays$SCT@counts)), ])))
+  }
+  else if (assay == 'SCT' & slot == 'data'){
+    expression_matrix <- as.data.frame(t(as.matrix(seurat_object@assays$SCT@data[intersect(genes, rownames(seurat_object@assays$SCT@data)), ])))
+  }
+  else if (assay == 'SCT' & slot == 'scale.data'){
+    expression_matrix <- as.data.frame(t(as.matrix(seurat_object@assays$SCT@scale.data[intersect(genes, rownames(seurat_object@assays$SCT@scale.data)), ])))
+  }
+  else if (assay == 'RNA' & slot == 'counts'){
+    expression_matrix <- as.data.frame(t(as.matrix(seurat_object@assays$RNA@counts[intersect(genes, rownames(seurat_object@assays$RNA@counts)), ])))
+  }
+  else if (assay == 'RNA' & slot == 'data'){
+    expression_matrix <- as.data.frame(t(as.matrix(seurat_object@assays$RNA@data[intersect(genes, rownames(seurat_object@assays$RNA@data)), ])))
+  }
+  else if (assay == 'RNA' & slot == 'scale.data'){
+    expression_matrix <- as.data.frame(t(as.matrix(seurat_object@assays$RNA@scale.data[intersect(genes, rownames(seurat_object@assays$RNA@scale.data)), ])))
+  }
+  # add the metadata, should be in the same order as the expression data
+  expression_matrix <- cbind(seurat_object@meta.data[, metadata_columns], expression_matrix)
+  return(expression_matrix)
+}
+
+
+wide_to_long_table <- function(wide_table, metadata_columns=c('assignment.final', 'timepoint.final')) {
+  # we will create the table per gene
+  table_per_gene <- list()
+  # get the genes
+  genes <- setdiff(colnames(wide_table), metadata_columns)
+  # check each gene
+  for (gene in genes) {
+    # extract metadata
+    table_gene <- wide_table[, metadata_columns]
+    # set the gene
+    table_gene[['gene']] <- gene
+    # set the expression
+    table_gene[['expression']] <- wide_table[[gene]]
+    # add to list
+    table_per_gene[[gene]] <- table_gene
+  }
+  # merge all the table
+  table_all_genes <- do.call("rbind", table_per_gene)
+  return(table_all_genes)
+}
+
+get_mean_expression_matrices <- function(seurat_object, metadata_columns=c('cell_type', 'assignment.final', 'timepoint.final'), assay='SCT', slot='data') {
+  # check at the last metadata column
+  categories_to_check <- metadata_columns[length(metadata_columns)]
+  # set as the ident
+  Idents(seurat_object) <- categories_to_check
+
+  # # SINGLETHREADED
+  #
+  # # we will save for each category
+  # expression_per_category <- list()
+  # # and we will calculate per category
+  # for (category in unique(seurat_object@meta.data[[categories_to_check]])) {
+  #   # subset to that category
+  #   seurat_object_category <- seurat_object[, seurat_object@meta.data[[categories_to_check]] == category]
+  #   # we will get average expression for this category
+  #   expression_matrix_category <- NULL
+  #   # if this is the last category, we can just extract the average expression
+  #   if (length(metadata_columns) == 1) {
+  #     expression_matrix_category <- AverageExpression(seurat_object_category, assays = c(assay), slot = slot)[[assay]]
+  #     # turn into dataframe
+  #     expression_matrix_category <- data.frame(expression_matrix_category)
+  #     # set the genes
+  #     expression_matrix_category[['gene']] <- rownames(expression_matrix_category)
+  #   }
+  #   # if we still have more categories, we have to recursively call this function again, excluding this category
+  #   else {
+  #     expression_matrix_category <- get_mean_expression_matrices(seurat_object = seurat_object_category, metadata_columns = metadata_columns[1 : (length(metadata_columns) - 1)], assay = assay, slot = slot)
+  #   }
+  #
+  #   # add the category to the expression matrix
+  #   expression_matrix_category[[categories_to_check]] <- category
+  #   # add to the list
+  #   expression_per_category[[category]] <- expression_matrix_category
+  # }
+
+  # MULTITHREADED
+
+  expression_per_category <- foreach(category = unique(seurat_object@meta.data[[categories_to_check]])) %dopar% {
+    expression_matrix_category <- NULL
+  #   # if this is the last category, we can just extract the average expression
+    if (length(metadata_columns) == 1) {
+      # we do the subset in a separate function, Seurat sometimes has unpredictable behavior otherwise
+      expression_matrix_category <- subset_and_get_get_mean_expression(seurat_object, categories_to_check, category, assay, slot)
+    }
+    # if we still have more categories, we have to recursively call this function again, excluding this category
+    else {
+      expression_matrix_category <- subset_and_get_mean_expression_matrices(seurat_object, categories_to_check, category, metadata_columns[1 : (length(metadata_columns) - 1)], assay, slot)
+    }
+    # add the category to the expression matrix
+    expression_matrix_category[[categories_to_check]] <- category
+    return(expression_matrix_category)
+  }
+
+  # now add the tables of these categories together
+  expression_all_categories <- do.call("rbind", expression_per_category)
+  # make the expression have a better column name
+  #expression_all_categories[['expression']] <- expression_all_categories[['all']]
+  # and remove the original
+  #expression_all_categories[['all']] <- NULL
+  return(expression_all_categories)
+}
+
+subset_and_get_mean_expression_matrices <- function(seurat_object, metadata_column_to_subset_by, metadata_column_value_to_subset_by, metadata_columns=c('cell_type', 'assignment.final', 'timepoint.final'), assay='SCT', slot='data'){
+  seurat_object_category <- seurat_object[, seurat_object@meta.data[[metadata_column_to_subset_by]] == metadata_column_value_to_subset_by]
+  expression_matrix_category <- get_mean_expression_matrices(seurat_object = seurat_object_category, metadata_columns = metadata_columns, assay = assay, slot = slot)
+  return(expression_matrix_category)
+}
+
+subset_and_get_get_mean_expression <- function(seurat_object, metadata_column_to_subset_by, metadata_column_value_to_subset_by, assay, slot) {
+  # subset
+  seurat_object_subset <- seurat_object[, seurat_object@meta.data[[metadata_column_to_subset_by]] == metadata_column_value_to_subset_by]
+  # calculate averaage expression
+  expression_matrix <- AverageExpression(seurat_object_subset, assays = c(assay), slot = slot)[[assay]]
+  # turn into dataframe
+  expression_matrix <- data.frame(expression_matrix)
+  # set gene names
+  expression_matrix[['gene']] <- rownames(expression_matrix)
+  return(expression_matrix)
+}
+
+get_color_coding_dict <- function(){
+  # set the condition colors
+  color_coding <- list()
+  color_coding[["UTBaseline"]] <- "khaki2"
+  color_coding[["UTt24h"]] <- "khaki4"
+  color_coding[["UTt8w"]] <- "paleturquoise1"
+  color_coding[["Baselinet24h"]] <- "paleturquoise3"
+  color_coding[["Baselinet8w"]] <- "rosybrown1"
+  color_coding[["t24ht8w"]] <- "rosybrown3"
+  color_coding[["UT\nBaseline"]] <- "khaki2"
+  color_coding[["UT\nt24h"]] <- "khaki4"
+  color_coding[["UT\nt8w"]] <- "paleturquoise1"
+  color_coding[["Baseline\nt24h"]] <- "paleturquoise3"
+  color_coding[["Baseline\nt8w"]] <- "rosybrown1"
+  color_coding[["t24h\nt8w"]] <- "rosybrown3"
+  color_coding[["UT-Baseline"]] <- "khaki2"
+  color_coding[["UT-t24h"]] <- "khaki4"
+  color_coding[["UT-t8w"]] <- "paleturquoise1"
+  color_coding[["Baseline-t24h"]] <- "paleturquoise3"
+  color_coding[["Baseline-t8w"]] <- "rosybrown1"
+  color_coding[["t24h-t8w"]] <- "rosybrown3"
+  color_coding[["UT-t0"]] <- "khaki2"
+  color_coding[["UT-t24h"]] <- "khaki4"
+  color_coding[["UT-t8w"]] <- "paleturquoise1"
+  color_coding[["HC-t0"]] <- "khaki2"
+  color_coding[["HC-t24h"]] <- "khaki4"
+  color_coding[["HC-t8w"]] <- "paleturquoise1"
+  color_coding[["t0-t24h"]] <- "paleturquoise3"
+  color_coding[["t0-t8w"]] <- "rosybrown1"
+  color_coding[["t24h-t8w"]] <- "rosybrown3"
+  # set condition colors
+  color_coding[["HC"]] <- "grey"
+  color_coding[["t0"]] <- "pink"
+  color_coding[["Baseline"]] <- "pink"
+  color_coding[["t24h"]] <- "red"
+  color_coding[["t8w"]] <- "purple"
+  # set the cell type colors
+  color_coding[["bulk"]] <- "black"
+  color_coding[["Bulk"]] <- "black"
+  color_coding[["CD4T"]] <- "#153057"
+  color_coding[["CD8T"]] <- "#009DDB"
+  color_coding[["monocyte"]] <- "#EDBA1B"
+  color_coding[["NK"]] <- "#E64B50"
+  color_coding[["B"]] <- "#71BC4B"
+  color_coding[["DC"]] <- "#965EC8"
+  color_coding[["CD4+ T"]] <- "#153057"
+  color_coding[["CD8+ T"]] <- "#009DDB"
+  # other cell type colors
+  color_coding[["HSPC"]] <- "#009E94"
+  color_coding[["platelet"]] <- "#9E1C00"
+  color_coding[["plasmablast"]] <- "#DB8E00"
+  color_coding[["other T"]] <- "#FF63B6"
+  return(color_coding)
+}
+label_dict <- function(){
+  label_dict <- list()
+  # condition combinations
+  label_dict[['UTBaseline']] <- 'UT-Baseline'
+  label_dict[['UTt24h']] <- 'UT-t24h'
+  label_dict[['UTt8w']] <- 'UT-t8w'
+  label_dict[['Baselinet24h']] <- 'Baseline-t24h'
+  label_dict[['Baselinet8w']] <- 'Baseline-t8w'
+  label_dict[['t24ht8w']] <- 't24h-t8w'
+  label_dict[['UTBaseline']] <- 'HC-t0'
+  label_dict[['UTt24h']] <- 'HC-t24h'
+  label_dict[['UTt8w']] <- 'HC-t8w'
+  label_dict[['Baselinet24h']] <- 't0-t24h'
+  label_dict[['Baselinet8w']] <- 't0-t8w'
+  # conditions
+  label_dict[['UT']] <- 'HC'
+  label_dict[['Baseline']] <- 't0'
+  label_dict[['t24h']] <- 't24h'
+  label_dict[['t8w']] <- 't8w'
+  # major cell types
+  label_dict[["Bulk"]] <- "bulk-like"
+  label_dict[["CD4T"]] <- "CD4+ T"
+  label_dict[["CD8T"]] <- "CD8+ T"
+  label_dict[["monocyte"]] <- "monocyte"
+  label_dict[["NK"]] <- "NK"
+  label_dict[["B"]] <- "B"
+  label_dict[["DC"]] <- "DC"
+  label_dict[["HSPC"]] <- "HSPC"
+  label_dict[["plasmablast"]] <- "plasmablast"
+  label_dict[["platelet"]] <- "platelet"
+  label_dict[["T_other"]] <- "other T"
+  # minor cell types
+  label_dict[["CD4_TCM"]] <- "CD4 TCM"
+  label_dict[["Treg"]] <- "T regulatory"
+  label_dict[["CD4_Naive"]] <- "CD4 naive"
+  label_dict[["CD4_CTL"]] <- "CD4 CTL"
+  label_dict[["CD8_TEM"]] <- "CD8 TEM"
+  label_dict[["cMono"]] <- "cMono"
+  label_dict[["CD8_TCM"]] <- "CD8 TCM"
+  label_dict[["ncMono"]] <- "ncMono"
+  label_dict[["cDC2"]] <- "cDC2"
+  label_dict[["B_intermediate"]] <- "B intermediate"
+  label_dict[["NKdim"]] <- "NK dim"
+  label_dict[["pDC"]] <- "pDC"
+  label_dict[["ASDC"]] <- "ASDC"
+  label_dict[["CD8_Naive"]] <- "CD8 naive"
+  label_dict[["MAIT"]] <- "MAIT"
+  label_dict[["CD8_Proliferating"]] <- "CD8 proliferating"
+  label_dict[["CD4_TEM"]] <- "CD4 TEM"
+  label_dict[["B_memory"]] <- "B memory"
+  label_dict[["NKbright"]] <- "NK bright"
+  label_dict[["B_naive"]] <- "B naive"
+  label_dict[["gdT"]] <- "gamma delta T"
+  label_dict[["CD4_Proliferating"]] <- "CD4 proliferating"
+  label_dict[["NK_Proliferating"]] <- "NK proliferating"
+  label_dict[["cDC1"]] <- "cDC1"
+  label_dict[["ILC"]] <- "ILC"
+  label_dict[["dnT"]] <- "double negative T"
+  return(label_dict)
+}
+
+
+plot_gene_expression <- function(plottable_table, gene_column='gene',expression_column='expression', timepoint_column='timepoint.final', use_label_dict=T, use_color_coding_dict=T, paper_style=T, violin=F, pointless=F, legendless=T, jitter=F) {
+  # set columns to use
+  plottable_table[['timepoint']] <- plottable_table[[timepoint_column]]
+  plottable_table[['expression']] <- plottable_table[[expression_column]]
+  plottable_table[['gene']] <- plottable_table[[gene_column]]
+  # replace the timepoints if requested
+  if (use_label_dict) {
+    plottable_table[['timepoint']] <- as.vector(unlist(label_dict()[as.character(plottable_table[['timepoint']])]))
+  }
+  # make the plot
+
+  p <- NULL
+  if(violin){
+    p <- ggplot(plottable_table,
+              aes(x = timepoint, y = expression, fill = timepoint)
+
+      ) +
+    geom_violin() +
+    facet_wrap( ~ gene)
+  }
+  else{
+    p <- ggplot(plottable_table,
+              aes(x = timepoint, y = expression, fill = timepoint)
+
+      ) +
+    geom_boxplot() +
+    facet_wrap( ~ gene)
+
+  }
+  # add jitter if requested
+  if (jitter) {
+    p <- p + geom_jitter(size = 0.5, alpha = 0.5)
+  }
+  # add custom colours if requested
+  if (use_color_coding_dict) {
+    p <- p + scale_fill_manual(values = get_color_coding_dict())
+  }
+  if (paper_style) {
+    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  # remove points if requested
+  if (pointless) {
+    p <- p + theme(axis.text.x=element_blank(),
+                   axis.ticks = element_blank(),
+                   axis.title.x = element_blank())
+  }
+  # remove legend if requested
+  if (legendless) {
+    p <- p + theme(legend.position = 'none')
+  }
+  return(p)
+}
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+####################
+# Main Code        #
+####################
+# set the organism
+kegg.organism <- "hsa"
+organism <- 'org.Hs.eg.db'
+
+# read Baseline vs 24h
+v2_Baseline_vs_t24h_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds'
+v2_Baseline_vs_t24h_perct_omni_unweighted <- readRDS(v2_Baseline_vs_t24h_perct_omni_unweighted_loc)
+v3_Baseline_vs_t24h_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds'
+v3_Baseline_vs_t24h_perct_omni_unweighted <- readRDS(v3_Baseline_vs_t24h_perct_omni_unweighted_loc)
+# read Baseline vs 24h
+v2_Baseline_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds'
+v2_Baseline_vs_t8w_perct_omni_unweighted <- readRDS(v2_Baseline_vs_t8w_perct_omni_unweighted_loc)
+v3_Baseline_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds'
+v3_Baseline_vs_t8w_perct_omni_unweighted <- readRDS(v3_Baseline_vs_t8w_perct_omni_unweighted_loc)
+v2_t24h_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v2_t24h_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds'
+v2_t24h_vs_t8w_perct_omni_unweighted <- readRDS(v2_t24h_vs_t8w_perct_omni_unweighted_loc)
+v3_t24h_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v3_t24h_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds'
+v3_t24h_vs_t8w_perct_omni_unweighted <- readRDS(v3_t24h_vs_t8w_perct_omni_unweighted_loc)
+
+# location of the Seurat object
+cardio_integrated_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/seurat/cardio.integrated.20210301.rds'
+# object
+cardio_integrated <- readRDS(cardio_integrated_loc)
+
+```
+
+```{r significant_lr, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get the significant LR interactions
+knitr::opts_chunk$set(echo = FALSE)
+# get interactions for each set
+lr_v2_Baseline_vs_t24h_perct_omni_unweighted <- data.table(get_significant_interactions(v2_Baseline_vs_t24h_perct_omni_unweighted, 'ligand_receptor_network'))
+lr_v3_Baseline_vs_t24h_perct_omni_unweighted <- data.table(get_significant_interactions(v3_Baseline_vs_t24h_perct_omni_unweighted, 'ligand_receptor_network'))
+lr_v2_Baseline_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v2_Baseline_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+lr_v3_Baseline_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v3_Baseline_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+lr_v2_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v2_t24h_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+lr_v3_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v3_t24h_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+# set the column name of the iteraction to be different for each set
+lr_v2_Baseline_vs_t24h_perct_omni_unweighted[['v2_Baseline_vs_t24h']] <- lr_v2_Baseline_vs_t24h_perct_omni_unweighted[['interaction']]
+lr_v2_Baseline_vs_t24h_perct_omni_unweighted[['interaction']] <- NULL
+lr_v3_Baseline_vs_t24h_perct_omni_unweighted[['v3_Baseline_vs_t24h']] <- lr_v3_Baseline_vs_t24h_perct_omni_unweighted[['interaction']]
+lr_v3_Baseline_vs_t24h_perct_omni_unweighted[['interaction']] <- NULL
+lr_v2_Baseline_vs_t8w_perct_omni_unweighted[['v2_Baseline_vs_t8w']] <- lr_v2_Baseline_vs_t8w_perct_omni_unweighted[['interaction']]
+lr_v2_Baseline_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+lr_v3_Baseline_vs_t8w_perct_omni_unweighted[['v3_Baseline_vs_t8w']] <- lr_v3_Baseline_vs_t8w_perct_omni_unweighted[['interaction']]
+lr_v3_Baseline_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+lr_v2_t24h_vs_t8w_perct_omni_unweighted[['v2_t24h_vs_t8w']] <- lr_v2_t24h_vs_t8w_perct_omni_unweighted[['interaction']]
+lr_v2_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+lr_v3_t24h_vs_t8w_perct_omni_unweighted[['v3_t24h_vs_t8w']] <- lr_v3_t24h_vs_t8w_perct_omni_unweighted[['interaction']]
+lr_v3_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+# merge all of them
+lr_all <- merge(lr_v2_Baseline_vs_t24h_perct_omni_unweighted, lr_v3_Baseline_vs_t24h_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+lr_all <- merge(lr_all, lr_v2_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+lr_all <- merge(lr_all, lr_v3_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+lr_all <- merge(lr_all, lr_v2_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+lr_all <- merge(lr_all, lr_v3_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+```
+
+```{r significant_lt, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get interactions for each set
+lt_v2_Baseline_vs_t24h_perct_omni_unweighted <- data.table(get_significant_interactions(v2_Baseline_vs_t24h_perct_omni_unweighted, 'ligand_target'))
+lt_v3_Baseline_vs_t24h_perct_omni_unweighted <- data.table(get_significant_interactions(v3_Baseline_vs_t24h_perct_omni_unweighted, 'ligand_target'))
+lt_v2_Baseline_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v2_Baseline_vs_t8w_perct_omni_unweighted, 'ligand_target'))
+lt_v3_Baseline_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v3_Baseline_vs_t8w_perct_omni_unweighted, 'ligand_target'))
+lt_v2_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v2_t24h_vs_t8w_perct_omni_unweighted, 'ligand_target'))
+lt_v3_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v3_t24h_vs_t8w_perct_omni_unweighted, 'ligand_target'))
+# set the column name of the iteraction to be different for each set
+lt_v2_Baseline_vs_t24h_perct_omni_unweighted[['v2_Baseline_vs_t24h']] <- lt_v2_Baseline_vs_t24h_perct_omni_unweighted[['interaction']]
+lt_v2_Baseline_vs_t24h_perct_omni_unweighted[['interaction']] <- NULL
+lt_v3_Baseline_vs_t24h_perct_omni_unweighted[['v3_Baseline_vs_t24h']] <- lt_v3_Baseline_vs_t24h_perct_omni_unweighted[['interaction']]
+lt_v3_Baseline_vs_t24h_perct_omni_unweighted[['interaction']] <- NULL
+lt_v2_Baseline_vs_t8w_perct_omni_unweighted[['v2_Baseline_vs_t8w']] <- lt_v2_Baseline_vs_t8w_perct_omni_unweighted[['interaction']]
+lt_v2_Baseline_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+lt_v3_Baseline_vs_t8w_perct_omni_unweighted[['v3_Baseline_vs_t8w']] <- lt_v3_Baseline_vs_t8w_perct_omni_unweighted[['interaction']]
+lt_v3_Baseline_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+lt_v2_t24h_vs_t8w_perct_omni_unweighted[['v2_t24h_vs_t8w']] <- lt_v2_t24h_vs_t8w_perct_omni_unweighted[['interaction']]
+lt_v2_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+lt_v3_t24h_vs_t8w_perct_omni_unweighted[['v3_t24h_vs_t8w']] <- lt_v3_t24h_vs_t8w_perct_omni_unweighted[['interaction']]
+lt_v3_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+# merge all of them
+lt_all <- merge(lt_v2_Baseline_vs_t24h_perct_omni_unweighted, lt_v3_Baseline_vs_t24h_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'target'), all = T)
+lt_all <- merge(lt_all, lt_v2_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'target'), all = T)
+lt_all <- merge(lt_all, lt_v3_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'target'), all = T)
+lt_all <- merge(lt_all, lt_v2_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'target'), all = T)
+lt_all <- merge(lt_all, lt_v3_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'target'), all = T)
+# set correct column name
+colnames(lt_all) <- gsub('receptor', 'target', colnames(lt_all))
+
+```
+
+```{r significant_lt, include=TRUE, fig.width=20, fig.height=20}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get the genes that are related to FAS
+fas_downstream_monocyte <- unique(lt_all[lt_all[['receiver']] == 'monocyte' &
+                                    lt_all[['sender']] == 'CD4T' &
+                                    lt_all[['ligand']] == 'FAS' &
+                                    !is.na(lt_all[['v3_Baseline_vs_t8w']]), 'target'][['target']])
+
+cardio_integrated_monocyte <- cardio_integrated[, cardio_integrated@meta.data[['cell_type_lowerres']] == 'monocyte']
+fas_downstream_monocyte_plots_per_gene <- list()
+for (gene in fas_downstream_monocyte) {
+  fas_downstream_monocyte_plots_per_gene[[gene]] <- FeaturePlot(cardio_integrated_monocyte[, cardio_integrated_monocyte@meta.data[['timepoint.final']] %in% c('Baseline', 't8w')], features = gene, split.by = 'timepoint.final'
+  )
+}
+
+ggarrange(plotlist = fas_downstream_monocyte_plots_per_gene)
+
+```
+
+```{r significant_lt, include=TRUE, fig.width=20, fig.height=20}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get the genes that are related to FAS
+fas_downstream_dc <- unique(lt_all[lt_all[['receiver']] == 'DC' &
+                                    (lt_all[['sender']] == 'CD4T' | lt_all[['sender']] == 'monocyte') &
+                                    lt_all[['ligand']] == 'FAS' &
+                                    !is.na(lt_all[['v3_Baseline_vs_t8w']]), 'target'][['target']])
+
+cardio_integrated_dc <- cardio_integrated[, cardio_integrated@meta.data[['cell_type_lowerres']] == 'DC']
+fas_downstream_dc_plots_per_gene <- list()
+for (gene in fas_downstream_dc) {
+  fas_downstream_dc_plots_per_gene[[gene]] <- FeaturePlot(cardio_integrated_dc[, cardio_integrated_dc@meta.data[['timepoint.final']] %in% c('Baseline', 't8w')], features = gene, split.by = 'timepoint.final'
+  )
+}
+
+ggarrange(plotlist = fas_downstream_dc_plots_per_gene)
+
+```
+
+```{r significant_lt, include=TRUE, fig.width=20, fig.height=20}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get the genes that are related to il6r
+il6r_downstream_dc <- unique(lt_all[lt_all[['receiver']] == 'DC' &
+                                    (lt_all[['sender']] == 'CD4T' | lt_all[['sender']] == 'monocyte') &
+                                    lt_all[['ligand']] == 'IL6R' &
+                                    !is.na(lt_all[['v3_Baseline_vs_t24h']]), 'target'][['target']])
+
+# replace dot with dash again
+il6r_downstream_dc <- gsub('\\.', '-', il6r_downstream_dc)
+
+cardio_integrated_dc <- cardio_integrated[, cardio_integrated@meta.data[['cell_type_lowerres']] == 'DC']
+il6r_downstream_dc_plots_per_gene <- list()
+for (gene in il6r_downstream_dc) {
+  il6r_downstream_dc_plots_per_gene[[gene]] <- FeaturePlot(cardio_integrated_dc[, cardio_integrated_dc@meta.data[['timepoint.final']] %in% c('Baseline', 't8w')], features = gene, split.by = 'timepoint.final'
+  )
+}
+
+#ggarrange(plotlist = il6r_downstream_dc_plots_per_gene)
+
+```
+
+```{r plot_expression_fas_downstream, include=TRUE, fig.width=20, fig.height=20}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get single cell expression of monocyte and the relevant genes
+fas_downstream_expression_monocyte <- get_gene_expression(cardio_integrated_monocyte, c(fas_downstream_monocyte, 'RIPK1', 'FAS'), assay='SCT', slot='data', metadata_columns=c('assignment.final', 'timepoint.final'))
+# turn into a format that ggplot can use
+fas_downstream_expression_monocyte_wide <- wide_to_long_table(fas_downstream_expression_monocyte)
+# plot
+plot_gene_expression(fas_downstream_expression_monocyte_wide[fas_downstream_expression_monocyte_wide$timepoint %in% c('Baseline', 't8w'), ])
+plot_gene_expression(fas_downstream_expression_monocyte_wide[fas_downstream_expression_monocyte_wide$timepoint %in% c('Baseline', 't8w'), ], violin = T)
+
+```
+
+```{r mean_expression_monocyte, include=TRUE, fig.width=20, fig.height=20}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get mean expression of monocyte
+mean_expression_monocyte <- get_mean_expression_matrices(cardio_integrated_monocyte, metadata_columns=c('cell_type_lowerres', 'timepoint.final', 'assignment.final'))
+# subset to genes we care about
+mean_downstream_expression_monocyte <- mean_expression_monocyte[mean_expression_monocyte[['gene']] %in% c(fas_downstream_monocyte, 'RIPK1', 'FAS'), ]
+```
+
+```{r plot_mean_expression_fas_downstream, include=TRUE, fig.width=20, fig.height=20}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# plot
+plot_gene_expression(mean_downstream_expression_monocyte[mean_downstream_expression_monocyte$timepoint %in% c('Baseline', 't8w'), ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'timepoint.final', jitter = T) + ylim(0, 50)
+plot_gene_expression(mean_downstream_expression_monocyte[mean_downstream_expression_monocyte$timepoint %in% c('Baseline', 't8w'), ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'timepoint.final', jitter = T, violin = T) + ylim(0, 50)
+
+```
