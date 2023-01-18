@@ -27,10 +27,66 @@ library(data.table)
 library(Seurat)
 # for plots
 library(ggplot2)
+library(ggpubr)
 # for parallel calculating
 library(foreach)
 library(doParallel)
+# load genotype data
+library(vcfR)
 
+```
+
+```{r objects, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# objects.         #
+####################
+# object to hold the genotype information
+Genotypes <- setRefClass('Genotypes',
+  fields = list(
+    # the snps
+    calls = 'data.table',
+    # the metadata
+    meta = 'data.table'
+  ),
+  methods = list(
+    get_genotypes = function(.self, snp_id=NULL, chrom_pos=NULL, snp_pos=NULL, convert_alleles=F) {
+      # we need the index of the SNP
+      snp_index <- NULL
+      if (!is.null(snp_id)) {
+        # extract snp index
+        snp_index <- grep(snp_id, .self$meta[['ID']])
+
+      } else if (!is.null(chrom_pos) & !is.null(snp_pos)) {
+        # extract snp index
+        snp_index <- which(.self$meta[['CHROM']] == chrom_pos & .self$meta[['POS']] == snp_pos)
+
+      } else {
+        stop("Need to supply the variant ID, or both the CHROM and SNP positions")
+      }
+      # grab the genotypes
+      genotypes_raw <- as.vector(unlist(.self$calls[snp_index, ]))
+      # convert to alleles if requested
+      if (convert_alleles) {
+        # get the ref
+        ref <- .self$meta[snp_index, 'REF'][['REF']]
+        # and alt
+        alt <- .self$meta[snp_index, 'ALT'][['ALT']]
+        # harmonize placement of slash
+        genotypes_raw <- gsub('1\\|0', '0\\|1', genotypes_raw)
+        genotypes_raw <- gsub('1/0', '0/1', genotypes_raw)
+        # replace letters
+        genotypes_raw <- gsub('0', ref, genotypes_raw)
+        genotypes_raw <- gsub('1', alt, genotypes_raw)
+      }
+      # turn into list
+      genotypes_raw <- as.list(genotypes_raw)
+      # add the participants as the keys
+      names(genotypes_raw) <- colnames(.self$calls)
+      return(genotypes_raw)
+    }
+  )
+)
 ```
 
 ```{r functions, include=FALSE}
@@ -162,7 +218,7 @@ get_mean_expression_matrices <- function(seurat_object, metadata_columns=c('cell
   #   else {
   #     expression_matrix_category <- get_mean_expression_matrices(seurat_object = seurat_object_category, metadata_columns = metadata_columns[1 : (length(metadata_columns) - 1)], assay = assay, slot = slot)
   #   }
-  #
+  #   
   #   # add the category to the expression matrix
   #   expression_matrix_category[[categories_to_check]] <- category
   #   # add to the list
@@ -214,6 +270,28 @@ subset_and_get_get_mean_expression <- function(seurat_object, metadata_column_to
   return(expression_matrix)
 }
 
+calculate_delta_expression <- function(mean_expression_wide, timepoint_1, timepoint_2, gene_column='gene', expression_column='expression', cell_type_column='cell_type_lowerres', timepoint_column='timepoint.final', assignment_column='assignment.final') {
+  # grab timepoint 1
+  mean_expression_tp1 <- mean_expression_wide[mean_expression_wide[[timepoint_column]] == timepoint_1, c(cell_type_column, assignment_column, gene_column, expression_column)]
+  # rename expression column
+  mean_expression_tp1[[timepoint_1]] <- mean_expression_tp1[[expression_column]]
+  mean_expression_tp1[[expression_column]] <- NULL
+  # turn into a datatable
+  mean_expression_tp1 <- data.table(mean_expression_tp1)
+  # and timepoint 2
+  mean_expression_tp2 <- mean_expression_wide[mean_expression_wide[[timepoint_column]] == timepoint_2, c(cell_type_column, assignment_column, gene_column, expression_column)]
+  mean_expression_tp2[[timepoint_2]] <- mean_expression_tp2[[expression_column]]
+  mean_expression_tp2[[expression_column]] <- NULL
+  mean_expression_tp2 <- data.table(mean_expression_tp2)
+  # merge the two
+  mean_expression_both <- merge(mean_expression_tp1, mean_expression_tp2, merge = c(cell_type_column, assignment_column, gene_column))
+  # back into dataframe
+  mean_expression_both <- data.frame(mean_expression_both)
+  # then add the difference
+  mean_expression_both[[paste(timepoint_2, timepoint_1, sep = '_')]] <- mean_expression_both[[timepoint_2]] - mean_expression_both[[timepoint_1]]
+  return(mean_expression_both)
+}
+
 get_color_coding_dict <- function(){
   # set the condition colors
   color_coding <- list()
@@ -244,6 +322,14 @@ get_color_coding_dict <- function(){
   color_coding[["t0-t24h"]] <- "paleturquoise3"
   color_coding[["t0-t8w"]] <- "rosybrown1"
   color_coding[["t24h-t8w"]] <- "rosybrown3"
+  color_coding[["t24h-t0"]] <- "paleturquoise3"
+  color_coding[["t8w-t0"]] <- "rosybrown1"
+  color_coding[["t8w-t24h"]] <- "rosybrown3"
+  color_coding[["t24h_t0"]] <- "paleturquoise3"
+  color_coding[["t8w_t0"]] <- "rosybrown1"
+  color_coding[["t8w_t24h"]] <- "rosybrown3"
+  color_coding[["t24h_Baseline"]] <- "paleturquoise3"
+  color_coding[["t8w_Baseline"]] <- "rosybrown1"
   # set condition colors
   color_coding[["HC"]] <- "grey"
   color_coding[["t0"]] <- "pink"
@@ -268,6 +354,7 @@ get_color_coding_dict <- function(){
   color_coding[["other T"]] <- "#FF63B6"
   return(color_coding)
 }
+
 label_dict <- function(){
   label_dict <- list()
   # condition combinations
@@ -282,6 +369,12 @@ label_dict <- function(){
   label_dict[['UTt8w']] <- 'HC-t8w'
   label_dict[['Baselinet24h']] <- 't0-t24h'
   label_dict[['Baselinet8w']] <- 't0-t8w'
+  label_dict[['t24h_Baseline']] <- 't24h-t0'
+  label_dict[['t8w_Baseline']] <- 't8w-t0'
+  label_dict[['t8w_t24h']] <- 't8w-t24h'
+  label_dict[['t24h-Baseline']] <- 't24h-t0'
+  label_dict[['t8w-Baseline']] <- 't8w-t0'
+  label_dict[['t8w-t24h']] <- 't8w-t24h'
   # conditions
   label_dict[['UT']] <- 'HC'
   label_dict[['Baseline']] <- 't0'
@@ -353,6 +446,86 @@ plot_gene_expression <- function(plottable_table, gene_column='gene',expression_
   else{
     p <- ggplot(plottable_table,
               aes(x = timepoint, y = expression, fill = timepoint)
+
+      ) +
+    geom_boxplot() +
+    facet_wrap( ~ gene)
+
+  }
+  # add jitter if requested
+  if (jitter) {
+    p <- p + geom_jitter(size = 0.5, alpha = 0.5)
+  }
+  # add custom colours if requested
+  if (use_color_coding_dict) {
+    p <- p + scale_fill_manual(values = get_color_coding_dict())
+  }
+  if (paper_style) {
+    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  # remove points if requested
+  if (pointless) {
+    p <- p + theme(axis.text.x=element_blank(),
+                   axis.ticks = element_blank(),
+                   axis.title.x = element_blank())
+  }
+  # remove legend if requested
+  if (legendless) {
+    p <- p + theme(legend.position = 'none')
+  }
+  return(p)
+}
+
+create_genotypes_object <- function(genotypes_vcf){
+  # get the donors in the genotype data
+  donors_vcf <- colnames(genotypes_vcf@gt)
+  # get the intersection
+  donors <- setdiff(donors_vcf, c('FORMAT'))
+  # and the genotype data itself
+  gt_calls <- data.table(extract.gt(genotypes_vcf)[, donors])
+  # grab the genotypes
+  gt_metadata <- data.table(genotypes_vcf@fix[, c('CHROM', 'POS', 'ID', 'REF', 'ALT')])
+  # create object
+  genos <- Genotypes$new(calls = gt_calls, meta = gt_metadata)
+  return(genos)
+}
+
+
+add_genotypes <- function(expression_data, genotype_object, variant, participant_column='assignment.final') {
+  # extract the genotypes
+  genotypes_dict <- genotype_object$get_genotypes(variant, convert_alleles = T)
+  # turn into dataframe, that way it is easier to handle missing data
+  genotypes_table <- data.frame(participant = names(genotypes_dict), genotype = as.vector(unlist(genotypes_dict)))
+  # add to the table by matching the IDs
+  expression_data[[variant]] <- genotypes_table[match(expression_data[[participant_column]], genotypes_table[['participant']]), 'genotype']
+  return(expression_data)
+}
+
+
+plot_gene_expression_per_genotype <- function(plottable_table, gene_column='gene',expression_column='expression', timepoint_column='timepoint.final', genotype_column='genotype', use_label_dict=T, use_color_coding_dict=T, paper_style=T, violin=F, pointless=F, legendless=T, jitter=F) {
+  # set columns to use
+  plottable_table[['timepoint']] <- plottable_table[[timepoint_column]]
+  plottable_table[['expression']] <- plottable_table[[expression_column]]
+  plottable_table[['gene']] <- plottable_table[[gene_column]]
+  plottable_table[['genotype']] <- plottable_table[[genotype_column]]
+  # replace the timepoints if requested
+  if (use_label_dict) {
+    plottable_table[['timepoint']] <- as.vector(unlist(label_dict()[as.character(plottable_table[['timepoint']])]))
+  }
+  # make the plot
+
+  p <- NULL
+  if(violin){
+    p <- ggplot(plottable_table,
+              aes(x = genotype, y = expression, fill = timepoint)
+
+      ) +
+    geom_violin() +
+    facet_wrap( ~ gene)
+  }
+  else{
+    p <- ggplot(plottable_table,
+              aes(x = genotype, y = expression, fill = timepoint)
 
       ) +
     geom_boxplot() +
@@ -543,7 +716,7 @@ for (gene in il6r_downstream_dc) {
   )
 }
 
-#ggarrange(plotlist = il6r_downstream_dc_plots_per_gene)
+ggarrange(plotlist = il6r_downstream_dc_plots_per_gene)
 
 ```
 
@@ -575,5 +748,311 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 # plot
 plot_gene_expression(mean_downstream_expression_monocyte[mean_downstream_expression_monocyte$timepoint %in% c('Baseline', 't8w'), ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'timepoint.final', jitter = T) + ylim(0, 50)
 plot_gene_expression(mean_downstream_expression_monocyte[mean_downstream_expression_monocyte$timepoint %in% c('Baseline', 't8w'), ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'timepoint.final', jitter = T, violin = T) + ylim(0, 50)
+
+```
+
+```{r plot_expression_fas_downstream, include=TRUE, fig.width=20, fig.height=20}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get single cell expression of dc and the relevant genes
+fas_downstream_expression_dc <- get_gene_expression(cardio_integrated_dc, c(fas_downstream_dc, 'RIPK1', 'FAS'), assay='SCT', slot='data', metadata_columns=c('assignment.final', 'timepoint.final'))
+# turn into a format that ggplot can use
+fas_downstream_expression_dc_wide <- wide_to_long_table(fas_downstream_expression_dc)
+# plot
+plot_gene_expression(fas_downstream_expression_dc_wide[fas_downstream_expression_dc_wide$timepoint %in% c('Baseline', 't8w'), ])
+plot_gene_expression(fas_downstream_expression_dc_wide[fas_downstream_expression_dc_wide$timepoint %in% c('Baseline', 't8w'), ], violin = T)
+
+```
+```{r mean_expression_dc, include=TRUE, fig.width=20, fig.height=20}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get mean expression of dc
+mean_expression_dc <- get_mean_expression_matrices(cardio_integrated_dc, metadata_columns=c('cell_type_lowerres', 'timepoint.final', 'assignment.final'))
+# subset to genes we care about
+mean_downstream_expression_dc_fas <- mean_expression_dc[mean_expression_dc[['gene']] %in% c(fas_downstream_dc, 'RIPK1', 'FAS'), ]
+```
+
+```{r plot_mean_expression_fas_downstream, include=TRUE, fig.width=20, fig.height=20}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# plot
+plot_gene_expression(mean_downstream_expression_dc_fas[mean_downstream_expression_dc_fas$timepoint %in% c('Baseline', 't8w'), ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'timepoint.final', jitter = T) + ylim(0, 10)
+plot_gene_expression(mean_downstream_expression_dc_fas[mean_downstream_expression_dc_fas$timepoint %in% c('Baseline', 't8w'), ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'timepoint.final', jitter = T, violin = T) + ylim(0, 10)
+
+```
+
+```{r mean_expression_dc, include=TRUE, fig.width=20, fig.height=20}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get mean expression of dc
+mean_expression_dc <- get_mean_expression_matrices(cardio_integrated_dc, metadata_columns=c('cell_type_lowerres', 'timepoint.final', 'assignment.final'))
+# subset to genes we care about
+mean_downstream_expression_dc_il6r <- mean_expression_dc[mean_expression_dc[['gene']] %in% c(il6r_downstream_dc, 'IL6ST', 'IL6R'), ]
+```
+
+```{r plot_mean_expression_fas_downstream, include=TRUE, fig.width=20, fig.height=20}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# plot
+plot_gene_expression(mean_downstream_expression_dc_il6r[mean_downstream_expression_dc_il6r$timepoint %in% c('Baseline', 't8w'), ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'timepoint.final', jitter = T) + ylim(0, 10)
+plot_gene_expression(mean_downstream_expression_dc_il6r[mean_downstream_expression_dc_il6r$timepoint %in% c('Baseline', 't8w'), ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'timepoint.final', jitter = T, violin = T) + ylim(0, 10)
+
+```
+
+```{r delta_expressions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# calculate delta's
+mean_expression_dc_baseline_t24h <- calculate_delta_expression(mean_expression_dc, timepoint_1 = 'Baseline', timepoint_2 = 't24h', expression_column = 'all')
+mean_expression_dc_baseline_t8w <- calculate_delta_expression(mean_expression_dc, timepoint_1 = 'Baseline', timepoint_2 = 't8w', expression_column = 'all')
+mean_expression_dc_t24h_t8w <- calculate_delta_expression(mean_expression_dc, timepoint_1 = 't24h', timepoint_2 = 't8w', expression_column = 'all')
+
+# add a separate column for the comparison
+mean_expression_dc_baseline_t24h[['comparison']] <- 't24h_Baseline'
+# rename the columns of the comparison
+mean_expression_dc_baseline_t24h[['expression_delta']] <- mean_expression_dc_baseline_t24h[['t24h_Baseline']]
+# subset on the columns we need
+mean_expression_dc_baseline_t24h <- mean_expression_dc_baseline_t24h[, c('cell_type_lowerres', 'comparison', 'assignment.final', 'gene', 'expression_delta')]
+# do the same for the other two comparisons
+mean_expression_dc_baseline_t8w[['comparison']] <- 't8w_Baseline'
+mean_expression_dc_baseline_t8w[['expression_delta']] <- mean_expression_dc_baseline_t8w[['t8w_Baseline']]
+mean_expression_dc_baseline_t8w <- mean_expression_dc_baseline_t8w[, c('cell_type_lowerres', 'comparison', 'assignment.final', 'gene', 'expression_delta')]
+mean_expression_dc_t24h_t8w[['comparison']] <- 't8w_t24h'
+mean_expression_dc_t24h_t8w[['expression_delta']] <- mean_expression_dc_t24h_t8w[['t8w_t24h']]
+mean_expression_dc_t24h_t8w <- mean_expression_dc_t24h_t8w[, c('cell_type_lowerres', 'comparison', 'assignment.final', 'gene', 'expression_delta')]
+
+# finally rbind them all
+mean_expression_dc_deltas <- rbind(mean_expression_dc_baseline_t8w, mean_expression_dc_baseline_t24h, mean_expression_dc_t24h_t8w)
+
+```
+
+```{r plot_mean_expression_fas_downstream, include=TRUE, fig.width=20, fig.height=20}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# plot
+plot_gene_expression(mean_expression_dc_deltas[mean_expression_dc_deltas$gene %in% c(il6r_downstream_dc, 'IL6ST', 'IL6R'), ], gene_column = 'gene', expression_column = 'expression_delta', timepoint_column = 'comparison', jitter = T) + ylab('expression delta') + xlab('timepoints')
+plot_gene_expression(mean_expression_dc_deltas[mean_expression_dc_deltas$gene %in% c(il6r_downstream_dc, 'IL6ST', 'IL6R'), ], gene_column = 'gene', expression_column = 'expression_delta', timepoint_column = 'comparison', jitter = T, violin = T) + ylab('expression delta') + xlab('timepoints')
+
+```
+```{r plot_mean_expression_fas_downstream, include=TRUE, fig.width=5, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# plot
+plot_gene_expression(mean_expression_dc_deltas[mean_expression_dc_deltas$gene %in% c('IL6ST', 'IL6R'), ], gene_column = 'gene', expression_column = 'expression_delta', timepoint_column = 'comparison', jitter = T) + ylab('expression delta') + xlab('timepoints')
+plot_gene_expression(mean_expression_dc_deltas[mean_expression_dc_deltas$gene %in% c('IL6ST', 'IL6R'), ], gene_column = 'gene', expression_column = 'expression_delta', timepoint_column = 'comparison', jitter = T, violin = T) + ylab('expression delta') + xlab('timepoints')
+
+```
+
+```{r delta_expressions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# calculate delta's
+mean_expression_monocyte_baseline_t24h <- calculate_delta_expression(mean_expression_monocyte, timepoint_1 = 'Baseline', timepoint_2 = 't24h', expression_column = 'all')
+mean_expression_monocyte_baseline_t8w <- calculate_delta_expression(mean_expression_monocyte, timepoint_1 = 'Baseline', timepoint_2 = 't8w', expression_column = 'all')
+mean_expression_monocyte_t24h_t8w <- calculate_delta_expression(mean_expression_monocyte, timepoint_1 = 't24h', timepoint_2 = 't8w', expression_column = 'all')
+
+# add a separate column for the comparison
+mean_expression_monocyte_baseline_t24h[['comparison']] <- 't24h_Baseline'
+# rename the columns of the comparison
+mean_expression_monocyte_baseline_t24h[['expression_delta']] <- mean_expression_monocyte_baseline_t24h[['t24h_Baseline']]
+# subset on the columns we need
+mean_expression_monocyte_baseline_t24h <- mean_expression_monocyte_baseline_t24h[, c('cell_type_lowerres', 'comparison', 'assignment.final', 'gene', 'expression_delta')]
+# do the same for the other two comparisons
+mean_expression_monocyte_baseline_t8w[['comparison']] <- 't8w_Baseline'
+mean_expression_monocyte_baseline_t8w[['expression_delta']] <- mean_expression_monocyte_baseline_t8w[['t8w_Baseline']]
+mean_expression_monocyte_baseline_t8w <- mean_expression_monocyte_baseline_t8w[, c('cell_type_lowerres', 'comparison', 'assignment.final', 'gene', 'expression_delta')]
+mean_expression_monocyte_t24h_t8w[['comparison']] <- 't8w_t24h'
+mean_expression_monocyte_t24h_t8w[['expression_delta']] <- mean_expression_monocyte_t24h_t8w[['t8w_t24h']]
+mean_expression_monocyte_t24h_t8w <- mean_expression_monocyte_t24h_t8w[, c('cell_type_lowerres', 'comparison', 'assignment.final', 'gene', 'expression_delta')]
+
+# finally rbind them all
+mean_expression_monocyte_deltas <- rbind(mean_expression_monocyte_baseline_t8w, mean_expression_monocyte_baseline_t24h, mean_expression_monocyte_t24h_t8w)
+
+```
+
+
+```{r plot_mean_expression_fas_downstream, include=TRUE, fig.width=20, fig.height=20}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# plot
+plot_gene_expression(mean_expression_monocyte_deltas[mean_expression_monocyte_deltas$gene %in% c(fas_downstream_monocyte, 'RIPK1', 'FAS'), ], gene_column = 'gene', expression_column = 'expression_delta', timepoint_column = 'comparison', jitter = T) + ylab('expression delta') + xlab('timepoints')
+plot_gene_expression(mean_expression_monocyte_deltas[mean_expression_monocyte_deltas$gene %in% c(fas_downstream_monocyte, 'RIPK1', 'FAS'), ], gene_column = 'gene', expression_column = 'expression_delta', timepoint_column = 'comparison', jitter = T, violin = T) + ylab('expression delta') + xlab('timepoints')
+
+```
+```{r plot_mean_expression_fas_downstream, include=TRUE, fig.width=5, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# plot
+plot_gene_expression(mean_expression_monocyte_deltas[mean_expression_monocyte_deltas$gene %in% c('RIPK1', 'FAS'), ], gene_column = 'gene', expression_column = 'expression_delta', timepoint_column = 'comparison', jitter = T) + ylab('expression delta') + xlab('timepoints')
+plot_gene_expression(mean_expression_monocyte_deltas[mean_expression_monocyte_deltas$gene %in% c('RIPK1', 'FAS'), ], gene_column = 'gene', expression_column = 'expression_delta', timepoint_column = 'comparison', jitter = T, violin = T) + ylab('expression delta') + xlab('timepoints')
+
+```
+```{r plot_mean_expression_fas_downstream, include=TRUE, fig.width=5, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# plot
+plot_gene_expression(mean_expression_dc_deltas[mean_expression_dc_deltas$gene %in% c('RIPK1', 'FAS'), ], gene_column = 'gene', expression_column = 'expression_delta', timepoint_column = 'comparison', jitter = T) + ylab('expression delta') + xlab('timepoints')
+plot_gene_expression(mean_expression_dc_deltas[mean_expression_dc_deltas$gene %in% c('RIPK1', 'FAS'), ], gene_column = 'gene', expression_column = 'expression_delta', timepoint_column = 'comparison', jitter = T, violin = T) + ylab('expression delta') + xlab('timepoints')
+
+```
+
+```{r genoytypes, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get genotype data
+genotypes_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/genotype/stemi_all_merged.vcf.gz'
+genotypes_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/genotype/stemi_all_merged_aragam2022.vcf.gz'
+genotypes <- read.vcfR(genotypes_loc)
+# turn into object
+genotype_object <- create_genotypes_object(genotypes)
+
+```
+
+```{r add_il6r_genotype_dc, include=TRUE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+mean_expression_dc <- add_genotypes(mean_expression_dc, genotype_object, 'rs6686750')
+# plot
+plot_gene_expression_per_genotype(mean_expression_dc[mean_expression_dc$gene %in% c('IL6ST', 'IL6R') & mean_expression_dc$timepoint %in% c('Baseline', 't24h'), ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'timepoint.final', genotype_column = 'rs6686750', jitter = T, legendless = F) + ylab('expression') + xlab('variant')
+plot_gene_expression_per_genotype(mean_expression_dc[mean_expression_dc$gene %in% c('IL6ST', 'IL6R') & mean_expression_dc$timepoint %in% c('Baseline', 't24h'), ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'timepoint.final', genotype_column = 'rs6686750', jitter = T, legendless = F, violin = T) + ylab('expression') + xlab('variant')
+
+```
+```{r plot_mean_expression_fas_downstream, include=TRUE, fig.width=5, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# plot
+plot_gene_expression(mean_expression_monocytes[mean_expression_monocyte$gene %in% c('RIPK1', 'FAS'), ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'timepoint.final', jitter = T, legendless = F) + ylab('expression') + xlab('genotype')
+plot_gene_expression(mean_expression_monocyte[mean_expression_monocyte$gene %in% c('RIPK1', 'FAS'), ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'timepoint.final', jitter = T, legendless = F, violin = T) + ylab('expression') + xlab('genotype')
+
+```
+
+```{r plot_mean_expression_fas_downstream, include=TRUE, fig.width=5, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+mean_expression_dc_deltas <- add_genotypes(mean_expression_dc_deltas, genotype_object, 'rs6686750')
+# plot
+plot_gene_expression_per_genotype(mean_expression_dc_deltas[mean_expression_dc_deltas$gene %in% c('IL6ST', 'IL6R'), ], gene_column = 'gene', expression_column = 'expression_delta', timepoint_column = 'comparison', genotype_column = 'rs6686750', jitter = T, legendless = F) + ylab('expression delta') + xlab('variant')
+plot_gene_expression_per_genotype(mean_expression_dc_deltas[mean_expression_dc_deltas$gene %in% c('IL6ST', 'IL6R'), ], gene_column = 'gene', expression_column = 'expression_delta', timepoint_column = 'comparison', genotype_column = 'rs6686750', jitter = T, legendless = F, violin = T) + ylab('expression delta') + xlab('variant')
+
+
+
+```
+
+```{r mean_expression_chems, include=FALSE, fig.width=20, fig.height=20}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get mean expression of all V2
+mean_expression_v2 <- get_mean_expression_matrices(cardio_integrated[, cardio_integrated@meta.data$orig.ident == 'stemi_v2'], metadata_columns=c('cell_type_lowerres', 'timepoint.final', 'assignment.final'))
+mean_expression_v3 <- get_mean_expression_matrices(cardio_integrated[, cardio_integrated@meta.data$orig.ident == 'stemi_v3'], metadata_columns=c('cell_type_lowerres', 'timepoint.final', 'assignment.final'))
+
+```
+
+```{r chem_add_geno, include=FALSE, fig.width=20, fig.height=20}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# add the genotype data
+mean_expression_v2 <- add_genotypes(mean_expression_v2, genotype_object, 'rs6686750')
+mean_expression_v3 <- add_genotypes(mean_expression_v3, genotype_object, 'rs6686750')
+
+```
+
+
+```{r delta_expressions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# calculate delta's
+mean_expression_v2_baseline_t24h <- calculate_delta_expression(mean_expression_v2, timepoint_1 = 'Baseline', timepoint_2 = 't24h', expression_column = 'all')
+mean_expression_v2_baseline_t8w <- calculate_delta_expression(mean_expression_v2, timepoint_1 = 'Baseline', timepoint_2 = 't8w', expression_column = 'all')
+mean_expression_v2_t24h_t8w <- calculate_delta_expression(mean_expression_v2, timepoint_1 = 't24h', timepoint_2 = 't8w', expression_column = 'all')
+
+# add a separate column for the comparison
+mean_expression_v2_baseline_t24h[['comparison']] <- 't24h_Baseline'
+# rename the columns of the comparison
+mean_expression_v2_baseline_t24h[['expression_delta']] <- mean_expression_v2_baseline_t24h[['t24h_Baseline']]
+# subset on the columns we need
+mean_expression_v2_baseline_t24h <- mean_expression_v2_baseline_t24h[, c('cell_type_lowerres', 'comparison', 'assignment.final', 'gene', 'expression_delta')]
+# do the same for the other two comparisons
+mean_expression_v2_baseline_t8w[['comparison']] <- 't8w_Baseline'
+mean_expression_v2_baseline_t8w[['expression_delta']] <- mean_expression_v2_baseline_t8w[['t8w_Baseline']]
+mean_expression_v2_baseline_t8w <- mean_expression_v2_baseline_t8w[, c('cell_type_lowerres', 'comparison', 'assignment.final', 'gene', 'expression_delta')]
+mean_expression_v2_t24h_t8w[['comparison']] <- 't8w_t24h'
+mean_expression_v2_t24h_t8w[['expression_delta']] <- mean_expression_v2_t24h_t8w[['t8w_t24h']]
+mean_expression_v2_t24h_t8w <- mean_expression_v2_t24h_t8w[, c('cell_type_lowerres', 'comparison', 'assignment.final', 'gene', 'expression_delta')]
+
+# finally rbind them all
+mean_expression_v2_deltas <- rbind(mean_expression_v2_baseline_t8w, mean_expression_v2_baseline_t24h, mean_expression_v2_t24h_t8w)
+
+# add back genotypes
+mean_expression_v2_deltas <- add_genotypes(mean_expression_v2_deltas, genotype_object, 'rs6686750')
+
+# again for v3
+mean_expression_v3_baseline_t24h <- calculate_delta_expression(mean_expression_v3, timepoint_1 = 'Baseline', timepoint_2 = 't24h', expression_column = 'all')
+mean_expression_v3_baseline_t8w <- calculate_delta_expression(mean_expression_v3, timepoint_1 = 'Baseline', timepoint_2 = 't8w', expression_column = 'all')
+mean_expression_v3_t24h_t8w <- calculate_delta_expression(mean_expression_v3, timepoint_1 = 't24h', timepoint_2 = 't8w', expression_column = 'all')
+mean_expression_v3_baseline_t24h[['comparison']] <- 't24h_Baseline'
+mean_expression_v3_baseline_t24h[['expression_delta']] <- mean_expression_v3_baseline_t24h[['t24h_Baseline']]
+mean_expression_v3_baseline_t24h <- mean_expression_v3_baseline_t24h[, c('cell_type_lowerres', 'comparison', 'assignment.final', 'gene', 'expression_delta')]
+mean_expression_v3_baseline_t8w[['comparison']] <- 't8w_Baseline'
+mean_expression_v3_baseline_t8w[['expression_delta']] <- mean_expression_v3_baseline_t8w[['t8w_Baseline']]
+mean_expression_v3_baseline_t8w <- mean_expression_v3_baseline_t8w[, c('cell_type_lowerres', 'comparison', 'assignment.final', 'gene', 'expression_delta')]
+mean_expression_v3_t24h_t8w[['comparison']] <- 't8w_t24h'
+mean_expression_v3_t24h_t8w[['expression_delta']] <- mean_expression_v3_t24h_t8w[['t8w_t24h']]
+mean_expression_v3_t24h_t8w <- mean_expression_v3_t24h_t8w[, c('cell_type_lowerres', 'comparison', 'assignment.final', 'gene', 'expression_delta')]
+mean_expression_v3_deltas <- rbind(mean_expression_v3_baseline_t8w, mean_expression_v3_baseline_t24h, mean_expression_v3_t24h_t8w)
+mean_expression_v3_deltas <- add_genotypes(mean_expression_v3_deltas, genotype_object, 'rs6686750')
+
+```
+
+```{r plot_mean_expression_dc_il6r_chem, include=TRUE, fig.width=5, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# plot
+plot_gene_expression(mean_expression_v2[mean_expression_v2$gene %in% c('IL6ST', 'IL6R') & mean_expression_v2$cell_type_lowerres == 'DC', ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'timepoint.final', jitter = T) + ylab('expression V2') + xlab('timepoint')
+plot_gene_expression(mean_expression_v2[mean_expression_v2$gene %in% c('IL6ST', 'IL6R') & mean_expression_v2$cell_type_lowerres == 'DC', ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'timepoint.final', jitter = T, violin = T) + ylab('expression V2') + xlab('timepoint')
+plot_gene_expression(mean_expression_v3[mean_expression_v3$gene %in% c('IL6ST', 'IL6R') & mean_expression_v3$cell_type_lowerres == 'DC', ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'timepoint.final', jitter = T) + ylab('expression V3') + xlab('timepoint')
+plot_gene_expression(mean_expression_v3[mean_expression_v3$gene %in% c('IL6ST', 'IL6R') & mean_expression_v3$cell_type_lowerres == 'DC', ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'timepoint.final', jitter = T, violin = T) + ylab('expression V3') + xlab('timepoint')
+
+```
+```{r plot_mean_expression_dc_il6r_chem_deltas, include=TRUE, fig.width=5, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# plot
+plot_gene_expression(mean_expression_v2_deltas[mean_expression_v2_deltas$gene %in% c('IL6ST', 'IL6R') & mean_expression_v2_deltas$cell_type_lowerres == 'DC', ], gene_column = 'gene', expression_column = 'expression_delta', timepoint_column = 'comparison', jitter = T) + ylab('expression delta V2') + xlab('timepoints')
+plot_gene_expression(mean_expression_v2_deltas[mean_expression_v2_deltas$gene %in% c('IL6ST', 'IL6R') & mean_expression_v2_deltas$cell_type_lowerres == 'DC', ], gene_column = 'gene', expression_column = 'expression_delta', timepoint_column = 'comparison', jitter = T, violin = T) + ylab('expression delta V2') + xlab('timepoints')
+plot_gene_expression(mean_expression_v3_deltas[mean_expression_v3_deltas$gene %in% c('IL6ST', 'IL6R') & mean_expression_v3_deltas$cell_type_lowerres == 'DC', ], gene_column = 'gene', expression_column = 'expression_delta', timepoint_column = 'comparison', jitter = T) + ylab('expression delta v3') + xlab('timepoints')
+plot_gene_expression(mean_expression_v3_deltas[mean_expression_v3_deltas$gene %in% c('IL6ST', 'IL6R') & mean_expression_v3_deltas$cell_type_lowerres == 'DC', ], gene_column = 'gene', expression_column = 'expression_delta', timepoint_column = 'comparison', jitter = T, violin = T) + ylab('expression delta v3') + xlab('timepoints')
+
+```
+
+```{r plot_mean_expression_dc_il6r_chem, include=TRUE, fig.width=5, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# plot
+plot_gene_expression_per_genotype(mean_expression_v2[mean_expression_v2$gene %in% c('IL6ST', 'IL6R') & mean_expression_v2$cell_type_lowerres == 'DC', ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'timepoint.final', genotype_column = 'rs6686750', jitter = T) + ylab('expression V2') + xlab('timepoint')
+plot_gene_expression_per_genotype(mean_expression_v2[mean_expression_v2$gene %in% c('IL6ST', 'IL6R') & mean_expression_v2$cell_type_lowerres == 'DC', ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'timepoint.final', genotype_column = 'rs6686750', jitter = T, violin = T) + ylab('expression V2') + xlab('timepoint')
+plot_gene_expression_per_genotype(mean_expression_v3[mean_expression_v3$gene %in% c('IL6ST', 'IL6R') & mean_expression_v3$cell_type_lowerres == 'DC', ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'timepoint.final', genotype_column = 'rs6686750', jitter = T) + ylab('expression V3') + xlab('timepoint')
+plot_gene_expression_per_genotype(mean_expression_v3[mean_expression_v3$gene %in% c('IL6ST', 'IL6R') & mean_expression_v3$cell_type_lowerres == 'DC', ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'timepoint.final', genotype_column = 'rs6686750', jitter = T, violin = T) + ylab('expression V3') + xlab('timepoint')
+
+```
+
+```{r plot_mean_expression_dc_il6r_chem_deltas, include=TRUE, fig.width=5, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# plot
+plot_gene_expression_per_genotype(mean_expression_v2_deltas[mean_expression_v2_deltas$gene %in% c('IL6ST', 'IL6R') & mean_expression_v2_deltas$cell_type_lowerres == 'DC', ], gene_column = 'gene', expression_column = 'expression_delta', timepoint_column = 'comparison', genotype_column = 'rs6686750', jitter = T) + ylab('expression delta V2') + xlab('timepoints')
+plot_gene_expression_per_genotype(mean_expression_v2_deltas[mean_expression_v2_deltas$gene %in% c('IL6ST', 'IL6R') & mean_expression_v2_deltas$cell_type_lowerres == 'DC', ], gene_column = 'gene', expression_column = 'expression_delta', timepoint_column = 'comparison', genotype_column = 'rs6686750', jitter = T, violin = T) + ylab('expression delta V2') + xlab('timepoints')
+plot_gene_expression_per_genotype(mean_expression_v3_deltas[mean_expression_v3_deltas$gene %in% c('IL6ST', 'IL6R') & mean_expression_v3_deltas$cell_type_lowerres == 'DC', ], gene_column = 'gene', expression_column = 'expression_delta', timepoint_column = 'comparison', genotype_column = 'rs6686750', jitter = T) + ylab('expression delta v3') + xlab('timepoints')
+plot_gene_expression_per_genotype(mean_expression_v3_deltas[mean_expression_v3_deltas$gene %in% c('IL6ST', 'IL6R') & mean_expression_v3_deltas$cell_type_lowerres == 'DC', ], gene_column = 'gene', expression_column = 'expression_delta', timepoint_column = 'comparison', genotype_column = 'rs6686750', jitter = T, violin = T) + ylab('expression delta v3') + xlab('timepoints')
+
+```
+
+```{r plot_mean_expression_dc_il6r_chem, include=TRUE, fig.width=5, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# plot
+plot_gene_expression_per_genotype(mean_expression_v2[mean_expression_v2$gene %in% c('IL6ST', 'IL6R') & mean_expression_v2$cell_type_lowerres == 'monocyte', ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'rs6686750', genotype_column = 'timepoint.final', jitter = T, use_label_dict = F, use_color_coding_dict = F, legendless = F) + ylab('expression V2 monocyte') + xlab('timepoint') + scale_fill_manual(name = 'genotype', values = c('red', 'purple', 'blue'))
+plot_gene_expression_per_genotype(mean_expression_v2[mean_expression_v2$gene %in% c('IL6ST', 'IL6R') & mean_expression_v2$cell_type_lowerres == 'monocyte', ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'rs6686750', genotype_column = 'timepoint.final', jitter = T, use_label_dict = F, use_color_coding_dict = F, legendless = F, violin = T) + ylab('expression V2 monocyte') + xlab('timepoint') + scale_fill_manual(name = 'genotype', values = c('red', 'purple', 'blue'))
+plot_gene_expression_per_genotype(mean_expression_v3[mean_expression_v3$gene %in% c('IL6ST', 'IL6R') & mean_expression_v3$cell_type_lowerres == 'monocyte', ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'rs6686750', genotype_column = 'timepoint.final', jitter = T, use_label_dict = F, use_color_coding_dict = F, legendless = F) + ylab('expression V3 monocyte') + xlab('timepoint') + scale_fill_manual(name = 'genotype', values = c('red', 'purple', 'blue'))
+plot_gene_expression_per_genotype(mean_expression_v3[mean_expression_v3$gene %in% c('IL6ST', 'IL6R') & mean_expression_v3$cell_type_lowerres == 'monocyte', ], gene_column = 'gene', expression_column = 'all', timepoint_column = 'rs6686750', genotype_column = 'timepoint.final', jitter = T, use_label_dict = F, use_color_coding_dict = F, legendless = F, violin = T) + ylab('expression V3 monocyte') + xlab('timepoint') + scale_fill_manual(name = 'genotype', values = c('red', 'purple', 'blue'))
 
 ```
