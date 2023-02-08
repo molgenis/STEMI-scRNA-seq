@@ -48,7 +48,7 @@ for lane in ${LANES[*]}
     R1_UNENCRYPTED_MD5=$(sed -n '1p' ${R1_MD5_UNENCRYPTED_LOC} | awk '{print $1}' | tr -d '\n') # this file is a bit messy, we need the first row and column value [0,0] and then need to remove the newline
     R2_UNENCRYPTED_MD5=$(sed -n '1p' ${R2_MD5_UNENCRYPTED_LOC} | awk '{print $1}' | tr -d '\n')
     R1_ENCRYPTED_MD5=$(cat ${R1_MD5_ENCRYPTED_LOC})
-    R2_ENCRYPTED_MD5=$(cat ${R1_MD5_ENCRYPTED_LOC})
+    R2_ENCRYPTED_MD5=$(cat ${R2_MD5_ENCRYPTED_LOC})
     # now strip extention and read from the filenames so we get just the sample names, then remove the newline
     SAMPLE=$( echo ${R1_NOPATH%%_R1_*.*} | tr -d '\n' )
     # start writing to file

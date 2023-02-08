@@ -28,7 +28,6 @@ for lane in ${LANES[*]}
   # check each file
   for fq in ${LANE_FOLDER}*.fastq.gz
     do
-    COMMAND='md5sum '${fq} > ${OUTPUT_LOC}${lane}'/'${fq##*/}'.md5'
-    ${COMMAND}
+    md5sum ${fq} > ${OUTPUT_LOC}${lane}/${fq##*/}.md5
   done
 done
