@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = FALSE)
 ############################################################################################################################
 # Authors: Roy Oelen
 # Name: stemi_analyse_nichenet_genes.Rmd
-# Function:
+# Function: 
 ############################################################################################################################
 
 ```
@@ -121,7 +121,7 @@ get_max_interaction_per_receptor <- function(nichenet_output, significance_cutof
                 # check if the interaction is already present
                 if (!(receptor %in% names(max_receptor_values))){
                   max_receptor_values[[receptor]] <- interaction
-                # or if the current interaction is weaker
+                # or if the current interaction is weaker 
                 }else if(receptor %in% names(max_receptor_values) & max_receptor_values[[receptor]] < interaction){
                   max_receptor_values[[receptor]] <- interaction
                 }
@@ -173,7 +173,7 @@ get_lfs_for_genes <- function(mast_output_loc, condition_combination, genes=NULL
       }
       # get the lfs
       lfcs <- de_output[match(genes_to_get, rownames(de_output)), lfc_column]
-
+      
       # turn into a dataframe
       lfcs_column <- data.frame(lfcs=lfcs)
       colnames(lfcs_column) <- cell_type
@@ -433,7 +433,7 @@ enrich_for_significant_interactions <- function(genes_per_receiver_and_sender, l
       # add the result
       results_receivers[[receiver]][[sender]] <- enriched_receiver_sender_reactome
       # also add the genes to the total gene list for that specific sender and receiver
-      genes_senders[[sender]] <- unique(c(genes_senders[[sender]], downstream_genes, ligands))
+      genes_senders[[sender]] <- unique(c(genes_senders[[sender]], downstream_genes, ligands)) 
       genes_receivers[[receiver]] <- unique(c(genes_receivers[[receiver]], downstream_genes, ligands))
     }
     # now we have all the genes for the receiver, we can also do that one
@@ -491,9 +491,9 @@ combine_senders_and_combine_receivers <- function(genes_per_receiver_and_sender,
     # check against each sender
     for(sender in names(genes_per_receiver_and_sender[[receiver]])){
       # add this sender to the receiver
-      senders_and_receivers_combined[[receiver]][['all']][[ligand_column]] <- unique(c(senders_and_receivers_combined[[receiver]][['all']][[ligand_column]],
+      senders_and_receivers_combined[[receiver]][['all']][[ligand_column]] <- unique(c(senders_and_receivers_combined[[receiver]][['all']][[ligand_column]], 
                                                                       genes_per_receiver_and_sender[[receiver]][[sender]][[ligand_column]]))
-      senders_and_receivers_combined[[receiver]][['all']][[target_column]] <- unique(c(senders_and_receivers_combined[[receiver]][['all']][[target_column]],
+      senders_and_receivers_combined[[receiver]][['all']][[target_column]] <- unique(c(senders_and_receivers_combined[[receiver]][['all']][[target_column]], 
                                                                       genes_per_receiver_and_sender[[receiver]][[sender]][[target_column]]))
       # add this receiver to the sender list as well
       if (sender %in% names(senders_and_receivers_combined[['all']])) {
@@ -547,24 +547,24 @@ plot_gene_overlap <- function(genes_per_receiver_1, genes_per_receiver_2, target
         category.names = c(set_1_name, set_2_name),
         filename = output_loc_full,
         output = TRUE,
-
+        
         # Output features
         imagetype="png" ,
-        height = 800 ,
-        width = 800 ,
+        height = 800 , 
+        width = 800 , 
         resolution = 300,
         compression = "lzw",
-
+        
         # Circles
         lwd = 2,
         lty = 'blank',
         fill = c(set_1_colour, set_2_colour),
-
+        
         # Numbers
         cex = .6,
         fontface = "bold",
         fontfamily = "sans",
-
+        
         # Set names
         cat.cex = 0.6,
         cat.fontface = "bold",
@@ -693,7 +693,7 @@ matrix_to_pathview <- function(matrix, pathways.ids, return_significant_genes=T)
   # switch entrez
   ligand_lr_sums_entrez <- named_symbol_list_to_entrez(ligand_lr_sums)
   receptor_sums_entrez <- named_symbol_list_to_entrez(receptor_sums)
-
+         
   # check each pathway id
   for(pathway.id in pathways.ids){
     # calculate the maximum absolute value
@@ -823,7 +823,7 @@ pathwview_per_celltype_combination <- function(nichenet_output, output_loc, mast
           setwd(wd_prev)
         }
       }
-
+      
     }
   }
 }
@@ -961,7 +961,7 @@ check_ligand_receptor_and_target_numbers <- function(lt_connections, lr_connecti
                                               lr_connections[[ligand_column]] == ligand &
                                               !is.na(lr_connections[[receptor_interaction_column]]) &
                                               lr_connections[[receptor_interaction_column]] > 0, ])
-
+          
           # and the number of targets for the ligand
           nr_targets <- nrow(lt_connections[lt_connections[[sender_column]] == sender &
                                             lt_connections[[receiver_column]] == receiver &
@@ -1019,7 +1019,7 @@ get_distinct_downstream_gene_numbers <- function(lt_connections, lr_connections,
               lt_connections[[receiver_column]] == receiver &
               lt_connections[[ligand_column]] %in% ligands_with_consequences &
               !is.na(lt_connections[[target_interaction_column]]) &
-              lt_connections[[target_interaction_column]] > 0,
+              lt_connections[[target_interaction_column]] > 0, 
               target_column]
           )
           # and we need how many
@@ -1109,7 +1109,7 @@ ligand_target_numbers_to_interactions <- function(lr_connections, lt_connections
                                                         lt_connections[[receiver_column]] == receiver &
                                                         lt_connections[[ligand_column]] %in% ligands_with_effects &
                                                         !is.na(lt_connections[[target_interaction_column]]) &
-                                                        lt_connections[[target_interaction_column]] > 0,
+                                                        lt_connections[[target_interaction_column]] > 0, 
                                                       ]
           # and check how many
           nr_lt_links <- nrow(downstream_effects_subset)
@@ -1149,7 +1149,7 @@ ligand_receptor_numbers_to_interactions <- function(nr_recep_target_per_ligand, 
           nr_recep_target_per_ligand[[nr_recep_column]]> 0 &
           !is.na(nr_recep_target_per_ligand[[nr_tar_column]]) &
           nr_recep_target_per_ligand[[nr_tar_column]] > 0
-          ,
+          , 
         ]
         # now for each ligand, there are connecting receptors, each ligand is a row, so the sum of the number of receptors of each ligand, is the total amount of LR connections
         nr_connections <- sum(connections_sr_wtargets[[nr_recep_column]])
@@ -1346,7 +1346,7 @@ turn_sizes_to_ranges <- function(link_sizes_df, size_column, from_column, to_col
                                              (link_df[[to_column]] == to_entry), 'to_stop'])
         )
         )
-
+        
         # now we are either zero or the max of both entries, we'll turn that into the actual entries
         link_df[i, from_column] <- from_entry
         link_df[i, to_column] <- to_entry
@@ -1418,8 +1418,8 @@ interactions_to_circle_from_table <- function(interactions_table, plot_title='ce
   circos.initialize(sectors = connections_all_ct$a, xlim = xlims)
   # add track with labels
   circos.track(connections_all_ct$a, y=connections_all_ct$b, panel.fun = function(x, y){
-    circos.text(CELL_META$xcenter,
-                CELL_META$ycenter,
+    circos.text(CELL_META$xcenter, 
+                CELL_META$ycenter, 
                 CELL_META$sector.index)
     circos.axis(labels.cex = 0.6, labels.facing = 'outside')
   })
@@ -1554,7 +1554,7 @@ plot_de_induced_vs_noninduced <- function(induced_vs_noninduced_table, cell_type
   # combine below one another
   entries <- rbind(induced_entries, noninduced_entries)
   # build the plot
-  p <- ggplot(mapping = aes(x = entries[['cell_type']], y = entries[['nr_de_genes']], fill = entries[['induced']])) +
+  p <- ggplot(mapping = aes(x = entries[['cell_type']], y = entries[['nr_de_genes']], fill = entries[['induced']])) + 
     geom_bar(stat = 'identity', position='stack') +
     scale_fill_manual(name = 'induced by ligands', values = list('not induced' = 'blue', 'induced' = 'red')) +
     xlab('cell type') +
@@ -1582,7 +1582,7 @@ filter_lr_by_lt_ligands <- function(lr_connections, lt_connections, receptor_int
         # check if there are ligands
         significant_receiver_sender <- lt_connections[lt_connections[[sender_column]] == sender &
                                                       lt_connections[[receiver_column]] == receiver &
-                                                      !is.na(lt_connections[[target_interaction_column]]) &
+                                                      !is.na(lt_connections[[target_interaction_column]]) & 
                                                       lt_connections[[target_interaction_column]] != 0, ]
         if (nrow(significant_receiver_sender)) {
           # then get the significant ligands
@@ -1590,7 +1590,7 @@ filter_lr_by_lt_ligands <- function(lr_connections, lt_connections, receptor_int
           # and subset the ligand receptors that have a DE downstream gene
           lr_significant_l <- lr_connections[lr_connections[[sender_column]] == sender &
                                              lr_connections[[receiver_column]] == receiver &
-                                             lr_connections[[ligand_column]] %in% ligands_significant &
+                                             lr_connections[[ligand_column]] %in% ligands_significant & 
                                                !is.na(lr_connections[[receptor_interaction_column]]) &
                                                lr_connections[[receptor_interaction_column]] != 0, ]
           # add to the filtered dataframe
@@ -1623,7 +1623,7 @@ lr_pairs_per_celtype <- function(lr_table, celltype_column, ligand_column='ligan
   return(lr_per_celltype)
 }
 
-
+  
 ligands_per_celltype <- function(lr_table, celltype_column, ligand_column='ligand') {
   # put per celltype in a list
   ligands_per_celltype <- list()
@@ -1742,11 +1742,11 @@ v3_Baseline_vs_t24h_perct_omni_unweighted_receptors_all <- get_unique_ligands_ta
 knitr::opts_chunk$set(echo = FALSE)
 
 # merge the version chemistry
-Baseline_vs_t24h_perct_omni_unweighted_ligands <- unique(c(v2_Baseline_vs_t24h_perct_omni_unweighted_genes_all[['ligands']],
+Baseline_vs_t24h_perct_omni_unweighted_ligands <- unique(c(v2_Baseline_vs_t24h_perct_omni_unweighted_genes_all[['ligands']], 
                                                            v3_Baseline_vs_t24h_perct_omni_unweighted_genes_all[['ligands']],
                                                            v2_Baseline_vs_t24h_perct_omni_unweighted_receptors_all[['ligands']],
                                                            v3_Baseline_vs_t24h_perct_omni_unweighted_receptors_all[['ligands']]))
-Baseline_vs_t24h_perct_omni_unweighted_targets <- unique(c(v2_Baseline_vs_t24h_perct_omni_unweighted_genes_all[['targets']],
+Baseline_vs_t24h_perct_omni_unweighted_targets <- unique(c(v2_Baseline_vs_t24h_perct_omni_unweighted_genes_all[['targets']], 
                                                            v3_Baseline_vs_t24h_perct_omni_unweighted_genes_all[['targets']],
                                                            v2_Baseline_vs_t24h_perct_omni_unweighted_receptors_all[['targets']],
                                                            v3_Baseline_vs_t24h_perct_omni_unweighted_receptors_all[['targets']]))
@@ -1807,11 +1807,11 @@ v3_Baseline_vs_t8w_perct_omni_unweighted_receptors_all <- get_unique_ligands_tar
 knitr::opts_chunk$set(echo = FALSE)
 
 # merge the version chemistry
-Baseline_vs_t8w_perct_omni_unweighted_ligands <- unique(c(v2_Baseline_vs_t8w_perct_omni_unweighted_genes_all[['ligands']],
+Baseline_vs_t8w_perct_omni_unweighted_ligands <- unique(c(v2_Baseline_vs_t8w_perct_omni_unweighted_genes_all[['ligands']], 
                                                            v3_Baseline_vs_t8w_perct_omni_unweighted_genes_all[['ligands']],
                                                            v2_Baseline_vs_t8w_perct_omni_unweighted_receptors_all[['ligands']],
                                                            v3_Baseline_vs_t8w_perct_omni_unweighted_receptors_all[['ligands']]))
-Baseline_vs_t8w_perct_omni_unweighted_targets <- unique(c(v2_Baseline_vs_t8w_perct_omni_unweighted_genes_all[['targets']],
+Baseline_vs_t8w_perct_omni_unweighted_targets <- unique(c(v2_Baseline_vs_t8w_perct_omni_unweighted_genes_all[['targets']], 
                                                            v3_Baseline_vs_t8w_perct_omni_unweighted_genes_all[['targets']],
                                                            v2_Baseline_vs_t8w_perct_omni_unweighted_receptors_all[['targets']],
                                                            v3_Baseline_vs_t8w_perct_omni_unweighted_receptors_all[['targets']]))
@@ -1915,11 +1915,11 @@ v3_t24h_vs_t8w_perct_omni_unweighted_receptors_all <- get_unique_ligands_targets
 knitr::opts_chunk$set(echo = FALSE)
 
 # merge the version chemistry
-t24h_vs_t8w_perct_omni_unweighted_ligands <- unique(c(v2_t24h_vs_t8w_perct_omni_unweighted_genes_all[['ligands']],
+t24h_vs_t8w_perct_omni_unweighted_ligands <- unique(c(v2_t24h_vs_t8w_perct_omni_unweighted_genes_all[['ligands']], 
                                                            v3_t24h_vs_t8w_perct_omni_unweighted_genes_all[['ligands']],
                                                            v2_t24h_vs_t8w_perct_omni_unweighted_receptors_all[['ligands']],
                                                            v3_t24h_vs_t8w_perct_omni_unweighted_receptors_all[['ligands']]))
-t24h_vs_t8w_perct_omni_unweighted_targets <- unique(c(v2_t24h_vs_t8w_perct_omni_unweighted_genes_all[['targets']],
+t24h_vs_t8w_perct_omni_unweighted_targets <- unique(c(v2_t24h_vs_t8w_perct_omni_unweighted_genes_all[['targets']], 
                                                            v3_t24h_vs_t8w_perct_omni_unweighted_genes_all[['targets']],
                                                            v2_t24h_vs_t8w_perct_omni_unweighted_receptors_all[['targets']],
                                                            v3_t24h_vs_t8w_perct_omni_unweighted_receptors_all[['targets']]))

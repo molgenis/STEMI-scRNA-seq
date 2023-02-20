@@ -1,0 +1,749 @@
+---
+title: "stemi_correlate_il6_downstream"
+author: "Roy Oelen"
+date: "2023-02-10"
+output: html_document
+---
+
+```{r header, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Roy Oelen
+# Name: stemi_correlate_il6_downstream.Rmd
+# Function:
+############################################################################################################################
+
+```
+
+```{r libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# libraries        #
+####################
+
+# to read the Seurat object
+library(Seurat)
+# load genotype data
+library(vcfR)
+# efficient use of large matrices
+library(data.table)
+# to perform parallel operations
+library(iterators)
+library(foreach)
+library(doParallel)
+# for plotting
+library(ggplot2)
+library(cowplot)
+# using UCell for module scoring
+library(UCell) # NOT IN CONTAINER
+# for linear mixed models
+library(lmerTest)
+```
+
+```{r objects, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# objects.         #
+####################
+# object to hold the genotype information
+Genotypes <- setRefClass('Genotypes',
+  fields = list(
+    # the snps
+    calls = 'data.table',
+    # the metadata
+    meta = 'data.table'
+  ),
+  methods = list(
+    get_genotypes = function(.self, snp_id=NULL, chrom_pos=NULL, snp_pos=NULL, convert_alleles=F) {
+      # we need the index of the SNP
+      snp_index <- NULL
+      if (!is.null(snp_id)) {
+        # extract snp index
+        snp_index <- grep(snp_id, .self$meta[['ID']])
+      } else if (!is.null(chrom_pos) & !is.null(snp_pos)) {
+        # extract snp index
+        snp_index <- which(.self$meta[['CHROM']] == chrom_pos & .self$meta[['POS']] == snp_pos)
+      } else {
+        stop("Need to supply the variant ID, or both the CHROM and SNP positions")
+      }
+      # grab the genotypes
+      genotypes_raw <- as.vector(unlist(.self$calls[snp_index, ]))
+      # convert to alleles if requested
+      if (convert_alleles) {
+        # get the ref
+        ref <- .self$meta[snp_index, 'REF'][['REF']]
+        # and alt
+        alt <- .self$meta[snp_index, 'ALT'][['ALT']]
+        # harmonize placement of slash
+        genotypes_raw <- gsub('1\\|0', '0\\|1', genotypes_raw)
+        genotypes_raw <- gsub('1/0', '0/1', genotypes_raw)
+        # replace letters
+        genotypes_raw <- gsub('0', ref, genotypes_raw)
+        genotypes_raw <- gsub('1', alt, genotypes_raw)
+      }
+      # turn into list
+      genotypes_raw <- as.list(genotypes_raw)
+      # add the participants as the keys
+      names(genotypes_raw) <- colnames(.self$calls)
+      return(genotypes_raw)
+    }
+  )
+)
+
+```
+
+```{r functions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# Functions        #
+####################
+
+
+create_genotypes_object <- function(genotypes_vcf){
+  # get the donors in the genotype data
+  donors_vcf <- colnames(genotypes_vcf@gt)
+  # get the intersection
+  donors <- setdiff(donors_vcf, c('FORMAT'))
+  # and the genotype data itself
+  gt_calls <- data.table(extract.gt(genotypes_vcf)[, donors])
+  # grab the genotypes
+  gt_metadata <- data.table(genotypes_vcf@fix[, c('CHROM', 'POS', 'ID', 'REF', 'ALT')])
+  # create object
+  genos <- Genotypes$new(calls = gt_calls, meta = gt_metadata)
+  return(genos)
+}
+
+
+olink_to_plottable_table <- function(olink, split_char='\\.'){
+  id_and_timepoint_df <- NULL
+  # check the rownames
+  for(id_and_timepoint in rownames(olink)){
+    # split into id and timepoint
+    id_and_timepoint_split <- strsplit(id_and_timepoint, split_char)
+    id <- id_and_timepoint_split[[1]][[1]]
+    timepoint <- id_and_timepoint_split[[1]][[2]]
+    # turn into row
+    id_and_timepoint_row <- data.frame(id=c(id), timepoint=c(timepoint))
+    # add to dataframe
+    if(is.null(id_and_timepoint_df)){
+      id_and_timepoint_df <- id_and_timepoint_row
+    }
+    else{
+      id_and_timepoint_df <- rbind(id_and_timepoint_df, id_and_timepoint_row)
+    }
+  }
+  # add new columns to original data
+  olink <- cbind(id_and_timepoint_df, olink)
+  return(olink)
+}
+olinkid_to_genesymbol <- function(olink_ids, olinkid_to_uid_loc, uniprotid_to_gs_loc){
+    # read mapping of olink ID to uniprot ID
+    olinkid_to_uid <- read.table(olinkid_to_uid_loc, sep = '\t', header = T, stringsAsFactors = F)
+    # get the uid
+    uid <- olinkid_to_uid[match(olink_ids, olinkid_to_uid$OlinkID), 'Uniprot.ID']
+    # if there is a gene symbol mapping, do that one as well
+    uniprotid_to_gs <- read.table(uniprotid_to_gs_loc, sep = '\t', header = T, stringsAsFactors = F)
+    gs <- uniprotid_to_gs[match(uid, uniprotid_to_gs$From), 'To']
+    # put result into table
+    mapping <- data.frame(olinkid = olink_ids, uid = uid, gs = gs)
+    return(mapping)
+}
+
+
+transform_timepoint_lane_table <- function(timepoint_lane_table, lane_column='ExpNr') {
+  # init the table
+  transformed_table <- NULL
+  # get the column names
+  colnames_original_table <- colnames(timepoint_lane_table)
+  # the timepoints are all columns except for the lane
+  timepoints <- setdiff(colnames_original_table, lane_column)
+  # check each lane
+  for (row_num in 1:nrow(timepoint_lane_table)) {
+    # grab the row
+    row <- timepoint_lane_table[row_num, ]
+    # get the lane
+    lane <- row[[lane_column]]
+    # check each timepoint
+    for (timepoint in timepoints) {
+      # get the participants for that timepoint
+      participant_string <- row[[timepoint]]
+      # then split them by the comma
+      participants <- unlist(strsplit(participant_string, split = ','))
+      # turn into a tidy little dataframe
+      entry_lane <- data.frame(participant = participants, timepoint = rep(timepoint, times = length(participants)), lane = rep(lane, times = length(participants)))
+      # add to our new table
+      if (is.null(transformed_table)) {
+        transformed_table <- entry_lane
+      }else {
+        transformed_table <- rbind(transformed_table, entry_lane)
+      }
+    }
+  }
+  return(transformed_table)
+}
+
+
+create_mean_expression_table <- function(seurat_object, interested_genes, timepoint, celltype, participant_column='assignment.final', celltype_column='celltype.final', timepoint_column='timepoint.final', assay='SCT', slot='counts'){
+  # subset to genes that are not empty
+  genes_to_use <- interested_genes[!is.na(interested_genes)]
+  # subset to the condition
+  seurat_object_subset <- seurat_object[, !is.na(seurat_object@meta.data[[participant_column]]) &
+                                          !is.na(seurat_object@meta.data[[celltype_column]]) & 
+                                          seurat_object@meta.data[[celltype_column]] == celltype &
+                                          !is.na(seurat_object@meta.data[[timepoint_column]]) &
+                                          seurat_object@meta.data[[timepoint_column]] == timepoint]
+  # get the genes that we have expression data for
+  genes_to_use <- intersect(interested_genes, rownames(seurat_object_subset))
+  # set ident
+  Idents(object = seurat_object_subset) <- participant_column
+  # use built-in average expression function
+  mean_expression_matrix <- AverageExpression(seurat_object_subset, assays = c(assay), slot = slot, features = genes_to_use)[[assay]]
+  return(mean_expression_matrix)
+}
+create_mean_expression_matrices_per_celltype <- function(seurat_object, interested_genes, timepoint, celltypes=NULL, participant_column='assignment.final', celltype_column='celltype.final', timepoint_column='timepoint.final', assay='SCT', slot='counts') {
+  # get the celltypes to consider
+  cell_types_to_use <- unique(seurat_object@meta.data[[celltype_column]])
+  if (!is.null(celltypes)) {
+    celltypes_to_use <- intersect(cell_types_to_use, celltypes)
+  }
+  # and for each cell type
+  expression_matrix_per_celltype <- foreach(cell_type = cell_types_to_use) %dopar% {
+    create_mean_expression_table(seurat_object = seurat_object, interested_genes = interested_genes, timepoint = timepoint, celltype = cell_type, participant_column = participant_column, celltype_column = celltype_column, timepoint_column = timepoint_column, assay = assay, slot = slot)
+  }
+  names(expression_matrix_per_celltype) <- cell_types_to_use
+  return(expression_matrix_per_celltype)
+}
+
+
+create_mean_expression_matrices_per_timepoint <- function(seurat_object, interested_genes, timepoints=NULL, celltypes=NULL, participant_column='assignment.final', celltype_column='celltype.final', timepoint_column='timepoint.final', assay='SCT', slot='counts') {
+  # get the timepoints to consider
+  timepoints_to_use <- unique(seurat_object@meta.data[[timepoint_column]])
+  if (!is.null(timepoints)) {
+    timepoints_to_use <- intersect(timepoints_to_use, timepoints)
+  }
+  # now check each timepoint
+  expression_matrix_per_timepoint <- foreach(timepoint = timepoints_to_use) %dopar% {
+    mean_expression_timepoint <- create_mean_expression_matrices_per_celltype(seurat_object, interested_genes, timepoint = timepoint, celltypes = celltypes, participant_column = participant_column, celltype_column = celltype_column, timepoint_column = timepoint_column, assay = assay, slot = slot)
+  }
+  names(expression_matrix_per_timepoint) <- timepoints_to_use
+  return(expression_matrix_per_timepoint)
+}
+
+plot_gene_vs_protein_expression <- function(mean_expression_gene, protein_expression, gene_symbol, olink_id, timepoint_gene, timepoint_protein, genotypes=NULL, variant_id=NULL, inclusion_list=NULL, celltype='bulk', protein_timepoint_column='timepoint', protein_id_column='id', paper_style=T, legendless=F) {
+  # extract the relevant gene expression
+  gene_expression_relevant <- data.frame(
+    participant=colnames(mean_expression_gene[[timepoint_gene]][[celltype]]), 
+    gene=as.vector(unlist(mean_expression_gene[[timepoint_gene]][[celltype]][gene_symbol, ])))
+  # extract the relevant protein expression
+  protein_expression_relevant <- data.frame(
+    participant=protein_expression[protein_expression[[protein_timepoint_column]] == timepoint_protein, protein_id_column],
+    protein=protein_expression[protein_expression[[protein_timepoint_column]] == timepoint_protein, olink_id]
+  )
+  # merge these two
+  combined_expression <- merge(gene_expression_relevant, protein_expression_relevant, by='participant', all=F)
+  # subset to donors if requested
+  if (!is.null(inclusion_list)) {
+    combined_expression <- combined_expression[combined_expression[['participant']] %in% inclusion_list, ]
+  }
+  # and we'll plot
+  p <- NULL
+  if (!is.null(genotypes) & !is.null(variant_id)) {
+    # add the genotype data
+    genotypes_variant <- genotypes$get_genotypes(variant_id, convert_alleles = T)
+    # get the genotypes for the participants
+    genotypes_participants <- as.vector(unlist(genotypes_variant[combined_expression[['participant']]]))
+    # add as a column
+    combined_expression[['genotype']] <- genotypes_participants
+    # create the plot
+    p <- ggplot(data = combined_expression, mapping = aes(x = gene, y = protein, col = genotype)) + geom_point() + geom_smooth(data = combined_expression, method='lm')
+  }
+  else{
+    p <- ggplot(data = combined_expression, mapping = aes(x = gene, y = protein)) + geom_point()
+  }
+  # change the style
+  if (paper_style) {
+    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  # remove legendless if required
+  if (legendless) {
+    p <- p + theme(legend.position = 'none')
+  }
+  return(p)
+}
+
+get_average_metadata_value_per_donor <- function(seurat_object, metadata_column, celltype, participant_column='assignment.final', celltype_column='celltype.final') {
+  # subset to that celltype
+  seurat_object_celltype <- seurat_object[, !is.na(seurat_object@meta.data[[celltype_column]]) & seurat_object@meta.data[[celltype_column]] == celltype]
+  # get a list of participants
+  participants <- unique(seurat_object_celltype@meta.data[[participant_column]])
+  # remove empty entries
+  participants <- participants[!is.na(participants)]
+  # create the dataframe
+  mean_value_per_participant <- data.frame(x = rep(NA, times = length(participants)), y = rep(NA, times = length(participants)))
+  colnames(mean_value_per_participant) <- c(paste(metadata_column, '.mean', sep = ''), 'participant')
+  # check each participant
+  for (i in 1:length(participants)) {
+    # get the participant
+    participant <- participants[i]
+    # subset to that participant
+    seurat_object_participant <- seurat_object_celltype[, !is.na(seurat_object_celltype@meta.data[[participant_column]]) & seurat_object_celltype@meta.data[[participant_column]] == participant]
+    # get the average value
+    mean_value <- mean(seurat_object_participant@meta.data[[metadata_column]])
+    # add the mean value
+    mean_value_per_participant[i, ] <- c(mean_value, participant)
+  }
+  # make the value numeric
+  mean_value_per_participant[[paste(metadata_column, '.mean', sep = '')]] <- as.numeric(as.character(mean_value_per_participant[[paste(metadata_column, '.mean', sep = '')]]))
+  return(mean_value_per_participant)
+}
+
+
+get_average_metadata_value_per_celltype <- function(seurat_object, metadata_column, timepoint, celltypes=NULL, participant_column='assignment.final', celltype_column='celltype.final', timepoint_column='timepoint.final') {
+  # subset to that timepoint
+  seurat_object_timepoint <- seurat_object[, !is.na(seurat_object@meta.data[[timepoint_column]]) & seurat_object@meta.data[[timepoint_column]] == timepoint]
+  # get the timepoints to consider
+  celltypes_to_use <- unique(seurat_object@meta.data[[celltype_column]])
+  # remove empty entries
+  celltypes_to_use <- celltypes_to_use[!is.na(celltypes_to_use)]
+  # subset if requested
+  if (!is.null(celltypes)) {
+    celltypes_to_use <- intersect(celltypes_to_use, celltypes)
+  }
+  # now check each celltype
+  mean_matrix_per_celltype <- foreach(celltype = celltypes_to_use) %dopar% {
+    # get the mean value per celltype
+    mean_matrix_celltype <- get_average_metadata_value_per_donor(seurat_object_timepoint, metadata_column, celltype, participant_column = participant_column, celltype_column = celltype_column)
+    # add the celltype as a column
+    mean_matrix_celltype[[celltype_column]] <- celltype
+    return(mean_matrix_celltype)
+  }
+  names(mean_matrix_per_celltype) <- celltypes_to_use
+  # combine all of these matrices in this list
+  mean_matrices_celltype <- do.call("rbind", mean_matrix_per_celltype)
+  return(mean_matrices_celltype)
+}
+
+
+
+get_average_metadata_value_per_timepoint <- function(seurat_object, metadata_column, timepoints=NULL, celltypes=NULL, participant_column='assignment.final', celltype_column='celltype.final', timepoint_column='timepoint.final') {
+  # get the timepoints to consider
+  timepoints_to_use <- unique(seurat_object@meta.data[[timepoint_column]])
+  # remove empty entries
+  timepoints_to_use <- timepoints_to_use[!is.na(timepoints_to_use)]
+  # subset if requested
+  if (!is.null(timepoints)) {
+    timepoints_to_use <- intersect(timepoints_to_use, timepoints)
+  }
+  # now check each timepoint
+  mean_matrix_per_timepoint <- foreach(timepoint = timepoints_to_use) %dopar% {
+    # get the average expression for this timepoint
+    mean_matrix_timepoint <- get_average_metadata_value_per_celltype(seurat_object, metadata_column, timepoint, celltypes = celltypes, participant_column = participant_column, celltype_column = celltype_column, timepoint_column = timepoint_column)
+    # add the timepoint as a column
+    mean_matrix_timepoint[[timepoint_column]] <- timepoint
+    return(mean_matrix_timepoint)
+  }
+  names(mean_matrix_per_timepoint) <- timepoints_to_use
+  # combine all of these matrices in this list
+  mean_matrices_timepoint <- do.call("rbind", mean_matrix_per_timepoint)
+  return(mean_matrices_timepoint)
+}
+
+
+average_metadata_to_mean_expression_like <- function(metadata_mean_table, participant_column='participant', cell_type_column='cell_type', timepoint_column='timepoint.final'){
+  # make a list per timepoint
+  matrices_per_timepoint <- list()
+  # check each timepoint
+  for (timepoint in unique(metadata_mean_table[[timepoint_column]])) {
+    # subset to that timepoint
+    metadata_mean_table_timepoint <- metadata_mean_table[metadata_mean_table[[timepoint_column]] == timepoint, ]
+    # make a list per celltype
+    matrices_per_celltype <- list()
+    # check each cell type
+    for (celltype in metadata_mean_table_timepoint[[cell_type_column]]) {
+      # subset to that celltype
+      metadata_mean_celltype <- metadata_mean_table_timepoint[metadata_mean_table_timepoint[[cell_type_column]] == celltype, ]
+      # grab the columns that are not the celltype, timepoint or participant
+      relevant_columns <- setdiff(colnames(metadata_mean_celltype), c(participant_column, cell_type_column, timepoint_column))
+      # grab the participants
+      participants <- metadata_mean_celltype[[participant_column]]
+      # grab the other values
+      metadata_mean_celltype_relevant <- metadata_mean_celltype[, relevant_columns]
+      # transpose to be like the format we expect
+      metadata_mean_celltype_relevant <- data.frame(t(metadata_mean_celltype_relevant))
+      # now set the participants to be the column names
+      colnames(metadata_mean_celltype_relevant) <- participants
+      # and the original columns the rownames
+      rownames(metadata_mean_celltype_relevant) <- relevant_columns
+      # make all entries numeric
+      for (participant in colnames(metadata_mean_celltype_relevant)) {
+        metadata_mean_celltype_relevant[[participant]] <- as.numeric(metadata_mean_celltype_relevant[[participant]])
+      }
+      # add result to list
+      matrices_per_celltype[[celltype]] <- metadata_mean_celltype_relevant
+    }
+    # add result to list
+    matrices_per_timepoint[[timepoint]] <- matrices_per_celltype
+  }
+  return(matrices_per_timepoint)
+}
+
+
+plot_qtl_from_table <- function(expression_table, qtrait_column, genotypes, variant_id, participant_column='participant', convert_to_alleles=T, paper_style=T, violin=F, pointless=F, legendless=T, jitter=T){
+  # extract the genotypes
+  genotypes_participants <- genotypes$get_genotypes(variant_id, convert_alleles = convert_to_alleles)
+  # get the quantative trait
+  qtrait <- as.list(expression_table[[qtrait_column]])
+  names(qtrait) <- expression_table[[participant_column]]
+  # get the common participants
+  common_participants <- intersect(names(genotypes_participants), names(qtrait))
+  # put in a tidy dataframe
+  plot_frame <- data.frame(variant = as.vector(unlist(genotypes_participants[common_participants])),
+                           expression = as.vector(unlist(qtrait[common_participants])))
+  p <- NULL
+  if(violin){
+    p <- ggplot(plot_frame,
+              aes(x = variant, y = expression, fill = variant)
+      ) +
+    geom_violin()
+  }
+  else{
+    p <- ggplot(plot_frame,
+              aes(x = variant, y = expression, fill = variant)
+      ) +
+    geom_boxplot(outlier.shape = NA)
+  }
+  # add jitter if requested
+  if (jitter) {
+    p <- p + geom_jitter(size = 0.5, alpha = 0.5)
+  }
+  # add custom colours if requested
+  # if (use_color_coding_dict) {
+  #   p <- p + scale_fill_manual(values = get_color_coding_dict())
+  # }
+  if (paper_style) {
+    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  # remove points if requested
+  if (pointless) {
+    p <- p + theme(axis.text.x=element_blank(),
+                   axis.ticks = element_blank(),
+                   axis.title.x = element_blank())
+  }
+  # remove legend if requested
+  if (legendless) {
+    p <- p + theme(legend.position = 'none')
+  }
+  return(p)
+}
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# Main Code        #
+####################
+
+# location of various files
+olinkid_to_uid_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/olink/olinkid_to_uniprotid.tsv'
+uniprotid_to_gs_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/olink/uniprot_to_genesymbol.tsv'
+gs_to_ens_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/features_v3.tsv'
+olink_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/olink/20200442_Groot_NPX-QC_format_fixed.tsv'
+inclusion_list_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata/included_participants.txt'
+metadata_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata//cardio.integrated.20210301.metadata.tsv'
+# load mapping files
+gs_to_ens <- read.table(gs_to_ens_loc, sep = '\t', header = F)
+uniprotid_to_gs <- read.table(uniprotid_to_gs_loc, sep = '\t', header = T)
+olinkid_to_uid <- read.table(olinkid_to_uid_loc, sep = '\t', header = T)
+# and read the actual data
+olink <- read.table(olink_loc, sep = '\t', header = T, row.names = 1)
+# covert so that the timepoint is split as a separate column
+olink_plottable <- olink_to_plottable_table(olink)
+# get the gene symbols
+symbol_table <- olinkid_to_genesymbol(colnames(olink), olinkid_to_uid_loc = olinkid_to_uid_loc, uniprotid_to_gs_loc = uniprotid_to_gs_loc)
+# location of the genotype data
+genotypes_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/genotype/stemi_all_merged_aragam2022.vcf.gz'
+
+```
+
+```{r lane_annotations, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+# location of the samples and their timepoint and lane
+stemi_timepoint_lane_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata/stemi-sampleIDs.txt'
+# read the table
+stemi_timepoint_lane <- read.table(stemi_timepoint_lane_loc, sep = '\t', header = T)
+# transform into a format more suitable to what we want it for
+stemi_participant_timepoint_lane <- transform_timepoint_lane_table(stemi_timepoint_lane)
+# add the chemistry
+stemi_participant_timepoint_lane[['chem']] <- NA
+stemi_participant_timepoint_lane[startsWith(stemi_participant_timepoint_lane[['lane']], '18'), 'chem'] <- 'v2'
+stemi_participant_timepoint_lane[startsWith(stemi_participant_timepoint_lane[['lane']], '19'), 'chem'] <- 'v3'
+```
+
+```{r seurat, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+# read Seurat object
+cardio_integrated_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/seurat/cardio.integrated.20210301.rds'
+cardio_integrated <- readRDS(cardio_integrated_loc)
+```
+
+```{r average_rna, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+# get the interested genes
+interested_genes = rownames(cardio_integrated)
+# without empty ones
+interested_genes <- interested_genes[!is.na(interested_genes)]
+# create mean expression matrices
+mean_expression_matrices_timepoint_celltype <- create_mean_expression_matrices_per_timepoint(seurat_object = cardio_integrated, interested_genes = interested_genes, participant_column = 'assignment.final', timepoint_column = 'timepoint.final', celltype_column = 'cell_type_lowerres')
+# also for bulk
+cardio_integrated@meta.data[['bulk']] <- 'bulk'
+mean_expression_matrices_timepoint_bulk <- create_mean_expression_matrices_per_timepoint(seurat_object = cardio_integrated, interested_genes = interested_genes, participant_column = 'assignment.final', timepoint_column = 'timepoint.final', celltype_column = 'bulk')
+```
+
+```{r read_genotypes, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get genotype data
+genotypes <- read.vcfR(genotypes_loc)
+# turn into object
+genotype_object <- create_genotypes_object(genotypes)
+
+```
+
+```{r correlation_plots_dc, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+plot_grid(
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_celltype, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'DC', timepoint_gene = 'Baseline', timepoint_protein = 'Baseline', inclusion_list = stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v2', 'participant'], genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('DC Baseline (10x V2)'),
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_celltype, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'DC', timepoint_gene = 'Baseline', timepoint_protein = 'Baseline', inclusion_list = stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v3', 'participant'], genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('DC Baseline (10x V3)'),
+  NULL,
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_celltype, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'DC', timepoint_gene = 't24h', timepoint_protein = 't24h', inclusion_list = stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v2', 'participant'], genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('DC t24h (10x V2)'),
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_celltype, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'DC', timepoint_gene = 't24h', timepoint_protein = 't24h', inclusion_list = stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v3', 'participant'], genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('DC t24h (10x V3)'),
+  get_legend(plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_celltype, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'DC', timepoint_gene = 't24h', timepoint_protein = 't24h', inclusion_list = stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v3', 'participant'], genotypes = genotype_object, variant_id = 'rs6686750', legendless = F)),
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_celltype, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'DC', timepoint_gene = 't8w', timepoint_protein = 't8w', inclusion_list = stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v2', 'participant'], genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('DC t8w (10x V2)'),
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_celltype, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'DC', timepoint_gene = 't8w', timepoint_protein = 't8w', inclusion_list = stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v3', 'participant'], genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('DC t8w (10x V3)'),
+  NULL,
+  nrow = 3,
+  ncol = 3
+)
+
+```
+
+```{r correlation_plots, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+plot_grid(
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_celltype, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'monocyte', timepoint_gene = 'Baseline', timepoint_protein = 'Baseline', inclusion_list = stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v2', 'participant'], genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('monocyte Baseline (10x V2)'),
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_celltype, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'monocyte', timepoint_gene = 'Baseline', timepoint_protein = 'Baseline', inclusion_list = stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v3', 'participant'], genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('monocyte Baseline (10x V3)'),
+  NULL,
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_celltype, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'monocyte', timepoint_gene = 't24h', timepoint_protein = 't24h', inclusion_list = stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v2', 'participant'], genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('monocyte t24h (10x V2)'),
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_celltype, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'monocyte', timepoint_gene = 't24h', timepoint_protein = 't24h', inclusion_list = stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v3', 'participant'], genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('monocyte t24h (10x V3)'),
+  get_legend(plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_celltype, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'monocyte', timepoint_gene = 't24h', timepoint_protein = 't24h', inclusion_list = stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v3', 'participant'], genotypes = genotype_object, variant_id = 'rs6686750', legendless = F)),
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_celltype, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'monocyte', timepoint_gene = 't8w', timepoint_protein = 't8w', inclusion_list = stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v2', 'participant'], genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('monocyte t8w (10x V2)'),
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_celltype, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'monocyte', timepoint_gene = 't8w', timepoint_protein = 't8w', inclusion_list = stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v3', 'participant'], genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('monocyte t8w (10x V3)'),
+  NULL,
+  nrow = 3,
+  ncol = 3
+)
+
+```
+
+```{r correlation_plots, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+plot_grid(
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_bulk, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'bulk', timepoint_gene = 'Baseline', timepoint_protein = 'Baseline', inclusion_list = stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v2', 'participant'], genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('bulk Baseline (10x V2)'),
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_bulk, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'bulk', timepoint_gene = 'Baseline', timepoint_protein = 'Baseline', inclusion_list = stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v3', 'participant'], genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('bulk Baseline (10x V3)'),
+  NULL,
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_bulk, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'bulk', timepoint_gene = 't24h', timepoint_protein = 't24h', inclusion_list = stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v2', 'participant'], genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('bulk t24h (10x V2)'),
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_bulk, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'bulk', timepoint_gene = 't24h', timepoint_protein = 't24h', inclusion_list = stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v3', 'participant'], genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('bulk t24h (10x V3)'),
+  get_legend(plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_bulk, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'bulk', timepoint_gene = 't24h', timepoint_protein = 't24h', inclusion_list = stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v3', 'participant'], genotypes = genotype_object, variant_id = 'rs6686750', legendless = F)),
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_bulk, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'bulk', timepoint_gene = 't8w', timepoint_protein = 't8w', inclusion_list = stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v2', 'participant'], genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('bulk t8w (10x V2)'),
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_bulk, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'bulk', timepoint_gene = 't8w', timepoint_protein = 't8w', inclusion_list = stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v3', 'participant'], genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('bulk t8w (10x V3)'),
+  NULL,
+  nrow = 3,
+  ncol = 3
+)
+
+```
+
+```{r correlation_plots, include=TRUE, fig.width=5, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+plot_grid(
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_celltype, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'DC', timepoint_gene = 'Baseline', timepoint_protein = 'Baseline', genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('DC Baseline'),
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_celltype, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'DC', timepoint_gene = 't24h', timepoint_protein = 't24h', genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('DC t24h'),
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_celltype, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'DC', timepoint_gene = 't8w', timepoint_protein = 't24h', genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('DC t24h'),
+  get_legend(plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_celltype, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'DC', timepoint_gene = 't8w', timepoint_protein = 't24h', genotypes = genotype_object, variant_id = 'rs6686750', legendless = F)),
+  nrow = 1,
+  ncol = 4
+)
+
+```
+
+```{r correlation_plots, include=TRUE, fig.width=5, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+plot_grid(
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_celltype, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'monocyte', timepoint_gene = 'Baseline', timepoint_protein = 'Baseline', genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('monocyte Baseline'),
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_celltype, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'monocyte', timepoint_gene = 't24h', timepoint_protein = 't24h', genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('monocyte t24h'),
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_celltype, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'monocyte', timepoint_gene = 't8w', timepoint_protein = 't24h', genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('monocyte t24h'),
+  get_legend(plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_celltype, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'monocyte', timepoint_gene = 't8w', timepoint_protein = 't24h', genotypes = genotype_object, variant_id = 'rs6686750', legendless = F)),
+  nrow = 1,
+  ncol = 4
+)
+
+```
+
+```{r correlation_plots, include=TRUE, fig.width=5, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+plot_grid(
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_bulk, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'bulk', timepoint_gene = 'Baseline', timepoint_protein = 'Baseline', genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('bulk Baseline'),
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_bulk, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'bulk', timepoint_gene = 't24h', timepoint_protein = 't24h', genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('bulk t24h'),
+  plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_bulk, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'bulk', timepoint_gene = 't8w', timepoint_protein = 't24h', genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST RNA') + ylab('IL6R protein') + ggtitle('bulk t24h'),
+  get_legend(plot_gene_vs_protein_expression(mean_expression_matrices_timepoint_bulk, olink_plottable, gene_symbol = 'IL6ST', olink_id = 'OID00602', celltype = 'bulk', timepoint_gene = 't8w', timepoint_protein = 't24h', genotypes = genotype_object, variant_id = 'rs6686750', legendless = F)),
+  nrow = 1,
+  ncol = 4
+)
+
+```
+
+```{r add_module_il6, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# location of the reactome genes for IL6
+il6_genes_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/gene_lists/il6-pathway-reactome.txt'
+# load the gene list
+il6_genes <- read.table(il6_genes_loc, header = F)$V1
+# adding IL6
+cardio_integrated <-  AddModuleScore_UCell(cardio_integrated, features = list('IL6' = il6_genes))
+
+```
+
+```{r mean_module_il6, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get the average IL6 module score
+il6_mean_modules_scores <- get_average_metadata_value_per_timepoint(cardio_integrated, 'IL6_UCell', celltype_column = 'cell_type_lowerres')
+# convert to the mean expression gene format
+il6_mean_modules_scores_genelike <- average_metadata_to_mean_expression_like(il6_mean_modules_scores, cell_type_column = 'cell_type_lowerres')
+
+```
+
+```{r mean_module_il6_monocyte, include=TRUE, fig.width=10, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+plot_grid(
+  plot_gene_vs_protein_expression(il6_mean_modules_scores_genelike, olink_plottable, gene_symbol = 'IL6_UCell.mean', olink_id = 'OID00602', celltype = 'monocyte', timepoint_gene = 'Baseline', timepoint_protein = 'Baseline', genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST module') + ylab('IL6R protein') + ggtitle('monocyte Baseline'),
+  plot_gene_vs_protein_expression(il6_mean_modules_scores_genelike, olink_plottable, gene_symbol = 'IL6_UCell.mean', olink_id = 'OID00602', celltype = 'monocyte', timepoint_gene = 't24h', timepoint_protein = 't24h', genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6 module') + ylab('IL6R protein') + ggtitle('monocyte t24h'),
+  plot_gene_vs_protein_expression(il6_mean_modules_scores_genelike, olink_plottable, gene_symbol = 'IL6_UCell.mean', olink_id = 'OID00602', celltype = 'monocyte', timepoint_gene = 't8w', timepoint_protein = 't24h', genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST module') + ylab('IL6R protein') + ggtitle('monocyte t24h'),
+  get_legend(plot_gene_vs_protein_expression(il6_mean_modules_scores_genelike, olink_plottable, gene_symbol = 'IL6_UCell.mean', olink_id = 'OID00602', celltype = 'monocyte', timepoint_gene = 't8w', timepoint_protein = 't24h', genotypes = genotype_object, variant_id = 'rs6686750', legendless = F)),
+  nrow = 1,
+  ncol = 4
+)
+
+```
+
+```{r mean_module_il6_dc, include=TRUE, fig.width=10, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+plot_grid(
+  plot_gene_vs_protein_expression(il6_mean_modules_scores_genelike, olink_plottable, gene_symbol = 'IL6_UCell.mean', olink_id = 'OID00602', celltype = 'DC', timepoint_gene = 'Baseline', timepoint_protein = 'Baseline', genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST module') + ylab('IL6R protein') + ggtitle('DC Baseline'),
+  plot_gene_vs_protein_expression(il6_mean_modules_scores_genelike, olink_plottable, gene_symbol = 'IL6_UCell.mean', olink_id = 'OID00602', celltype = 'DC', timepoint_gene = 't24h', timepoint_protein = 't24h', genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6 module') + ylab('IL6R protein') + ggtitle('DC t24h'),
+  plot_gene_vs_protein_expression(il6_mean_modules_scores_genelike, olink_plottable, gene_symbol = 'IL6_UCell.mean', olink_id = 'OID00602', celltype = 'DC', timepoint_gene = 't8w', timepoint_protein = 't24h', genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST module') + ylab('IL6R protein') + ggtitle('DC t24h'),
+  get_legend(plot_gene_vs_protein_expression(il6_mean_modules_scores_genelike, olink_plottable, gene_symbol = 'IL6_UCell.mean', olink_id = 'OID00602', celltype = 'DC', timepoint_gene = 't8w', timepoint_protein = 't24h', genotypes = genotype_object, variant_id = 'rs6686750', legendless = F)),
+  nrow = 1,
+  ncol = 4
+)
+
+```
+
+```{r gt_module_il6_dc, include=TRUE, fig.width=9, fig.height=3}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# plot the module score per genotype group
+plot_grid(
+  plot_qtl_from_table(il6_mean_modules_scores[il6_mean_modules_scores$cell_type_lowerres == 'DC' & il6_mean_modules_scores$timepoint.final == 'Baseline', ], 'IL6_UCell.mean', genotypes = genotype_object, variant_id = 'rs6686750') + ylab('DC IL6 mean module score') + xlab('') + ggtitle('t0'),
+  plot_qtl_from_table(il6_mean_modules_scores[il6_mean_modules_scores$cell_type_lowerres == 'DC' & il6_mean_modules_scores$timepoint.final == 't24h', ], 'IL6_UCell.mean', genotypes = genotype_object, variant_id = 'rs6686750') + ylab('DC IL6 mean module score') + xlab('') + ggtitle('t24h'),
+  plot_qtl_from_table(il6_mean_modules_scores[il6_mean_modules_scores$cell_type_lowerres == 'DC' & il6_mean_modules_scores$timepoint.final == 't8w', ], 'IL6_UCell.mean', genotypes = genotype_object, variant_id = 'rs6686750') + ylab('DC IL6 mean module score') + xlab('') + ggtitle('t8w'),
+  nrow = 1,
+  ncol = 3
+)
+
+```
+
+```{r gt_module_il6_dc, include=TRUE, fig.width=9, fig.height=3}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# add the genotype data manually
+il6_mean_modules_scores_stemi[['rs6686750']] <- as.vector(unlist(genotype_object$get_genotypes('rs6686750', convert_alleles=T)[il6_mean_modules_scores_stemi$participant]))
+# convert to numeric
+il6_mean_modules_scores_stemi[['rs6686750_numeric']] <- NA
+il6_mean_modules_scores_stemi[il6_mean_modules_scores_stemi$rs6686750 == 'A|A', 'rs6686750_numeric'] <- 0
+il6_mean_modules_scores_stemi[il6_mean_modules_scores_stemi$rs6686750 == 'A|G', 'rs6686750_numeric'] <- 1
+il6_mean_modules_scores_stemi[il6_mean_modules_scores_stemi$rs6686750 == 'G|G', 'rs6686750_numeric'] <- 2
+# add the chemistry as well
+il6_mean_modules_scores_stemi[['chem']] <- NA
+il6_mean_modules_scores_stemi[il6_mean_modules_scores_stemi$participant %in% stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v2', 'participant'], 'chem'] <- 'v2'
+il6_mean_modules_scores_stemi[il6_mean_modules_scores_stemi$participant %in% stemi_participant_timepoint_lane[stemi_participant_timepoint_lane$chem == 'v3', 'participant'], 'chem'] <- 'v3'
+
+# try simple regression
+summary(lm(data = il6_mean_modules_scores_stemi[il6_mean_modules_scores_stemi$cell_type_lowerres == 'DC', ], formula = as.formula('IL6_UCell.mean ~ timepoint.final + chem + rs6686750_numeric')))
+# or per timepoint
+summary(lm(data = il6_mean_modules_scores_stemi[il6_mean_modules_scores_stemi$cell_type_lowerres == 'DC' & il6_mean_modules_scores_stemi$timepoint == 'Baseline', ], formula = as.formula('IL6_UCell.mean ~ chem + rs6686750_numeric')))
+summary(lm(data = il6_mean_modules_scores_stemi[il6_mean_modules_scores_stemi$cell_type_lowerres == 'DC' & il6_mean_modules_scores_stemi$timepoint == 't24h', ], formula = as.formula('IL6_UCell.mean ~ chem + rs6686750_numeric')))
+summary(lm(data = il6_mean_modules_scores_stemi[il6_mean_modules_scores_stemi$cell_type_lowerres == 'DC' & il6_mean_modules_scores_stemi$timepoint == 't8w', ], formula = as.formula('IL6_UCell.mean ~ chem + rs6686750_numeric')))
+# or lmm with mixed effect
+summary(lmer(data = il6_mean_modules_scores_stemi[il6_mean_modules_scores_stemi$cell_type_lowerres == 'DC', ], formula=as.formula('IL6_UCell.mean~timepoint.final+rs6686750_numeric+rs6686750_numeric*timepoint.final+(1|participant)')))
+```
+
+```{r il6_nichenet, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get the nichenet il6 genes
+il6_genes_nichenet_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/il6r_downstream_genes.txt'
+il6_genes_nichenet <- read.table(il6_genes_nichenet_loc, header = F)$V1
+# adding IL6
+cardio_integrated <-  AddModuleScore_UCell(cardio_integrated, features = list('IL6NN' = il6_genes_nichenet))
+
+```
+
+```{r il6nn_mean, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get the average IL6 module score
+il6nn_mean_modules_scores <- get_average_metadata_value_per_timepoint(cardio_integrated, 'IL6NN_UCell', celltype_column = 'cell_type_lowerres')
+# convert to the mean expression gene format
+il6nn_mean_modules_scores_genelike <- average_metadata_to_mean_expression_like(il6nn_mean_modules_scores, cell_type_column = 'cell_type_lowerres')
+
+```
+
+```{r mean_module_il6_dc, include=TRUE, fig.width=10, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+plot_grid(
+  plot_gene_vs_protein_expression(il6nn_mean_modules_scores, olink_plottable, gene_symbol = 'IL6NN_UCell.mean', olink_id = 'OID00602', celltype = 'DC', timepoint_gene = 'Baseline', timepoint_protein = 'Baseline', genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST module') + ylab('IL6R protein') + ggtitle('DC Baseline'),
+  plot_gene_vs_protein_expression(il6nn_mean_modules_scores_genelike, olink_plottable, gene_symbol = 'IL6NN_UCell.mean', olink_id = 'OID00602', celltype = 'DC', timepoint_gene = 't24h', timepoint_protein = 't24h', genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6 module') + ylab('IL6R protein') + ggtitle('DC t24h'),
+  plot_gene_vs_protein_expression(il6nn_mean_modules_scores_genelike, olink_plottable, gene_symbol = 'IL6NN_UCell.mean', olink_id = 'OID00602', celltype = 'DC', timepoint_gene = 't8w', timepoint_protein = 't24h', genotypes = genotype_object, variant_id = 'rs6686750', legendless = T) + xlab('IL6ST module') + ylab('IL6R protein') + ggtitle('DC t24h'),
+  get_legend(plot_gene_vs_protein_expression(il6nn_mean_modules_scores_genelike, olink_plottable, gene_symbol = 'IL6NN_UCell.mean', olink_id = 'OID00602', celltype = 'DC', timepoint_gene = 't8w', timepoint_protein = 't24h', genotypes = genotype_object, variant_id = 'rs6686750', legendless = F)),
+  nrow = 1,
+  ncol = 4
+)
+
+```
+
+```{r gt_module_il6nn_dc, include=TRUE, fig.width=9, fig.height=3}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# plot the module score per genotype group
+plot_grid(
+  plot_qtl_from_table(il6nn_mean_modules_scores[il6nn_mean_modules_scores$cell_type_lowerres == 'DC' & il6nn_mean_modules_scores$timepoint.final == 'Baseline', ], 'IL6NN_UCell.mean', genotypes = genotype_object, variant_id = 'rs6686750') + ylab('DC IL6 mean module score') + xlab('') + ggtitle('t0'),
+  plot_qtl_from_table(il6nn_mean_modules_scores[il6nn_mean_modules_scores$cell_type_lowerres == 'DC' & il6nn_mean_modules_scores$timepoint.final == 't24h', ], 'IL6NN_UCell.mean', genotypes = genotype_object, variant_id = 'rs6686750') + ylab('DC IL6 mean module score') + xlab('') + ggtitle('t24h'),
+  plot_qtl_from_table(il6nn_mean_modules_scores[il6nn_mean_modules_scores$cell_type_lowerres == 'DC' & il6nn_mean_modules_scores$timepoint.final == 't8w', ], 'IL6NN_UCell.mean', genotypes = genotype_object, variant_id = 'rs6686750') + ylab('DC IL6 mean module score') + xlab('') + ggtitle('t8w'),
+  nrow = 1,
+  ncol = 3
+)
+
+```
