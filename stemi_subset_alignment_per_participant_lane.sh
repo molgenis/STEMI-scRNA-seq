@@ -41,6 +41,8 @@ for lane in ${LANES[*]}
         BASE_FILE=$(basename -- ${barcode_file})
         # get the samplename
         SAMPLE=${BASE_FILE/${SAMPLE_TXTS_APPEND}/""}
+        # make the directory we will write to
+        mkdir -p ${SUBSET_BAMS_LOC}${lane}'/'
         # get the output bam full location
         OUT_BAM_FULL_LOC=${SUBSET_BAMS_LOC}${lane}'/'${SAMPLE}'.bam'
         # build the command
