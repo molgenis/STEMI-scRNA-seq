@@ -58,7 +58,8 @@ knitr::opts_chunk$set(echo = FALSE)
 # Preqrequisites Configurations & Parameters
 
 result_path = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/heinig_replication/objects/'
-name = 'V_AZIMUTH_REPRODUCTION'  # name of dataset to load
+#name = 'V_AZIMUTH_REPRODUCTION'  # name of dataset to load
+name = 'V_AZIMUTH_REPRODUCTION_v2'  # name of dataset to load
 features_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/heinig_replication/features/'
 
 ```
@@ -179,7 +180,7 @@ mofa_overview = mofa_overview +
 mofa_overview
 
 ```
-```{r set_options, include=TRUE}
+```{r set_options, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 
 
@@ -240,7 +241,7 @@ MOFAobject = prepare_mofa(
 )
 
 ```
-```{r train_model, include=TRUE}
+```{r train_model, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 
 
@@ -456,7 +457,7 @@ MOFAobject = prepare_mofa(
 
 ```
 
-```{r save_model_rv, include=TRUE}
+```{r save_model_rv, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 
 
@@ -690,7 +691,7 @@ MOFAobject = prepare_mofa(
 
 ```
 
-```{r save_model_gb, include=TRUE}
+```{r save_model_gb, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 
 ### Save the model

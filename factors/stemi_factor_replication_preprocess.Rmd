@@ -83,7 +83,8 @@ knitr::opts_chunk$set(echo = FALSE)
 
 result_path = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/heinig_replication/objects/'
 seurat_input_data_name = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/seurat/cardio.integrated.20210301.rds'
-name_save = 'V_AZIMUTH_REPRODUCTION'
+#name_save = 'V_AZIMUTH_REPRODUCTION'
+name_save = 'V_AZIMUTH_REPRODUCTION_v2'
 
 ## Define columns in seurat object containing sample-id and cluster annotations
 
@@ -112,6 +113,9 @@ print(file.info(source_text)$mtime)
 rna_seurat_data = readRDS(source_text)
 # add a new column
 rna_seurat_data@meta.data[['timepoint.assignment.final']] <- paste(rna_seurat_data@meta.data[['timepoint.final']], rna_seurat_data@meta.data[['assignment.final']], sep = '.')
+
+# subset chemistry
+rna_seurat_data <- rna_seurat_data[, rna_seurat_data@meta.data[['chem']] == 'V2']
 
 ## Should contain raw counts
 ## After QC and Pre-processing
@@ -272,8 +276,18 @@ head(cell_perc_cluster,2)
 nrow(cell_perc_cluster)
 length(unique(cell_perc_cluster$cluster))
 
+
 ##### Condition for filtering genes
-cell_perc_cluster =  cell_perc_cluster[((cell_perc_cluster$perc_cells > 50) & (cell_perc_cluster$total_amount_cells_expressing_gene > 1200)) | ((cell_perc_cluster$perc_cells > 40) & (cell_perc_cluster$total_amount_cells_expressing_gene > 3000)) ,] 
+if (name_save == 'V_AZIMUTH_REPRODUCTION_v3') {
+  ##### Condition for filtering genes
+cell_perc_cluster =  cell_perc_cluster[((cell_perc_cluster$perc_cells > 50) & (cell_perc_cluster$total_amount_cells_expressing_gene >400)) | ((cell_perc_cluster$perc_cells > 40) & (cell_perc_cluster$total_amount_cells_expressing_gene > 1000)) ,] 
+} else if(name_save == 'V_AZIMUTH_REPRODUCTION_v2') {
+  ##### Condition for filtering genes
+cell_perc_cluster =  cell_perc_cluster[((cell_perc_cluster$perc_cells > 30) & (cell_perc_cluster$total_amount_cells_expressing_gene >1000)) | ((cell_perc_cluster$perc_cells > 20) & (cell_perc_cluster$total_amount_cells_expressing_gene > 2500)) ,] 
+} else {
+  cell_perc_cluster =  cell_perc_cluster[((cell_perc_cluster$perc_cells > 50) & (cell_perc_cluster$total_amount_cells_expressing_gene > 1200)) | ((cell_perc_cluster$perc_cells > 40) & (cell_perc_cluster$total_amount_cells_expressing_gene > 3000)) ,] 
+}
+
 
 nrow(cell_perc_cluster)
 

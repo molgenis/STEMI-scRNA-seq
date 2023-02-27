@@ -1,0 +1,409 @@
+---
+title: "stemi_correlate_de_replication"
+author: "Roy Oelen"
+date: "2023-02-17"
+output: html_document
+---
+
+```{r header, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Roy Oelen
+# Name: stemi_correlate_de_replication.Rmd
+# Function:
+############################################################################################################################
+
+```
+
+```{r libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# libraries        #
+####################
+
+# to perform parallel operations
+library(foreach)
+library(doParallel)
+# for plotting
+library(ggplot2)
+library(cowplot)
+
+```
+
+```{r objects, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# objects          #
+####################
+
+```
+
+```{r functions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# Functions        #
+####################
+
+get_color_coding_dict <- function(){
+  # set the condition colors
+  color_coding <- list()
+  color_coding[["UTBaseline"]] <- "khaki2"
+  color_coding[["UTt24h"]] <- "khaki4"
+  color_coding[["UTt8w"]] <- "paleturquoise1"
+  color_coding[["Baselinet24h"]] <- "paleturquoise3"
+  color_coding[["Baselinet8w"]] <- "rosybrown1"
+  color_coding[["t24ht8w"]] <- "rosybrown3"
+  color_coding[["UT\nBaseline"]] <- "khaki2"
+  color_coding[["UT\nt24h"]] <- "khaki4"
+  color_coding[["UT\nt8w"]] <- "paleturquoise1"
+  color_coding[["Baseline\nt24h"]] <- "paleturquoise3"
+  color_coding[["Baseline\nt8w"]] <- "rosybrown1"
+  color_coding[["t24h\nt8w"]] <- "rosybrown3"
+  color_coding[["UT-Baseline"]] <- "khaki2"
+  color_coding[["UT-t24h"]] <- "khaki4"
+  color_coding[["UT-t8w"]] <- "paleturquoise1"
+  color_coding[["Baseline-t24h"]] <- "paleturquoise3"
+  color_coding[["Baseline-t8w"]] <- "rosybrown1"
+  color_coding[["t24h-t8w"]] <- "rosybrown3"
+  color_coding[["UT-t0"]] <- "khaki2"
+  color_coding[["UT-t24h"]] <- "khaki4"
+  color_coding[["UT-t8w"]] <- "paleturquoise1"
+  color_coding[["HC-t0"]] <- "khaki2"
+  color_coding[["t0-HC"]] <- "khaki2"
+  color_coding[["HC-t24h"]] <- "khaki4"
+  color_coding[["t24h-HC"]] <- "khaki4"
+  color_coding[["HC-t8w"]] <- "paleturquoise1"
+  color_coding[["t8w-HC"]] <- "paleturquoise1"
+  color_coding[["t0-t24h"]] <- "#FF6066" #"paleturquoise3"
+  color_coding[["t24h-t0"]] <- "#FF6066" #"paleturquoise3"
+  color_coding[["t0-t8w"]] <- "#C060A6" #"rosybrown1"
+  color_coding[["t8w-t0"]] <- "#C060A6" #"rosybrown1"
+  color_coding[["t24h-t8w"]] <- "#C00040" #"rosybrown3"
+  color_coding[["t8w-t24h"]] <- "#C00040" #"rosybrown3"
+  # set condition colors
+  color_coding[["HC"]] <- "grey"
+  color_coding[["t0"]] <- "pink"
+  color_coding[["t24h"]] <- "red"
+  color_coding[["t8w"]] <- "purple"
+  # set the cell type colors
+  color_coding[["Bulk"]] <- "black"
+  color_coding[["CD4T"]] <- "#153057"
+  color_coding[["CD8T"]] <- "#009DDB"
+  color_coding[["monocyte"]] <- "#EDBA1B"
+  color_coding[["NK"]] <- "#E64B50"
+  color_coding[["B"]] <- "#71BC4B"
+  color_coding[["DC"]] <- "#965EC8"
+  color_coding[["CD4+ T"]] <- "#153057"
+  color_coding[["CD8+ T"]] <- "#009DDB"
+  # other cell type colors
+  color_coding[["HSPC"]] <- "#009E94"
+  color_coding[["platelet"]] <- "#9E1C00"
+  color_coding[["plasmablast"]] <- "#DB8E00"
+  color_coding[["other T"]] <- "#FF63B6"
+  return(color_coding)
+}
+
+label_dict <- function(){
+  label_dict <- list()
+  # condition combinations
+  label_dict[['UTBaseline']] <- 'UT-Baseline'
+  label_dict[['UTt24h']] <- 'UT-t24h'
+  label_dict[['UTt8w']] <- 'UT-t8w'
+  label_dict[['Baselinet24h']] <- 'Baseline-t24h'
+  label_dict[['Baselinet8w']] <- 'Baseline-t8w'
+  label_dict[['t24ht8w']] <- 't24h-t8w'
+  label_dict[['UTBaseline']] <- 'HC-t0'
+  label_dict[['UTt24h']] <- 'HC-t24h'
+  label_dict[['UTt8w']] <- 'HC-t8w'
+  label_dict[['Baselinet24h']] <- 't0-t24h'
+  label_dict[['Baselinet8w']] <- 't0-t8w'
+  # conditions
+  label_dict[['UT']] <- 'HC'
+  label_dict[['Baseline']] <- 't0'
+  label_dict[['t24h']] <- 't24h'
+  label_dict[['t8w']] <- 't8w'
+  # major cell types
+  label_dict[["Bulk"]] <- "bulk-like"
+  label_dict[["CD4T"]] <- "CD4+ T"
+  label_dict[["CD8T"]] <- "CD8+ T"
+  label_dict[["monocyte"]] <- "monocyte"
+  label_dict[["NK"]] <- "NK"
+  label_dict[["B"]] <- "B"
+  label_dict[["DC"]] <- "DC"
+  label_dict[["HSPC"]] <- "HSPC"
+  label_dict[["plasmablast"]] <- "plasmablast"
+  label_dict[["platelet"]] <- "platelet"
+  label_dict[["T_other"]] <- "other T"
+  # minor cell types
+  label_dict[["CD4_TCM"]] <- "CD4 TCM"
+  label_dict[["Treg"]] <- "T regulatory"
+  label_dict[["CD4_Naive"]] <- "CD4 naive"
+  label_dict[["CD4_CTL"]] <- "CD4 CTL"
+  label_dict[["CD8_TEM"]] <- "CD8 TEM"
+  label_dict[["cMono"]] <- "cMono"
+  label_dict[["CD8_TCM"]] <- "CD8 TCM"
+  label_dict[["ncMono"]] <- "ncMono"
+  label_dict[["cDC2"]] <- "cDC2"
+  label_dict[["B_intermediate"]] <- "B intermediate"
+  label_dict[["NKdim"]] <- "NK dim"
+  label_dict[["pDC"]] <- "pDC"
+  label_dict[["ASDC"]] <- "ASDC"
+  label_dict[["CD8_Naive"]] <- "CD8 naive"
+  label_dict[["MAIT"]] <- "MAIT"
+  label_dict[["CD8_Proliferating"]] <- "CD8 proliferating"
+  label_dict[["CD4_TEM"]] <- "CD4 TEM"
+  label_dict[["B_memory"]] <- "B memory"
+  label_dict[["NKbright"]] <- "NK bright"
+  label_dict[["B_naive"]] <- "B naive"
+  label_dict[["gdT"]] <- "gamma delta T"
+  label_dict[["CD4_Proliferating"]] <- "CD4 proliferating"
+  label_dict[["NK_Proliferating"]] <- "NK proliferating"
+  label_dict[["cDC1"]] <- "cDC1"
+  label_dict[["ILC"]] <- "ILC"
+  label_dict[["dnT"]] <- "double negative T"
+  return(label_dict)
+}
+
+text_color_dict <- function(){
+  text_color_dict <- list()
+  # set the cell type colors
+  text_color_dict[["Bulk"]] <- "#000000ff"
+  text_color_dict[["CD4T"]] <- "#000000ff"
+  text_color_dict[["CD8T"]] <- "#000000ff"
+  text_color_dict[["monocyte"]] <- "#ffffffff"
+  text_color_dict[["NK"]] <- "#000000ff"
+  text_color_dict[["B"]] <- "#fffffff"
+  text_color_dict[["DC"]] <- "#000000ff"
+  text_color_dict[["CD4+ T"]] <- "#000000ff"
+  text_color_dict[["CD8+ T"]] <- "#000000ff"
+  # other cell type colors
+  text_color_dict[["HSPC"]] <- "#000000ff"
+  text_color_dict[["platelet"]] <- "#000000ff"
+  text_color_dict[["plasmablast"]] <- "#000000ff"
+  text_color_dict[["other T"]] <- "#000000ff"
+  return(text_color_dict)
+}
+
+deseq2_to_unified <- function(output_loc, pval_column='p_adj.loc', lfc_column='logfoldchanges', gene_column='gene', celltype_column='cluster', group1_column='reference', group2_column='group') {
+  # read the output
+  output <- read.table(output_loc, header = T, sep = ',')
+  # turn into a new table
+  harmonized <- data.frame(
+    comparison = paste(output[[group2_column]], output[[group1_column]], sep = '_vs_'),
+    celltype = output[[celltype_column]],
+    gene = output[[gene_column]],
+    pval = output[[pval_column]],
+    lfc = output[[lfc_column]]
+  )
+  return(harmonized)
+}
+
+mast_seurat_to_unified <- function(output_loc, pval_column='metap', lfc_column='metafc', cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), comparisons=c('UTBaseline', 'Baselinet24h', 'Baselinet8w', 't24ht8w')) {
+  # save everything in a list
+  output_as_list <- foreach(comparison = comparisons) %dopar% {
+    # check each cell type
+    output_per_celltype <- list()
+    for (celltype in cell_types) {
+      # paste together the output path
+      mast_full_path <- paste(output_loc, celltype, comparison, '.tsv', sep = '')
+      # read the file
+      mast_output <- read.table(mast_full_path, header = T, row.names = 1)
+      # create a new harmonized dataframe
+      harmonized <- data.frame(
+        comparison = comparison,
+        celltype = celltype,
+        gene = rownames(mast_output),
+        pval = mast_output[[pval_column]],
+        lfc = mast_output[[lfc_column]]
+      )
+      # add to the list
+      output_per_celltype[[celltype]] <- harmonized
+    }
+    # merge the lists
+    output_comparison <- do.call("rbind", output_per_celltype)
+    return(output_comparison)
+  }
+  # now merge the comparisons
+  output_all <- do.call("rbind", output_as_list)
+  return(output_all)
+}
+
+
+get_concordance_data <- function(table1, table2, pval_column1='pval', pval_column2='pval', lfc_column1='lfc', lfc_column2='lfc', gene_column1='gene', gene_column2='gene', significance_cutoff=0.05) {
+  # filter table1
+  table1_significant <- table1[!is.na(table1[[pval_column1]]) & table1[[pval_column1]] < significance_cutoff, ]
+  # filter table2
+  table2_significant <- table2[!is.na(table1[[pval_column2]]) & table1[[pval_column2]] < significance_cutoff, ]
+  # get the common genes
+  common_genes <- intersect(table1_significant[[gene_column1]], table2_significant[[gene_column2]])
+  # get replication rates
+  replication_fraction1in2 <- length(common_genes) / nrow(table1_significant)
+  replication_fraction2in1 <- length(common_genes) / nrow(table2_significant)
+  # create a new merged table
+  merged_lfcs <- data.frame(
+    gene = common_genes,
+    lfc1 = table1_significant[match(common_genes, table1_significant[[gene_column1]]), lfc_column1],
+    lfc2 = table2_significant[match(common_genes, table2_significant[[gene_column2]]), lfc_column2]
+  )
+  # put results in a list
+  result <- list(
+    'table' = merged_lfcs,
+    '1in2' = replication_fraction1in2,
+    '2in1' = replication_fraction2in1
+  )
+  return(result)
+}
+
+get_concordance_data_per_celltype <- function(table1, table2, comparison1, comparison2, comparison_column1='comparison', comparison_column2='comparison', pval_column1='pval', pval_column2='pval', lfc_column1='lfc', lfc_column2='lfc', gene_column1='gene', gene_column2='gene', celltype_column1='celltype', celltype_column2='celltype', significance_cutoff=0.05) {
+  # subset to the comparison we care about
+  table1_comparison <- table1[table1[[comparison_column1]] == comparison1, ]
+  table2_comparison <- table2[table2[[comparison_column2]] == comparison2, ]
+  # get the celltypes we can check
+  celltypes_to_check <- intersect(table1_comparison[[celltype_column1]], table2_comparison[[celltype_column2]])
+  # now check each celltype
+  output_per_celltype <- foreach(celltype = celltypes_to_check) %dopar% {
+    # subset to that celltype
+    table1_celltype <- table1_comparison[table1_comparison[[celltype_column1]] == celltype, ]
+    table2_celltype <- table1_comparison[table2_comparison[[celltype_column2]] == celltype, ]
+    # get the comparison
+    concordance1and2 <- get_concordance_data(
+      table1_celltype, table2_celltype,
+      pval_column1 = pval_column1,
+      pval_column2 = pval_column2,
+      lfc_column1 = lfc_column1,
+      lfc_column2 = lfc_column2,
+      gene_column1 = gene_column1,
+      gene_column2 = gene_column2
+    )
+    # add the celltype again, to be sure the order was correct
+    concordance1and2[['celltype']] <- celltype
+    return(concordance1and2)
+  }
+  # add names to list
+  names(output_per_celltype) <- celltypes_to_check
+  # return result
+  return(output_per_celltype)
+}
+
+plot_replication_per_celltype <- function(replication_per_celltype, use_label_dict=T, use_color_dict=T, paper_style=T, legendless=F, pointless=F, separate_legend=F, ylabs=NULL, titles=NULL, shared_title=NULL){
+  # get the celltypes
+  celltypes <- names(replication_per_celltype)
+  # create an empty dataframe
+  replication_per_celltype_table <- data.frame(celltype = celltypes, one_in_two = rep(NA, times = length(celltypes)), two_in_one = rep(NA, times = length(celltypes)))
+  # check each celltype
+  for(i in 1 : nrow(replication_per_celltype_table)) {
+    # get the celltype
+    celltype <- replication_per_celltype_table[['celltype']][i]
+    # get the replication
+    one_in_two <- replication_per_celltype[[celltype]][['1in2']]
+    two_in_one <- replication_per_celltype[[celltype]][['2in1']]
+    # add to table
+    replication_per_celltype_table[i, c('one_in_two', 'two_in_one')] <- c(one_in_two, two_in_one)
+  }
+  # change names if requested
+  if (use_label_dict) {
+    replication_per_celltype_table[['celltype']] <- as.vector(unlist(label_dict()[replication_per_celltype_table[['celltype']]]))
+  }
+  # create the plots
+  p1in2 <- ggplot(data = replication_per_celltype_table, mapping = aes(x = celltype, y = one_in_two, fill = celltype)) + geom_bar(stat = 'identity') + ylim(c(0,1))
+  p2in1 <- ggplot(data = replication_per_celltype_table, mapping = aes(x = celltype, y = two_in_one, fill = celltype)) + geom_bar(stat = 'identity') + ylim(c(0,1))
+  # use specific colours if requested
+  if (use_color_dict) {
+    p1in2 <- p1in2 + scale_fill_manual(name = 'cell type', values = get_color_coding_dict())
+    p2in1 <- p2in1 + scale_fill_manual(name = 'cell type', values = get_color_coding_dict())
+  }
+  else{
+    p1in2 <- p1in2 + scale_fill_manual(name = 'cell type')
+    p2in1 <- p2in1 + scale_fill_manual(name = 'cell type')
+  }
+  # add paper style
+  if (paper_style) {
+    p1in2 <- p1in2 + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+    p2in1 <- p2in1 + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  if(legendless){
+    p1in2 <- p1in2 + theme(legend.position = 'none')
+    p2in1 <- p2in1 + theme(legend.position = 'none')
+  }
+  if(pointless){
+    p1in2 <- p1in2 + theme(axis.text.x=element_blank(), 
+                   axis.ticks = element_blank(),
+                   axis.title.x = element_blank())
+    p2in1 <- p2in1 + theme(axis.text.x=element_blank(), 
+                   axis.ticks = element_blank(),
+                   axis.title.x = element_blank())
+  }
+  # add other labels if requested
+  if (!is.null(ylabs) & length(ylabs) == 2) {
+    p1in2 <- p1in2 + ylab(ylabs[1])
+    p2in1 <- p2in1 + ylab(ylabs[2])
+  }
+  # and titles
+  if (!is.null(titles) & length(titles) == 2) {
+    p1in2 <- p1in2 + ggtitle(titles[1])
+    p2in1 <- p2in1 + ggtitle(titles[2])
+  }
+  # add into one plot
+  p <- NULL
+  if (separate_legend) {
+    p <- plot_grid(p1in2 + theme(legend.position = 'none'), 
+                   p2in1 + theme(legend.position = 'none'), 
+                   get_legend(p1in2),
+                   nrow = 1, ncol = 3)
+  }
+  else{
+    p <- plot_grid(p1in2, p2in1, nrow = 1, ncol = 2)
+  }
+  # add shared title if requested
+  if (!is.null(shared_title)) {
+    title_drawing <- ggdraw() + draw_label(shared_title, fontface='bold')
+    p <- plot_grid(title_drawing, p, nrow = 2, ncol = 1, rel_heights=c(0.1, 1))
+  }
+  return(p)
+}
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# Main Code        #
+####################
+
+# location of DE output
+franke_de_result_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/rna/'
+heinig_de_result_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/heinig_replication/differential_expression/deseq2/results/'
+
+# more specific files
+heinig_de_result_celltocell_loc <- paste(heinig_de_result_loc, 'G6_azimuth_celltype_V1_Singlet_Cluster_DE_Genes_Samples_norm_20230227.csv', sep = '')
+heinig_de_result_celltocluster_loc <- paste(heinig_de_result_loc, 'G6_azimuth_celltype_cluster_V2_Singlet_Cluster_DE_Genes_Samples_norm_20230227.csv', sep = '')
+
+```
+
+```{r harmonize_heinig, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# harmonize the heinig data to a common format
+heinig_de_result_celltocell_harmonized <- deseq2_to_unified(heinig_de_result_celltocell_loc)
+heinig_de_result_celltocluster_harmonized <- deseq2_to_unified(heinig_de_result_celltocluster_loc)
+
+```
+
+```{r harmonize_heinig, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# harmonize the Franke data to a common format
+franke_de_result <- mast_seurat_to_unified(franke_de_result_loc)
+
+```
+
+```{r tp1tp2_vs_Baselinet24h, include=TRUE, fig.width=10, fig.height=5}
+tp1tp2_baselinet24h <- get_concordance_data_per_celltype(heinig_de_result_celltocluster_harmonized, franke_de_result, 'acs_w_o_infection_TP1_vs_acs_w_o_infection_TP2', 'Baselinet24h')
+plot_replication_per_celltype(tp1tp2_baselinet24h, separate_legend = T, pointless = T, ylabs = c('fraction DE genes replicated', 'fraction DE genes replicated'), titles = c('Heinig in Franke', 'Franke in Heinig'), shared_title = 'TP1-TP2 vs Baseline-t24h')
+```
+
+```{r tp1tp3_vs_Baselinet24h, include=TRUE, fig.width=10, fig.height=5}
+tp1tp3_baselinet24h <- get_concordance_data_per_celltype(heinig_de_result_celltocluster_harmonized, franke_de_result, 'acs_w_o_infection_TP1_vs_acs_w_o_infection_TP3', 'Baselinet24h')
+plot_replication_per_celltype(tp1tp3_baselinet24h, separate_legend = T, pointless = T, ylabs = c('fraction DE genes replicated', 'fraction DE genes replicated'), titles = c('Heinig in Franke', 'Franke in Heinig'), shared_title = 'TP1-TP3 vs Baseline-t24h')
+```
