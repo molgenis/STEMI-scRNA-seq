@@ -1,0 +1,108 @@
+---
+title: "stemi_summarize_pathways"
+author: "Roy Oelen"
+date: "2023-03-09"
+output: html_document
+---
+
+```{r header, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Roy Oelen
+# Name: stemi_summarize_pathways.Rmd
+# Function:
+############################################################################################################################
+```
+
+```{r libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# libraries        #
+####################
+
+library(xlsx) # NOT IN CONTAINER
+
+```
+
+```{r objects, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# objects          #
+####################
+
+```
+
+```{r functions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# Functions        #
+####################
+
+get_output_per_comparison <- function(output_loc, cell_types, comparisons, significance_column='Adjusted.P.value', p_val_cutoff=0.05, append='.tsv') {
+  # store the results per cell type
+  results_per_celltype <- list()
+  # check each cell type
+  for (cell_type in cell_types) {
+    # store per condition combination as well
+    result_per_comparison <- list()
+    # check each comparison
+    for (comparison in comparisons) {
+      # paste together the full path
+      full_path <- paste(output_loc, cell_type, comparison, append, sep = '')
+      # read the output
+      output <- read.table(full_path, header = T, sep = '\t')
+      # add the comparison as a column, by cbinding it before
+      output <- cbind(data.frame(comparison = rep(comparison, times = nrow(output))), output)
+      # filter by significance if requested
+      if (!is.null(significance_column)) {
+        output <- output[output[[significance_column]] < p_val_cutoff, ]
+      }
+      # put result in list
+      result_per_comparison[[comparison]] <- output
+    }
+    # merge the list of dataframes together
+    results_comparisons <- do.call("rbind", result_per_comparison)
+    # add to the list per cell type
+    results_per_celltype[[cell_type]] <- results_comparisons
+  }
+  return(results_per_celltype)
+}
+
+
+pathway_results_to_excel <- function(pathways_per_celltype, output_loc) {
+  # create a new workbook
+  wb = createWorkbook()
+  # check each cell type
+  for (celltype in names(pathways_per_celltype)) {
+    # create the name for the sheet
+    sheet_name <- celltype
+    # create the sheet
+    sheet = createSheet(wb, sheet_name)
+    # add dataframe to sheet
+    addDataFrame(pathways_per_celltype[[celltype]], sheet = sheet, startColumn=1, row.names=FALSE)
+  }
+  saveWorkbook(wb, output_loc)
+}
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# Main Code        #
+####################
+
+# location of the output of enrichr
+pathway_output_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/MAST/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/rna/'
+# the celltypes to consider
+cell_types <- c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')
+# comparisons to consider
+comparisons <- c('Baselinet24h', 'Baselinet8w', 'UTBaseline')
+# get the results per cell type
+results_per_celltype <- get_output_per_comparison(pathway_output_loc, cell_types, comparisons, append = '_positive.tsv')
+# output location to put the Excel
+excel_output_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/MAST/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/rna/blokland_pathways.xlsx'
+# write the Excel
+pathway_results_to_excel(results_per_celltype, excel_output_loc)
+```
