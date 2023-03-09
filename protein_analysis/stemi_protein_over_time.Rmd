@@ -1,0 +1,118 @@
+---
+title: "stemi_protein_over_time"
+author: "Roy Oelen"
+date: "2023-03-09"
+output: html_document
+---
+
+```{r header, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Roy Oelen
+# Name: stemi_protein_over_time.Rmd
+# Function: plot protein expression over time
+############################################################################################################################
+```
+
+```{r libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# libraries        #
+####################
+
+library(ggplot2)
+
+```
+
+```{r functions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# Functions        #
+####################
+olink_to_plottable_table <- function(olink, split_char='\\.'){
+  id_and_timepoint_df <- NULL
+  # check the rownames
+  for(id_and_timepoint in rownames(olink)){
+    # split into id and timepoint
+    id_and_timepoint_split <- strsplit(id_and_timepoint, split_char)
+    id <- id_and_timepoint_split[[1]][[1]]
+    timepoint <- id_and_timepoint_split[[1]][[2]]
+    # turn into row
+    id_and_timepoint_row <- data.frame(id=c(id), timepoint=c(timepoint))
+    # add to dataframe
+    if(is.null(id_and_timepoint_df)){
+      id_and_timepoint_df <- id_and_timepoint_row
+    }
+    else{
+      id_and_timepoint_df <- rbind(id_and_timepoint_df, id_and_timepoint_row)
+    }
+  }
+  # add new columns to original data
+  olink <- cbind(id_and_timepoint_df, olink)
+  return(olink)
+}
+olinkid_to_genesymbol <- function(olink_ids, olinkid_to_uid_loc, uniprotid_to_gs_loc){
+    # read mapping of olink ID to uniprot ID
+    olinkid_to_uid <- read.table(olinkid_to_uid_loc, sep = '\t', header = T, stringsAsFactors = F)
+    # get the uid
+    uid <- olinkid_to_uid[match(olink_ids, olinkid_to_uid$OlinkID), 'Uniprot.ID']
+    # if there is a gene symbol mapping, do that one as well
+    uniprotid_to_gs <- read.table(uniprotid_to_gs_loc, sep = '\t', header = T, stringsAsFactors = F)
+    gs <- uniprotid_to_gs[match(uid, uniprotid_to_gs$From), 'To']
+    # put result into table
+    mapping <- data.frame(olinkid = olink_ids, uid = uid, gs = gs)
+    return(mapping)
+}
+
+plot_over_time <- function(olink_plottable, protein_id, timepoint_column='timepoint', id_column='id', timepoint_order=NULL, paper_style=T) {
+  # set a manual order for the timepoints if requested
+  if (!is.null(timepoint_order)) {
+    olink_plottable[[timepoint_column]] <- factor(olink_plottable[[timepoint_column]], levels = timepoint_order)
+  }
+  # otherwise the way they appear
+  else {
+    olink_plottable[[timepoint_column]] <- factor(olink_plottable[[timepoint_column]], levels = unique(olink_plottable[[timepoint_column]]))
+  }
+  # draw the plot
+  p <- ggplot(data = NULL, mapping = aes(x = olink_plottable[[timepoint_column]], y = olink_plottable[[protein_id]], color = olink_plottable[[id_column]], group = olink_plottable[[id_column]])) +
+    geom_point() +
+    geom_line()
+  # add more descriptive axis labels
+  p <- p + xlab(timepoint_column)
+  p <- p + ylab(protein_id)
+  p <- p + labs(colour = id_column)
+  # make style like paper one
+  if (paper_style) {
+    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  return(p)
+}
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# Main Code        #
+####################
+# location of various files
+olinkid_to_uid_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/olink/olinkid_to_uniprotid.tsv'
+uniprotid_to_gs_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/olink/uniprot_to_genesymbol.tsv'
+gs_to_ens_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/features_v3.tsv'
+olink_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/olink/20200442_Groot_NPX-QC_format_fixed.tsv'
+inclusion_list_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata/included_participants.txt'
+metadata_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata//cardio.integrated.20210301.metadata.tsv'
+# load mapping files
+gs_to_ens <- read.table(gs_to_ens_loc, sep = '\t', header = F)
+uniprotid_to_gs <- read.table(uniprotid_to_gs_loc, sep = '\t', header = T)
+olinkid_to_uid <- read.table(olinkid_to_uid_loc, sep = '\t', header = T)
+# and read the actual data
+olink <- read.table(olink_loc, sep = '\t', header = T, row.names = 1)
+# covert so that the timepoint is split as a separate column
+olink_plottable <- olink_to_plottable_table(olink)
+# get the gene symbols
+symbol_table <- olinkid_to_genesymbol(colnames(olink), olinkid_to_uid_loc = olinkid_to_uid_loc, uniprotid_to_gs_loc = uniprotid_to_gs_loc)
+```
+
+
