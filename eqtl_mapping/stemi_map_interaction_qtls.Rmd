@@ -22,8 +22,8 @@ knitr::opts_chunk$set(echo = FALSE)
 # load genotype data
 library(vcfR)
 # to work in parallel
-library(foreach)
 library(doParallel)
+library(foreach)
 # faster than dataframes
 library(data.table)
 # for the single cell data
@@ -57,11 +57,11 @@ Genotypes <- setRefClass('Genotypes',
       if (!is.null(snp_id)) {
         # extract snp index
         snp_index <- grep(snp_id, .self$meta[['ID']])
-
+        
       } else if (!is.null(chrom_pos) & !is.null(snp_pos)) {
         # extract snp index
         snp_index <- which(.self$meta[['CHROM']] == chrom_pos & .self$meta[['POS']] == snp_pos)
-
+        
       } else {
         stop("Need to supply the variant ID, or both the CHROM and SNP positions")
       }
@@ -212,9 +212,9 @@ get_mean_expression_matrices <- function(seurat_object, metadata_columns=c('cell
   categories_to_check <- metadata_columns[length(metadata_columns)]
   # set as the ident
   Idents(seurat_object) <- categories_to_check
-
+  
   # # SINGLETHREADED
-  #
+  # 
   # # we will save for each category
   # expression_per_category <- list()
   # # and we will calculate per category
@@ -235,13 +235,13 @@ get_mean_expression_matrices <- function(seurat_object, metadata_columns=c('cell
   #   else {
   #     expression_matrix_category <- get_mean_expression_matrices(seurat_object = seurat_object_category, metadata_columns = metadata_columns[1 : (length(metadata_columns) - 1)], assay = assay, slot = slot)
   #   }
-  #
+  #   
   #   # add the category to the expression matrix
   #   expression_matrix_category[[categories_to_check]] <- category
   #   # add to the list
   #   expression_per_category[[category]] <- expression_matrix_category
   # }
-
+  
   # MULTITHREADED
 
   expression_per_category <- foreach(category = unique(seurat_object@meta.data[[categories_to_check]])) %dopar% {
@@ -259,7 +259,7 @@ get_mean_expression_matrices <- function(seurat_object, metadata_columns=c('cell
     expression_matrix_category[[categories_to_check]] <- category
     return(expression_matrix_category)
   }
-
+  
   # now add the tables of these categories together
   expression_all_categories <- do.call("rbind", expression_per_category)
   # make the expression have a better column name
@@ -363,7 +363,7 @@ do_regression_per_variant_probe <- function(probe_and_metadata, genotype_data, c
       regression_result <- do_regression_of_variant_probe(probe_and_metadata, genotype_data, variant, probe, string_formula, probe_column, id_column, use_lme4)
       result_per_variant_probe[[paste(variant, probe, sep = '_')]] <- regression_result
     }
-  }
+  } 
   # multi-thread approach
   else{
     # check each combination
@@ -433,7 +433,7 @@ olinkid_to_uid <- read.table(olinkid_to_uid_loc, sep = '\t', header = T)
 cardio_integrated_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/seurat/cardio.integrated.20210301.rds'
 
 # location of the genotype data
-genotypes_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/genotype/stemi_all_merged_aragam2022.vcf.gz'
+genotypes_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/genotype/nc2022_stemi_aragam2022.vcf.gz'
 
 ```
 
@@ -464,8 +464,8 @@ cardio_integrated <- readRDS(cardio_integrated_loc)
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 
 # get mean expression of all V2
-mean_expression_v2 <- get_mean_expression_matrices(cardio_integrated[, cardio_integrated@meta.data$orig.ident == 'stemi_v2'], metadata_columns=c('cell_type_lowerres', 'timepoint.final', 'assignment.final'))
-mean_expression_v3 <- get_mean_expression_matrices(cardio_integrated[, cardio_integrated@meta.data$orig.ident == 'stemi_v3'], metadata_columns=c('cell_type_lowerres', 'timepoint.final', 'assignment.final'))
+mean_expression_v2 <- get_mean_expression_matrices(cardio_integrated[, cardio_integrated@meta.data$orig.ident == 'stemi_v2' | cardio_integrated@meta.data$orig.ident == 'hc_v2'], metadata_columns=c('cell_type_lowerres', 'timepoint.final', 'assignment.final'))
+mean_expression_v3 <- get_mean_expression_matrices(cardio_integrated[, cardio_integrated@meta.data$orig.ident == 'stemi_v3' | cardio_integrated@meta.data$orig.ident == 'hc_v3'], metadata_columns=c('cell_type_lowerres', 'timepoint.final', 'assignment.final'))
 # add the chemistry as a variable
 mean_expression_v2[['chem']] <- 'V2'
 mean_expression_v3[['chem']] <- 'V3'
@@ -490,8 +490,17 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 
 # read the age/sex file
 age_sex <- read.table(age_sex_loc, header = T, sep = '\t')
+# add the reverse as well, so we have the ID, gender, age for the matched LL individuals
+age_sex <- rbind(age_sex, data.frame(
+  ID = age_sex[['ll_match_id']], 
+  gender = age_sex[['ll_match_gender']],
+  age = age_sex[['ll_match_age']],
+  ll_match_id = age_sex[['ID']],
+  ll_match_age = age_sex[['age']],
+  ll_match_gender = age_sex[['gender']]
+))
 # add to the mean expression
-mean_expression[, c('age', 'sex')] <- age_sex[match(mean_expression[['assignment.final']], age_sex[['ID']]), c('age', 'gender')]
+mean_expression[, c('age', 'sex')] <- age_sex[match(mean_expression[['assignment']], age_sex[['ID']]), c('age', 'gender')]
 # and to the proteins
 olink_vertical[, c('age', 'sex')] <- age_sex[match(olink_vertical[['id']], age_sex[['ID']]), c('age', 'gender')]
 ```
@@ -523,5 +532,6 @@ colnames(eqtl_confinement) <- c('variant', 'probe')
 # make a formula
 formula_rna <- 'expression ~ chem + age + sex + timepoint + variant + variant*timepoint + (1|assignment)'
 # do regression per celltype
-eqtl_output_per_celltype <- do_regression_per_celltype(mean_expression[mean_expression[['celltype']] %in% c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), ], genotype_object, celltype_column = 'celltype', confinement_table = eqtl_confinement, string_formula = formula_rna, use_lme4 = T, id_column = 'assignment', probe_column = 'gene')
+eqtl_confinement_il6r <- eqtl_confinement[eqtl_confinement$probe == 'IL6R', ]
+eqtl_output_per_celltype_il6r <- do_regression_per_celltype(mean_expression[mean_expression[['celltype']] %in% c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), ], genotype_object, celltype_column = 'celltype', confinement_table = eqtl_confinement_il6r, string_formula = formula_rna, use_lme4 = T, id_column = 'assignment', probe_column = 'gene')
 ```
