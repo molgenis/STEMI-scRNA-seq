@@ -146,11 +146,11 @@ metadata_to_ggally_table <- function(metadata, cell_type_column='cell_type_lower
         nr_of_cells <- nrow(metadata[metadata[[cell_type_column]] == cell_type &
                                        metadata[[assignment.column]] == participant &
                                        metadata[[timepoint.column]] == timepoint,
-                                     ])
+        ])
         if(to_fraction){
           total_cells <- nrow(metadata[metadata[[assignment.column]] == participant &
-                                                        metadata[[timepoint.column]] == timepoint,
-                                                      ])
+                                         metadata[[timepoint.column]] == timepoint,
+          ])
           nr_of_cells <- nr_of_cells/total_cells
         }
         # add to matrix
@@ -485,7 +485,7 @@ label_dict <- function(){
 ####################
 
 # location of the metadata
-meta.data.loc <- '/data/cardiology/metadata/cardio.integrated.20210301.metadata.tsv'
+meta.data.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata/cardio.integrated.20210301.metadata.tsv'
 # read into table
 meta.data <- read.table(meta.data.loc, sep = '\t', header = T, row.names = 1, stringsAsFactors = F)
 # get the cell numbers
@@ -551,7 +551,24 @@ rownames(ct_tbl) <- as.vector(unlist(label_dict()[rownames(ct_tbl)]))
 colnames(ct_tbl_hr) <- as.vector(unlist(label_dict()[colnames(ct_tbl_hr)]))
 rownames(ct_tbl_hr) <- as.vector(unlist(label_dict()[rownames(ct_tbl_hr)]))
 
-
-
 model_ncMono_t24ht0 <- lm(data=cell_numbers_gally_stemi_frac_baselinescaled_hr_ncmono_clinvar[!is.na(cell_numbers_gally_stemi_frac_baselinescaled_hr_ncmono_clinvar$t24h_t0), ], formula=t24h_t0 ~ logpeakckmb+age+gender+ck_mb)
 
+# get the unique lane and participant combinations
+participant_condition_lane <- unique(meta.data[, c('lane', 'assignment.final', 'timepoint.final')])
+# add the lane
+cell_numbers[['lane']] <- apply(cell_numbers, 1, FUN = function(x){
+  lane <- participant_condition_lane[participant_condition_lane[['assignment.final']] == x['participant'] & participant_condition_lane[['timepoint.final']] == x['condition'], 'lane'][1]
+  return(lane)
+})
+cell_numbers_hr[['lane']] <- apply(cell_numbers_hr, 1, FUN = function(x){
+  lane <- participant_condition_lane[participant_condition_lane[['assignment.final']] == x['participant'] & participant_condition_lane[['timepoint.final']] == x['condition'], 'lane'][1]
+  return(lane)
+})
+# add major/minor label
+cell_numbers[['level']] <- 'major'
+cell_numbers_hr[['level']] <- 'minor'
+# turn into one table
+cell_numbers_both <- rbind(cell_numbers, cell_numbers_hr)
+cell_numbers_both[['condition']] <- as.vector(unlist(list('UT' = 'control', 'Baseline' = 't0', 't24h' = 't24h', 't8w' = 't6-8w')[cell_numbers_both[['condition']]]))
+# write result
+write.table(cell_numbers_both[, c('level', 'lane', 'condition', 'participant', 'cell_type', 'number')], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/stemi_cell_numbers_overview.tsv', sep = '\t', row.names = F, col.names = T)
