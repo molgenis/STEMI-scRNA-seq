@@ -1,7 +1,9 @@
 # STEMI-scRNA-seq
 This repository contains the code that was used for the scRNA-seq study of PBMCs in a population of patients suffering from a STEMI. More information can be found in the original paper: https://www.medrxiv.org/content/10.1101/2023.05.02.23289370v2
 
-Below we will outline the computational steps take
+If want to rerun any of these analysis steps in R, consider using the Singularity image used for most of the analyses: https://github.com/royoelen/single-cell-container-server
+
+Below we will outline the computational steps taken
 
 ## alignment to reference genome
 
