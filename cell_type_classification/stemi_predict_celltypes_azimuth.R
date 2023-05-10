@@ -207,13 +207,13 @@ rm(hc_v3)
 rm(stemi_v2)
 rm(stemi_v3)
 
-# check concordance with previous classification
-cardio.integrated <- AddMetaData(cardio.integrated, predictions_all['predicted.celltype.l1'], 'predicted.celltype.l1.v4')
-create_confusion_matrix(cardio.integrated@meta.data[, c('predicted.celltype.l1', 'predicted.celltype.l1.v4')], 'predicted.celltype.l1', 'predicted.celltype.l1.v4', 'prerelease', 'final release')
-ggsave('cardio.integrated.azimuth_l1_confusion_matrix_pre_and_final_release.pdf', width=20, height=20)
-cardio.integrated <- AddMetaData(cardio.integrated, predictions_all['predicted.celltype.l2'], 'predicted.celltype.l2.v4')
-create_confusion_matrix(cardio.integrated@meta.data[, c('predicted.celltype.l2', 'predicted.celltype.l2.v4')], 'predicted.celltype.l2', 'predicted.celltype.l2.v4', 'prerelease', 'final release')
-ggsave('cardio.integrated.azimuth_l2_confusion_matrix_pre_and_final_release.pdf', width=20, height=20)
+# # check concordance with previous classification
+# cardio.integrated <- AddMetaData(cardio.integrated, predictions_all['predicted.celltype.l1'], 'predicted.celltype.l1.v4')
+# create_confusion_matrix(cardio.integrated@meta.data[, c('predicted.celltype.l1', 'predicted.celltype.l1.v4')], 'predicted.celltype.l1', 'predicted.celltype.l1.v4', 'prerelease', 'final release')
+# ggsave('cardio.integrated.azimuth_l1_confusion_matrix_pre_and_final_release.pdf', width=20, height=20)
+# cardio.integrated <- AddMetaData(cardio.integrated, predictions_all['predicted.celltype.l2'], 'predicted.celltype.l2.v4')
+# create_confusion_matrix(cardio.integrated@meta.data[, c('predicted.celltype.l2', 'predicted.celltype.l2.v4')], 'predicted.celltype.l2', 'predicted.celltype.l2.v4', 'prerelease', 'final release')
+# ggsave('cardio.integrated.azimuth_l2_confusion_matrix_pre_and_final_release.pdf', width=20, height=20)
 
 
 # try with the integrated object as well
@@ -222,37 +222,13 @@ storage_write_part <- 'tmp01'
 
 # object locations
 object_loc <- paste('/groups/umcg-wijmenga/', storage_read_part, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/', sep = '')
-cardio_object_loc <- paste(object_loc, 'cardio.integrated.20210301.rds', sep = '')
-
-# this does not work, have not figured out how to do this, the issue is that the integrated slot has the count data not in the 'counts/data/scale.data' slot
+cardio_object_unclassificed_loc <- paste(object_loc, 'cardio.integrated_20200820.rds', sep = '')
 # read the object
-cardio.integrated <- readRDS(cardio_object_loc)
-# set to the integrated assay
-DefaultAssay(cardio.integrated) <- 'integrated'
-# find transfer anchors between the reference and the query, the query is your dataset
-anchors.cardio.integrated <- FindTransferAnchors(
-  reference = reference,
-  query = cardio.integrated,
-  query.assay = 'integrated',
-  reference.assay = 'SCT',
-  normalization.method = 'SCT',
-  reference.reduction = "spca",
-  dims = 1:50,
-  recompute.residuals = FALSE,
-  project.query = T,
-  features = intersect(cardio.integrated@assays$integrated@var.features, rownames(reference@assays$SCT@counts))
-)
-
-# map the query to the reference, this will project your dataset onto the reference, and copy the labels with a certain amount of certainty (the score)
-cardio.integrated <- MapQuery(
-  anchorset = anchors.cardio.integrated,
-  query = cardio.integrated,
-  reference = reference,
-  refdata = list(
-    celltype.l1 = "celltype.l1",
-    celltype.l2 = "celltype.l2",
-    predicted_ADT = "ADT"
-  ),
-  reference.reduction = "spca",
-  reduction.model = "wnn.umap"
-)
+cardio_integrated <- readRDS(cardio_object_unclassificed_loc)
+# add the celltype classification
+cardio.integrated <- AddMetaData(cardio.integrated, predictions_all['predicted.celltype.l1'], 'predicted.celltype.l1')
+cardio.integrated <- AddMetaData(cardio.integrated, predictions_all['predicted.celltype.l2'], 'predicted.celltype.l2')
+# get path of new object
+cardio_object_classificed_loc <- paste(object_loc, 'cardio.integrated.20201126_wazi.rds', sep = '')
+# save result
+saveRDS(cardio_integrated, cardio_object_classificed_loc)
