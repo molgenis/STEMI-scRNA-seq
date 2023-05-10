@@ -3,7 +3,10 @@
 ####################
 
 library(ggplot2)
+library(cowplot)
 library(GGally)
+
+library(Seurat)
 
 ####################
 # Functions        #
@@ -75,7 +78,7 @@ scale_cell_numbers_to_condition <- function(cell_numbers, timepoints_to_scale, t
   return(scaled_number_table)
 }
 
-plot_ct_numbers_boxplot <- function(numbers_table, conditions_to_plot=c('UT', 'Baseline', 't24h', 't8w'), cell_types_to_plot=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), use_label_dict=T, to_fraction=F, pointless=F, legendless=F, to_pct=F, ylim=NULL){
+plot_ct_numbers_boxplot <- function(numbers_table, conditions_to_plot=c('UT', 'Baseline', 't24h', 't8w'), cell_types_to_plot=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), use_label_dict=T, to_fraction=F, pointless=F, legendless=F, to_pct=F, ylim=NULL, paper_style=T){
   # subset to want we want to plot
   numbers_table <- numbers_table[numbers_table$condition %in% conditions_to_plot, ]
   numbers_table <- numbers_table[numbers_table$cell_type %in% cell_types_to_plot, ]
@@ -121,6 +124,9 @@ plot_ct_numbers_boxplot <- function(numbers_table, conditions_to_plot=c('UT', 'B
   if(legendless){
     p <- p + theme(legend.position = 'none')
   }
+  if (paper_style) {
+    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
   return(p)
 }
 
@@ -146,11 +152,11 @@ metadata_to_ggally_table <- function(metadata, cell_type_column='cell_type_lower
         nr_of_cells <- nrow(metadata[metadata[[cell_type_column]] == cell_type &
                                        metadata[[assignment.column]] == participant &
                                        metadata[[timepoint.column]] == timepoint,
-                                     ])
+        ])
         if(to_fraction){
           total_cells <- nrow(metadata[metadata[[assignment.column]] == participant &
-                                                        metadata[[timepoint.column]] == timepoint,
-                                                      ])
+                                         metadata[[timepoint.column]] == timepoint,
+          ])
           nr_of_cells <- nr_of_cells/total_cells
         }
         # add to matrix
@@ -398,9 +404,12 @@ get_color_coding_dict <- function(){
   color_coding[["t24h-t8w"]] <- "rosybrown3"
   # set condition colors
   color_coding[["HC"]] <- "grey"
-  color_coding[["t0"]] <- "pink"
-  color_coding[["t24h"]] <- "red"
-  color_coding[["t8w"]] <- "purple"
+  color_coding[["Control"]] <- "grey"
+  color_coding[["C"]] <- "grey"
+  color_coding[["t0"]] <- "#ff7101"
+  color_coding[["t24h"]] <- "#e12a62"
+  color_coding[["t8w"]] <- "#3B0550"
+  color_coding[["t6-8w"]] <- "#3B0550"
   # set the cell type colors
   color_coding[["Bulk"]] <- "black"
   color_coding[["CD4T"]] <- "#153057"
@@ -434,10 +443,10 @@ label_dict <- function(){
   label_dict[['Baselinet24h']] <- 't0-t24h'
   label_dict[['Baselinet8w']] <- 't0-t8w'
   # conditions
-  label_dict[['UT']] <- 'HC'
+  label_dict[['UT']] <- 'Control'
   label_dict[['Baseline']] <- 't0'
   label_dict[['t24h']] <- 't24h'
-  label_dict[['t8w']] <- 't8w'
+  label_dict[['t8w']] <- 't6-8w'
   # major cell types
   label_dict[["Bulk"]] <- "bulk-like"
   label_dict[["CD4T"]] <- "CD4+ T"
@@ -485,7 +494,7 @@ label_dict <- function(){
 ####################
 
 # location of the metadata
-meta.data.loc <- '/data/cardiology/metadata/cardio.integrated.20210301.metadata.tsv'
+meta.data.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata/cardio.integrated.20210301.metadata.tsv'
 # read into table
 meta.data <- read.table(meta.data.loc, sep = '\t', header = T, row.names = 1, stringsAsFactors = F)
 # get the cell numbers
@@ -551,7 +560,117 @@ rownames(ct_tbl) <- as.vector(unlist(label_dict()[rownames(ct_tbl)]))
 colnames(ct_tbl_hr) <- as.vector(unlist(label_dict()[colnames(ct_tbl_hr)]))
 rownames(ct_tbl_hr) <- as.vector(unlist(label_dict()[rownames(ct_tbl_hr)]))
 
-
-
 model_ncMono_t24ht0 <- lm(data=cell_numbers_gally_stemi_frac_baselinescaled_hr_ncmono_clinvar[!is.na(cell_numbers_gally_stemi_frac_baselinescaled_hr_ncmono_clinvar$t24h_t0), ], formula=t24h_t0 ~ logpeakckmb+age+gender+ck_mb)
 
+# get the unique lane and participant combinations
+participant_condition_lane <- unique(meta.data[, c('lane', 'assignment.final', 'timepoint.final')])
+# add the lane
+cell_numbers[['lane']] <- apply(cell_numbers, 1, FUN = function(x){
+  lane <- participant_condition_lane[participant_condition_lane[['assignment.final']] == x['participant'] & participant_condition_lane[['timepoint.final']] == x['condition'], 'lane'][1]
+  return(lane)
+})
+cell_numbers_hr[['lane']] <- apply(cell_numbers_hr, 1, FUN = function(x){
+  lane <- participant_condition_lane[participant_condition_lane[['assignment.final']] == x['participant'] & participant_condition_lane[['timepoint.final']] == x['condition'], 'lane'][1]
+  return(lane)
+})
+# add major/minor label
+cell_numbers[['level']] <- 'major'
+cell_numbers_hr[['level']] <- 'minor'
+# turn into one table
+cell_numbers_both <- rbind(cell_numbers, cell_numbers_hr)
+cell_numbers_both[['condition']] <- as.vector(unlist(list('UT' = 'control', 'Baseline' = 't0', 't24h' = 't24h', 't8w' = 't6-8w')[cell_numbers_both[['condition']]]))
+# write result
+write.table(cell_numbers_both[, c('level', 'lane', 'condition', 'participant', 'cell_type', 'number')], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/stemi_cell_numbers_overview.tsv', sep = '\t', row.names = F, col.names = T)
+
+# finally make the final plot
+cardio_integrated_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/seurat/cardio.integrated.20210301.rds'
+cardio_integrated <- readRDS(cardio_integrated_loc)
+# add a nicer label
+cardio_integrated@meta.data[['cell_type_lowerres_safe']] <- as.vector(unlist(label_dict()[as.character(cardio_integrated@meta.data[['cell_type_lowerres']])]))
+# the two UMAPs
+p_umap_lowerres <- DimPlot(cardio_integrated, group.by = 'cell_type_lowerres_safe', label = TRUE, label.size = 3, repel = TRUE) + scale_colour_manual(name = 'cell type', values = get_color_coding_dict()) + NoLegend()
+p_umap_higherres <- DimPlot(cardio_integrated, group.by = 'cell_type', label = TRUE, label.size = 3, repel = TRUE) + NoLegend()
+# the cell type plots
+p_ctprops_mono <- plot_ct_numbers_boxplot(numbers_table = cell_numbers, legendless = T, pointless = F, to_pct = T, ylim=c(0,100),, cell_types_to_plot = c('monocyte'))
+p_ctprops_cmono <- plot_ct_numbers_boxplot(numbers_table = cell_numbers_hr, legendless = T, pointless = F, to_pct = T, ylim=c(0,100), cell_types_to_plot = c('cMono'))
+p_ctprops_ncmono <- plot_ct_numbers_boxplot(numbers_table = cell_numbers_hr, legendless = T, pointless = F, to_pct = T, ylim=c(0,25), cell_types_to_plot = c('ncMono'))
+p_ctprops_nk <- plot_ct_numbers_boxplot(numbers_table = cell_numbers, legendless = T, pointless = F, to_pct = T, ylim=c(0,40), cell_types_to_plot = c('NK'))
+p_ctprops_nkdim <- plot_ct_numbers_boxplot(numbers_table = cell_numbers_hr, legendless = T, pointless = F, to_pct = T, ylim=c(0,40), cell_types_to_plot = c('NKdim'))
+p_ctprops_nkbright <- plot_ct_numbers_boxplot(numbers_table = cell_numbers_hr, legendless = T, pointless = F, to_pct = T, ylim=c(0,3), cell_types_to_plot = c('NKbright'))
+#make panels
+p_panel <- plot_grid(
+  # 
+  plot_grid(
+    #
+    plot_grid(
+      plot_grid(
+        ggdraw() + draw_label('a', fontface = 'bold', x = 0, hjust = 0, size = 20),
+        ggdraw() + draw_label('cell types low resolution', fontface = 'bold', x = 0, hjust = 0),
+        nrow = 1,
+        rel_widths = c(0.1, 1)
+      ),
+      p_umap_lowerres + ggtitle(''),
+      rel_heights = c(0.1, 1),
+      nrow = 2
+    ),
+    plot_grid(
+      plot_grid(
+        ggdraw() + draw_label('c', fontface = 'bold', x = 0, hjust = 0, size = 20),
+        ggdraw() + draw_label('cell type proportions monocytes', fontface = 'bold', x = 0, hjust = 0),
+        nrow = 1,
+        rel_widths = c(0.1, 1)
+      ),
+      plot_grid(
+        p_ctprops_mono,
+        p_ctprops_cmono,
+        p_ctprops_ncmono,
+        ncol = 3,
+        nrow = 1
+      ),
+      rel_heights = c(0.1, 1),
+      nrow = 2,
+      ncol = 1
+    ),
+    nrow = 1,
+    ncol = 2,
+    rel_widths = c(0.4,0.6)
+  ),
+  plot_grid(
+    #
+    plot_grid(
+      plot_grid(
+        ggdraw() + draw_label('b', fontface = 'bold', x = 0, hjust = 0, size = 20),
+        ggdraw() + draw_label('cell types high resolution', fontface = 'bold', x = 0, hjust = 0),
+        nrow = 1,
+        rel_widths = c(0.1, 1)
+      ),
+      p_umap_higherres + ggtitle(''),
+      rel_heights = c(0.1, 1),
+      nrow = 2
+    ),
+    plot_grid(
+      plot_grid(
+        ggdraw() + draw_label('d', fontface = 'bold', x = 0, hjust = 0, size = 20),
+        ggdraw() + draw_label('cell type proportions NK', fontface = 'bold', x = 0, hjust = 0),
+        nrow = 1,
+        rel_widths = c(0.1, 1)
+      ),
+      plot_grid(
+        p_ctprops_nk,
+        p_ctprops_nkdim,
+        p_ctprops_nkbright,
+        ncol = 3,
+        nrow = 1
+      ),
+      rel_heights = c(0.1, 1),
+      nrow = 2,
+      ncol = 1
+    ),
+    nrow = 1,
+    ncol = 2,
+    rel_widths = c(0.4,0.6)
+  ),
+  nrow = 2,
+  ncol = 1,
+  rel_heights = c(.5, .5)
+)

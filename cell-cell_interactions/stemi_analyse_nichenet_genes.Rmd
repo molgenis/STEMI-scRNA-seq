@@ -1,0 +1,2589 @@
+---
+title: "stemi_analyse_nichenet_genes"
+author: "Roy Oelen"
+date: "2022-10-05"
+output: html_document
+---
+
+```{r header, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Roy Oelen
+# Name: stemi_analyse_nichenet_genes.Rmd
+# Function: 
+############################################################################################################################
+
+```
+
+```{r libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+####################
+# libraries        #
+####################
+
+
+library(enrichplot)
+library(pathview)
+library(ggnewscale)
+library(clusterProfiler)
+library(enrichR)
+#library(ggVennDiagram)
+library(VennDiagram)
+library(data.table)
+library(circlize)
+library(ggplot2)
+library(cowplot)
+library(UpSetR)
+
+```
+
+```{r functions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+####################
+# Functions        #
+####################
+
+extract_significant_ligands_and_downstream_genes <- function(nichenet_output, significance_cutoff=0.05, matrix='ligand_target'){
+  # make a list per receiver
+  interactions <- list()
+  # check each receiver
+  for(receiver in names(nichenet_output)){
+    # make a list per sender
+    interactions_senders <- list()
+    # check against each sender
+    for(sender in names(nichenet_output[[receiver]])){
+      # init lists of ligands and downstream genes
+      ligands_significant <- c()
+      downstream_genes_significant <- c()
+      # extract the ligand-downstream gene matrix
+      if(matrix %in% names(nichenet_output[[receiver]][[sender]])){
+        ligand_gene_matrix <- nichenet_output[[receiver]][[sender]][[matrix]]
+        if(nrow(ligand_gene_matrix) > 0){
+          # extract the ligands
+          ligands <- colnames(ligand_gene_matrix)
+          # extract the downstream genes
+          downstream_genes <- rownames(ligand_gene_matrix)
+          # check each combination
+          for(ligand in ligands){
+            for(downstream_gene in downstream_genes){
+               # get the value
+              interaction <- ligand_gene_matrix[downstream_gene, ligand]
+              # if larger than the cutoff value (0.05 is nichenet default)
+              if(interaction > significance_cutoff){
+                # add both the ligand and the downstream gene
+                ligands_significant <- c(ligands_significant, ligand)
+                downstream_genes_significant <- c(downstream_genes_significant, downstream_gene)
+              }
+            }
+          }
+        }
+      }
+      # put genes is list
+      ligand_targets <- list('ligands' = ligands_significant, 'targets' = downstream_genes_significant)
+      # save list for the sender
+      interactions_senders[[sender]] <- ligand_targets
+    }
+    # save list for receiver
+    interactions[[receiver]] <- interactions_senders
+  }
+  return(interactions)
+}
+
+
+get_max_interaction_per_receptor <- function(nichenet_output, significance_cutoff=0.05){
+  # make a list per receiver
+  max_receptor_values <- list()
+  # check each receiver
+  for(receiver in names(nichenet_output)){
+    # make a list per sender
+    interactions_senders <- list()
+    # check against each sender
+    for(sender in names(nichenet_output[[receiver]])){
+      # extract the ligand-downstream gene matrix
+      if('ligand_receptor_network' %in% names(nichenet_output[[receiver]][[sender]])){
+        ligand_receptor_matrix <- nichenet_output[[receiver]][[sender]][['ligand_receptor_network']]
+        if(nrow(ligand_receptor_matrix) > 0){
+          # extract the ligands
+          ligands <- colnames(ligand_receptor_matrix)
+          # extract the downstream genes
+          receptors <- rownames(ligand_receptor_matrix)
+          # check each combination
+          for(ligand in ligands){
+            for(receptor in receptors){
+              # get the value
+              interaction <- ligand_receptor_matrix[receptor, ligand]
+              # if larger than the cutoff value (0.05 is nichenet default)
+              if(interaction > significance_cutoff){
+                # check if the interaction is already present
+                if (!(receptor %in% names(max_receptor_values))){
+                  max_receptor_values[[receptor]] <- interaction
+                # or if the current interaction is weaker 
+                }else if(receptor %in% names(max_receptor_values) & max_receptor_values[[receptor]] < interaction){
+                  max_receptor_values[[receptor]] <- interaction
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return(max_receptor_values)
+}
+
+
+get_unique_ligands_targets <- function(significant_ligands_targets, ligand_column='ligands', target_column='targets'){
+  # init lists of ligands and downstream genes
+  ligands_significant <- c()
+  downstream_genes_significant <- c()
+  # check each receiver
+  for(receiver in names(significant_ligands_targets)){
+    # check against each sender
+    for(sender in names(significant_ligands_targets[[receiver]])){
+      # extract these ligands
+      ligands <- significant_ligands_targets[[receiver]][[sender]][[ligand_column]]
+      # extract the downstream genes
+      downstream_genes <- significant_ligands_targets[[receiver]][[sender]][[target_column]]
+      # add to the total list
+      ligands_significant <- c(ligands_significant, ligands)
+      downstream_genes_significant <- c(downstream_genes_significant, downstream_genes)
+    }
+  }
+  return(list('ligands' = unique(ligands_significant), 'targets' = unique(downstream_genes_significant)))
+}
+
+get_lfs_for_genes <- function(mast_output_loc, condition_combination, genes=NULL, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), lfc_column='avg_logFC'){
+  lfc_dataframe <- NULL
+  # check each cell type
+  for(cell_type in cell_types){
+    # paste the output path together
+    full_output_path <- paste(mast_output_loc, cell_type, condition_combination, '.tsv', sep = '')
+    # see if the file exists
+    if(file.exists(full_output_path)){
+      # read the file
+      de_output <- read.table(full_output_path, sep = '\t', header = T, row.names = 1, stringsAsFactors = F)
+      # subset to a set of genes if requested
+      genes_to_get <- rownames(de_output)
+      if(!is.null(genes)){
+        genes_to_get <- intersect(genes_to_get, genes)
+      }
+      # get the lfs
+      lfcs <- de_output[match(genes_to_get, rownames(de_output)), lfc_column]
+      
+      # turn into a dataframe
+      lfcs_column <- data.frame(lfcs=lfcs)
+      colnames(lfcs_column) <- cell_type
+      rownames(lfcs_column) <- genes_to_get
+      # add to the dataframe
+      if(is.null(lfc_dataframe)){
+        lfc_dataframe <- lfcs_column
+      }
+      else{
+        # merge together
+        lfc_dataframe <- merge(x = lfc_dataframe, y = lfcs_column, by = 0, all = T)
+        # reset the rownames
+        rownames(lfc_dataframe) <- lfc_dataframe[['Row.names']]
+        # remove the extra column
+        lfc_dataframe[['Row.names']] <- NULL
+      }
+    }
+    else{
+      print(paste('no output for', cell_type, ':', full_output_path))
+    }
+  }
+  return(lfc_dataframe)
+}
+
+
+get_absolute_max <- function(vector){
+  abs_max <- vector[which.max(abs(vector))]
+  return(abs_max)
+}
+
+
+get_max_value_from_lists <- function(lists) {
+  max_value_per_entry <- list()
+  # check each list
+  for(this_list in lists){
+    # check each entry
+    for(entry in names(this_list)){
+      # check if the entry has been seen before
+      if(!(entry %in% names(max_value_per_entry))){
+        # then the only entry is the max entry as well
+        max_value_per_entry[[entry]] <- this_list[[entry]]
+      # otherwise, we have to check if this entry is higher
+      }else{
+        value <- this_list[[entry]]
+        old_value <- max_value_per_entry[[entry]]
+        # and replace if so
+        if(value > old_value){
+          max_value_per_entry[[entry]] <- value
+        }
+      }
+    }
+  }
+  return(max_value_per_entry)
+}
+
+
+combine_lists <- function(list_of_lists, ligand_column='ligands', target_column='targets'){
+  # list of receivers
+  receivers <- list()
+  # check each experiment
+  for (list_name in names(list_of_lists)) {
+    # get each list
+    list_experiment <- list_of_lists[[list_name]]
+    # check each receiver
+    for(receiver in names(list_experiment)){
+      # add to new list if not yet there
+      if (!(receiver %in% names(receivers))){
+        receivers[[receiver]] <- list()
+      }
+      # make a list for the senders
+      senders <- list()
+      # check against each sender
+      for(sender in names(list_experiment[[receiver]])){
+        # add to new list if not there yet
+        if (!(sender %in% names(receivers[[receiver]]))) {
+          receivers[[receiver]][[sender]] <- list()
+          # the two vectors of genes as well
+          receivers[[receiver]][[sender]][[ligand_column]] <- c()
+          receivers[[receiver]][[sender]][[target_column]] <- c()
+        }
+        # extract these ligands
+        ligands <- list_experiment[[receiver]][[sender]][[ligand_column]]
+        # extract the downstream genes
+        downstream_genes <- list_experiment[[receiver]][[sender]][[target_column]]
+        # add to existing entries
+        receivers[[receiver]][[sender]][[ligand_column]] <- unique(c(receivers[[receiver]][[sender]][[ligand_column]], ligands))
+        receivers[[receiver]][[sender]][[target_column]] <- unique(c(receivers[[receiver]][[sender]][[target_column]], downstream_genes))
+      }
+    }
+  }
+  return(receivers)
+}
+
+
+write_significant_genes <- function(nichenet_output, output_prepend, significance_cutoff_lt=0.00, matrix_lt='ligand_target', significance_cutoff_lr=0.00, matrix_lr='ligand_receptor_network'){
+  # we will keep 'all' for each sender in addition to per combination
+  all_genes_sender <- list()
+  # check each receiver
+  for(receiver in names(nichenet_output)){
+    # we will keep 'all' for each receiver as well
+    all_genes_receiver <- c()
+    # make a safe name
+    receiver_safe <- gsub(' |/', '_', receiver)
+    receiver_safe <- gsub('-', '_negative', receiver_safe)
+    receiver_safe <- gsub('\\+', '_positive', receiver_safe)
+    receiver_safe <- gsub('\\)', '', receiver_safe)
+    receiver_safe <- gsub('\\(', '', receiver_safe)
+    # check against each sender
+    for(sender in names(nichenet_output[[receiver]])){
+      # make the receiver safe
+      sender_safe <- gsub(' |/', '_', sender)
+      sender_safe <- gsub('-', '_negative', sender_safe)
+      sender_safe <- gsub('\\+', '_positive', sender_safe)
+      sender_safe <- gsub('\\)', '', sender_safe)
+      sender_safe <- gsub('\\(', '', sender_safe)
+      # and we'll save the significant ones
+      ligands_receptors_significant <- c()
+      # check which ligand-receptors are significant
+      if(matrix_lr %in% names(nichenet_output[[receiver]][[sender]])){
+        matrix_ligand_receptor <- nichenet_output[[receiver]][[sender]][[matrix_lr]]
+        if(nrow(matrix_ligand_receptor) > 0){
+          # extract the ligands
+          ligands <- colnames(matrix_ligand_receptor)
+          # extract the downstream genes
+          receptors <- rownames(matrix_ligand_receptor)
+          # check each combination
+          for(ligand in ligands){
+            for(receptor in receptors){
+              # get the value
+              interaction <- matrix_ligand_receptor[receptor, ligand]
+              # if larger than the cutoff value (0.05 is nichenet default)
+              if(interaction > significance_cutoff_lr){
+                ligands_receptors_significant <- c(ligands_receptors_significant, ligand, receptor)
+              }
+            }
+          }
+        }
+      }
+      # and we'll save the significant ones
+      ligands_targets_significant <- c()
+      # check which ligand-targets are significant
+      if(matrix_lt %in% names(nichenet_output[[receiver]][[sender]])){
+        matrix_ligand_target <- nichenet_output[[receiver]][[sender]][[matrix_lt]]
+        if(nrow(matrix_ligand_target) > 0){
+          # extract the ligands
+          ligands <- colnames(matrix_ligand_target)
+          # extract the downstream genes
+          targets <- rownames(matrix_ligand_target)
+          # check each combination
+          for(ligand in ligands){
+            for(target in targets){
+              # get the value
+              interaction <- matrix_ligand_target[target, ligand]
+              # if larger than the cutoff value (0.05 is nichenet default)
+              if(interaction > significance_cutoff_lt){
+                ligands_targets_significant <- c(ligands_targets_significant, ligand, target)
+              }
+            }
+          }
+        }
+      }
+      # paste together the output path
+      genes_output_loc <- paste(output_prepend, receiver_safe, '_from_', sender_safe, '.tsv', sep = '')
+      # collect the result
+      significant_genes <- unique(c(ligands_receptors_significant, ligands_targets_significant))
+      # replace dot with dash again
+      significant_genes <- gsub('\\.', '-', significant_genes)
+      # write the result
+      write.table(data.frame(x = significant_genes), genes_output_loc, col.names = F, row.names = F, quote = F)
+      # and to add to all of the receiver together
+      all_genes_receiver <- c(all_genes_receiver, significant_genes)
+      # and to the list of all senders together
+      if (!(receiver %in% names(all_genes_sender))) {
+        all_genes_sender[[receiver]] <- c()
+      }
+      all_genes_sender[[receiver]] <- c(all_genes_sender[[receiver]], significant_genes)
+    }
+    all_genes_receiver <- unique(all_genes_receiver)
+    # paste together the output path
+    genes_all_receiver_output_loc <- paste(output_prepend, receiver_safe, '_from_', 'all', '.tsv', sep = '')
+    # write the result
+    write.table(data.frame(x = all_genes_receiver), genes_all_receiver_output_loc, col.names = F, row.names = F, quote = F)
+  }
+  # and now for all per sender as well
+  for (sender in names(all_genes_sender)) {
+    all_genes_sender_list <- unique(all_genes_sender[[sender]])
+    # paste together the output path
+    genes_all_sender_output_loc <- paste(output_prepend, 'all', '_from_', sender, '.tsv', sep = '')
+    # write the result
+    write.table(data.frame(x = all_genes_sender_list), genes_all_sender_output_loc, col.names = F, row.names = F, quote = F)
+  }
+}
+
+
+combine_gene_lists <- function(output_loc_original, output_combined_prepend, cell_types, prepends_to_combine=c('v2_', 'v3_')){
+  # check each cell type
+  for (cell_type_receiver in cell_types) {
+    # against each cell type
+    for (cell_type_sender in cell_types) {
+      # we will have a list of genes
+      genes_list <- c()
+      # check each prepend
+      for (prepend in prepends_to_combine) {
+        # paste together the output location
+        input_full_loc <- paste(output_loc_original, prepend, cell_type_receiver, '_from_', cell_type_sender, '.tsv', sep = '')
+        # see if we can read the file
+        if (!file.exists(input_full_loc) ) {
+          message(paste('no output found with path', input_full_loc))
+        }
+        else if (file.size(input_full_loc) == 0L) {
+          message(paste('output is empty for', input_full_loc))
+        }
+        else {
+          genes_this_set <- read.table(input_full_loc, header = F)[['V1']]
+          # add to total set
+          genes_list <- c(genes_list, genes_this_set)
+        }
+      }
+      # combine the output
+      genes_list <- unique(genes_list)
+      # paste together an output path
+      output_full_loc <- paste(output_combined_prepend, cell_type_receiver, '_from_', cell_type_sender, '.tsv', sep = '')
+      # write the result
+      write.table(data.frame(x = genes_list), output_full_loc, row.names = F, col.names = F, quote = F)
+    }
+  }
+}
+
+enrich_for_significant_interactions <- function(genes_per_receiver_and_sender, ligand_column='ligands', target_column='targets'){
+  # we will also check for enrichment of specifically sending
+  genes_senders <- list()
+  genes_receivers <- list()
+  # but for each receiver as well
+  results_receivers <- list()
+  # check each receiver
+  for(receiver in names(genes_per_receiver_and_sender)){
+    # init total gene list for senders if not already
+    if (!(receiver %in% names(genes_receivers))) {
+      genes_receivers[[receiver]] <- c()
+    }
+    # add result
+    results_receivers[[receiver]] <- list()
+    # check against each sender
+    for(sender in names(genes_per_receiver_and_sender[[receiver]])){
+      # init total gene list for receivers if not already
+      if (!(receiver %in% names(genes_senders))) {
+        genes_senders[[sender]] <- c()
+      }
+      # extract these ligands
+      ligands <- genes_per_receiver_and_sender[[receiver]][[sender]][[ligand_column]]
+      # extract the downstream genes
+      downstream_genes <- genes_per_receiver_and_sender[[receiver]][[sender]][[target_column]]
+      # do enrichment analysis for the ligands and downstream genes
+      enriched_receiver_sender <- enrichr(genes = c(ligands, downstream_genes), databases = c('Reactome_2016'))
+      # grab the reactome result
+      enriched_receiver_sender_reactome <- enriched_receiver_sender[['Reactome_2016']]
+      # add the result
+      results_receivers[[receiver]][[sender]] <- enriched_receiver_sender_reactome
+      # also add the genes to the total gene list for that specific sender and receiver
+      genes_senders[[sender]] <- unique(c(genes_senders[[sender]], downstream_genes, ligands)) 
+      genes_receivers[[receiver]] <- unique(c(genes_receivers[[receiver]], downstream_genes, ligands))
+    }
+    # now we have all the genes for the receiver, we can also do that one
+    enriched_receiver_allsenders <- enrichr(genes = genes_receivers[[receiver]], databases = c('Reactome_2016'))
+    enriched_receiver_allsenders_reactome <- enriched_receiver_allsenders[['Reactome_2016']]
+    results_receivers[[receiver]][['all']] <- enriched_receiver_allsenders_reactome
+  }
+  # now that we have done all the senders, we can also do pathway enrichment of those aggregates
+  for (sender in names(genes_senders)) {
+    enriched_receiver_allreceivers <- enrichr(genes = genes_senders[[sender]], databases = c('Reactome_2016'))
+    enriched_receiver_allreceivers_reactome <- enriched_receiver_allreceivers[['Reactome_2016']]
+    results_receivers[['all']][[sender]] <- enriched_receiver_allreceivers_reactome
+  }
+  return(results_receivers)
+}
+
+
+write_enrichment_results <- function(enrichment_per_receiver_and_sender, output_loc){
+  # check each receiver
+  for (receiver in names(enrichment_per_receiver_and_sender)) {
+    # check sender
+    for (sender in names(enrichment_per_receiver_and_sender[[receiver]])){
+      # get a safe file name
+      receiver_safe <- gsub(' |/', '_', receiver)
+      receiver_safe <- gsub('-', '_negative', receiver_safe)
+      receiver_safe <- gsub('\\+', '_positive', receiver_safe)
+      receiver_safe <- gsub('\\)', '', receiver_safe)
+      receiver_safe <- gsub('\\(', '', receiver_safe)
+      sender_safe <- gsub(' |/', '_', sender)
+      sender_safe <- gsub('-', '_negative', sender_safe)
+      sender_safe <- gsub('\\+', '_positive', sender_safe)
+      sender_safe <- gsub('\\)', '', sender_safe)
+      sender_safe <- gsub('\\(', '', sender_safe)
+      # paste together the output path
+      enrichment_output_loc <- paste(output_loc, receiver_safe, '_from_', sender_safe, '.tsv', sep = '')
+      # write the result
+      write.table(enrichment_per_receiver_and_sender[[receiver]][[sender]], enrichment_output_loc, sep = '\t', row.names = F, col.names = T)
+    }
+  }
+}
+
+
+combine_senders_and_combine_receivers <- function(genes_per_receiver_and_sender, ligand_column='ligands', target_column='targets'){
+  # we will save all genes per receiver, but also all genes per sender
+  senders_and_receivers_combined <- list()
+  # init the where we have combined all the receivers
+  senders_and_receivers_combined[['all']] <- list()
+  # check each receiver
+  for(receiver in names(genes_per_receiver_and_sender)){
+    # init the vector where we have combined all the senders
+    senders_and_receivers_combined[[receiver]][['all']] <- list()
+    senders_and_receivers_combined[[receiver]][['all']] <- list()
+    senders_and_receivers_combined[[receiver]][['all']][[ligand_column]] <- c()
+    senders_and_receivers_combined[[receiver]][['all']][[target_column]] <- c()
+    # check against each sender
+    for(sender in names(genes_per_receiver_and_sender[[receiver]])){
+      # add this sender to the receiver
+      senders_and_receivers_combined[[receiver]][['all']][[ligand_column]] <- unique(c(senders_and_receivers_combined[[receiver]][['all']][[ligand_column]], 
+                                                                      genes_per_receiver_and_sender[[receiver]][[sender]][[ligand_column]]))
+      senders_and_receivers_combined[[receiver]][['all']][[target_column]] <- unique(c(senders_and_receivers_combined[[receiver]][['all']][[target_column]], 
+                                                                      genes_per_receiver_and_sender[[receiver]][[sender]][[target_column]]))
+      # add this receiver to the sender list as well
+      if (sender %in% names(senders_and_receivers_combined[['all']])) {
+        senders_and_receivers_combined[['all']][[sender]][[ligand_column]] <- unique(c(senders_and_receivers_combined[['all']][[sender]][[ligand_column]],
+                                                                      genes_per_receiver_and_sender[[receiver]][[sender]][[ligand_column]]))
+        senders_and_receivers_combined[['all']][[sender]][[target_column]] <- unique(c(senders_and_receivers_combined[['all']][[sender]][[target_column]],
+                                                                                         genes_per_receiver_and_sender[[receiver]][[sender]][[target_column]]))
+      }
+      else {
+        senders_and_receivers_combined[['all']][[sender]] <- genes_per_receiver_and_sender[[receiver]][[sender]]
+      }
+    }
+  }
+  return(senders_and_receivers_combined)
+}
+
+
+
+plot_gene_overlap <- function(genes_per_receiver_1, genes_per_receiver_2, target_key, output_prepend='./', set_1_name='set_1', set_2_name='set_2', set_1_colour='#FF6066', set_2_colour='#C060A6'){
+  # check each receiver
+  for (receiver in unique(names(genes_per_receiver_1), names(genes_per_receiver_2))){
+    # get the senders
+    senders <- c()
+    if(receiver %in% names(genes_per_receiver_1)){
+      senders <- names(genes_per_receiver_1[[receiver]])
+    }
+    if(receiver %in% names(genes_per_receiver_2)){
+      senders <- c(senders, names(genes_per_receiver_2[[receiver]]))
+    }
+    senders <- unique(senders)
+    # check each sender
+    for (sender in senders) {
+      genes_set_1 <- c()
+      genes_set_2 <- c()
+      # get the genes
+      if (receiver %in% names(genes_per_receiver_1) &
+          sender %in% names(genes_per_receiver_1[[receiver]]) &
+          target_key %in% names(genes_per_receiver_1[[receiver]][[sender]])) {
+        genes_set_1 <- genes_per_receiver_1[[receiver]][[sender]][[target_key]]
+      }
+      if (receiver %in% names(genes_per_receiver_2) &
+          sender %in% names(genes_per_receiver_2[[receiver]]) &
+          target_key %in% names(genes_per_receiver_2[[receiver]][[sender]])) {
+        genes_set_2 <- genes_per_receiver_2[[receiver]][[sender]][[target_key]]
+      }
+      # paste together the output path
+      output_loc_full <- paste(output_prepend, receiver, '_from_', sender, '_', target_key, '.png', sep = '')
+      # create the venn diagram
+      venn.diagram(
+        x = list(genes_set_1, genes_set_2),
+        category.names = c(set_1_name, set_2_name),
+        filename = output_loc_full,
+        output = TRUE,
+        
+        # Output features
+        imagetype="png" ,
+        height = 800 , 
+        width = 800 , 
+        resolution = 300,
+        compression = "lzw",
+        
+        # Circles
+        lwd = 2,
+        lty = 'blank',
+        fill = c(set_1_colour, set_2_colour),
+        
+        # Numbers
+        cex = .6,
+        fontface = "bold",
+        fontfamily = "sans",
+        
+        # Set names
+        cat.cex = 0.6,
+        cat.fontface = "bold",
+        cat.default.pos = "outer",
+        cat.fontfamily = "sans",
+        cat.pos = c(-27, 27)
+      )
+    }
+  }
+}
+
+
+get_further_entries <- function(cascade_matrix, genes_to_fetch, genes_already_fetched, from_column='from', to_column='to'){
+  # get genes for each entry
+  for (gene in genes_to_fetch) {
+    # get the matched genes
+    matched_genes <- cascade_matrix[cascade_matrix[[from_column]] == genes_to_fetch, to_column][[to_column]]
+    # check if there are entries
+    if (length(matched_genes) > 0) {
+      genes_not_to_get <- c(genes_already_fetched, genes_to_fetch)
+      # get more genes, but don't get ones we already have
+      more_genes <- get_further_entries(cascade_matrix, setdiff(matched_genes, genes_not_to_get), genes_not_to_get, from_column, to_column)
+      return(c(genes_to_fetch, more_genes))
+    }
+    else{
+      return(genes_to_fetch)
+    }
+  }
+}
+
+
+get_downstream_genes_per_receptor <- function(ligand_receptor_matrix, receiver, mast_output_loc, condition_combination, cascade_matrix, significance_cutoff=0, lfc_column='avg_logFC'){
+  # extract the ligands
+  ligands <- colnames(ligand_receptor_matrix)
+  # extract the downstream genes
+  receptors <- rownames(ligand_receptor_matrix)
+  # but we really want the significant ones
+  significant_receptors <- c()
+  # check each combination
+  for(ligand in ligands){
+    for(receptor in receptors){
+      # get the value
+      interaction <- ligand_receptor_matrix[receptor, ligand]
+      # if larger than the cutoff value (0.05 is nichenet default)
+      if(interaction > significance_cutoff){
+        significant_receptors <- c(significant_receptors, receptor)
+      }
+    }
+  }
+  # get the total gene list
+  all_genes <- get_further_entries(cascade_matrix, significant_receptors, c())
+  # get all the LFCs
+  lfcs <- get_lfs_for_genes(mast_output_loc = mast_output_loc, condition_combination = condition_combination, cell_types = c(receiver), genes = all_genes, lfc_column = lfc_column)
+  # make a names list with the summed lfcs per receptor
+  sums_per_receptor <- list()
+  # check each receptor
+  for (receptor in significant_receptors){
+    genes_receptor <-  get_further_entries(cascade_matrix, c(receptor), c())
+    # get the lfcs
+    summed_lfc <- 0
+    # check if there was any DE result
+    if (!(is.null(lfcs))){
+      summed_lfc <- sum(abs(lfcs[intersect(rownames(lfcs), genes_receptor), receiver]))
+    }
+    sums_per_receptor[[receptor]] <- summed_lfc
+  }
+  return(sums_per_receptor)
+}
+
+
+named_symbol_list_to_entrez <- function(named_symbol_list){
+  # get the entrez IDs
+  named_list_mapping <- bitr(names(named_symbol_list), fromType = "SYMBOL", toType = "ENTREZID", OrgDb=organism)
+# filter empty results
+  named_list_mapping <- named_list_mapping[!is.na(named_list_mapping[['SYMBOL']]) & !is.na(named_list_mapping[['ENTREZID']]), ]
+  # only include what we can map
+  named_symbol_list <- named_symbol_list[names(named_symbol_list) %in% named_list_mapping[['SYMBOL']]]
+  # swap to entrez
+  named_symbol_list_names <- named_list_mapping[match(names(named_symbol_list), named_list_mapping[['SYMBOL']]), 'ENTREZID']
+  named_symbol_list <- unlist(named_symbol_list)
+  names(named_symbol_list) <- named_symbol_list_names
+  return(named_symbol_list)
+}
+
+de_table_to_pathview <- function(de_table, pathways.ids, cell_type_column){
+  # subset to not NA
+  de_table_cell_type <- de_table[!is.na(de_table[[cell_type_column]]), ]
+  if(nrow(de_table_cell_type) > 0){
+    # calculate the maximum absolute value
+    max_abs <- max(abs(de_table_cell_type[[cell_type_column]]))
+    # turn into named list
+    lfcs <- as.list(de_table_cell_type[[cell_type_column]])
+    names(lfcs) <- rownames(de_table_cell_type)
+    # get entrez IDs for the gene symbols
+    lfcs <- named_symbol_list_to_entrez(lfcs)
+    # check each pathway id
+    for(pathway.id in pathways.ids){
+      # it's useless to create a figure where there is nothing
+      if(max_abs > 0){
+        pathview(gene.data=lfcs, pathway.id = pathway.id, species = kegg.organism, limit = list('gene' = c(max_abs * -1.1, max_abs * 1.1), 'cpd' = c(-1 , 1)))
+      }
+    }
+  }
+}
+
+matrix_to_pathview <- function(matrix, pathways.ids, return_significant_genes=T){
+  # extract the ligands
+  ligands <- colnames(matrix)
+  # extract the downstream genes
+  receptors <- rownames(matrix)
+  # we will sum the ligand and receptor values
+  ligand_lr_sums <- rep(0, times = length(ligands))
+  names(ligand_lr_sums) <- ligands
+  receptor_sums <- rep(0, times = length(receptors))
+  names(receptor_sums) <- receptors
+  # check each combination
+  for(ligand in ligands){
+    for(receptor in receptors){
+      # get the value
+      interaction <- matrix[receptor, ligand]
+      # add for both the ligand and receptor
+      ligand_lr_sums[[ligand]] <- ligand_lr_sums[[ligand]] + interaction
+      receptor_sums[[receptor]] <- receptor_sums[[receptor]] + interaction
+    }
+  }
+  # switch entrez
+  ligand_lr_sums_entrez <- named_symbol_list_to_entrez(ligand_lr_sums)
+  receptor_sums_entrez <- named_symbol_list_to_entrez(receptor_sums)
+         
+  # check each pathway id
+  for(pathway.id in pathways.ids){
+    # calculate the maximum absolute value
+    max_abs <- max(abs(c(ligand_lr_sums_entrez, receptor_sums_entrez)))
+    # it's useless to create a figure where there is nothing
+    if(max_abs > 0){
+      pathview(gene.data=c(ligand_lr_sums_entrez, receptor_sums_entrez), pathway.id = pathway.id, species = kegg.organism, limit = list('gene' = c(max_abs * -1.1, max_abs * 1.1), 'cpd' = c(-1 , 1)))
+    }
+  }
+  # return a list of significant genes
+  if(return_significant_genes){
+    all_genes <- c(ligand_lr_sums, receptor_sums)
+    significant_genes <- names(all_genes)[abs(all_genes) > 0]
+    return(significant_genes)
+  }
+}
+
+lfc_sums_to_pathview <- function(ligand_receptor_matrix, receiver, sender,mast_output_loc, condition_combination, cascade_matrix, pathways.ids, significance_cutoff=0){
+  # get the downstream genes
+  downstream_genes <- get_downstream_genes_per_receptor(ligand_receptor_matrix = ligand_receptor_matrix, receiver = receiver, mast_output_loc = mast_output_loc, condition_combination = condition_combination, cascade_matrix = cascade_matrix, significance_cutoff = significance_cutoff)
+  # extract the ligands
+  ligands <- colnames(matrix)
+  # extract the downstream genes
+  receptors <- rownames(matrix)
+  # get the significan ligands
+  significant_ligands <- c()
+  # check each combination
+  for(ligand in ligands){
+    for(receptor in receptors){
+      # get the value
+      interaction <- matrix[receptor, ligand]
+      if (interaction > significance_cutoff) {
+        significant_ligands <- c(significant_ligands, ligand)
+      }
+    }
+  }
+  # get the lfc for the ligands
+  lfcs_ligands <- get_lfs_for_genes(mast_output_loc = mast_output_loc, condition_combination = condition_combination, cell_types = c(sender), genes = significant_ligands)
+  # to list
+  lfc_ligand_list <- as.list(lfcs_ligands[[sender]])
+  names(lfc_ligand_list) <- rownames(lfcs_ligands)
+  # merge the lists
+  merged_lfcs <- downstream_genes
+  merged_lfcs[names(lfc_ligand_list)] <- as.vector(unlist(lfc_ligand_list))
+  # switch entrez
+  merged_lfcs <- named_symbol_list_to_entrez(merged_lfcs)
+  # check each pathway id
+  for(pathway.id in pathways.ids){
+    # calculate the maximum absolute value
+    max_abs <- max(abs(merged_lfcs))
+    # it's useless to create a figure where there is nothing
+    if(max_abs > 0){
+      pathview(gene.data=merged_lfcs, pathway.id = pathway.id, species = kegg.organism, limit = list('gene' = c(max_abs * -1.1, max_abs * 1.1), 'cpd' = c(-1 , 1)))
+    }
+  }
+}
+
+pathwview_per_celltype_combination <- function(nichenet_output, output_loc, mast_output_loc, pathways.ids, condition_combination, organism='org.Hs.eg.db', cascade_matrix=NULL, significance_cutoff=0){
+  # check each receiver
+  for(receiver in names(nichenet_output)){
+    # check against each sender
+    for(sender in names(nichenet_output[[receiver]])){
+      significant_genes <- c()
+      # extract the ligand-receptor gene matrix
+      if('ligand_receptor_network' %in% names(nichenet_output[[receiver]][[sender]])){
+        ligand_receptor_matrix <- nichenet_output[[receiver]][[sender]][['ligand_receptor_network']]
+        if(nrow(ligand_receptor_matrix) > 0){
+           # backup the current working directory
+          wd_prev <- getwd()
+          # create a new directory
+          working_dir <- paste(output_loc, receiver, '_', sender, '_lr/', sep = '')
+          dir.create(working_dir, recursive = T)
+          setwd(working_dir)
+          # create pathview results, but also return the significant genes
+          do_pathwview_result_lr <- matrix_to_pathview(ligand_receptor_matrix, pathways.ids)
+          significant_genes <- c(significant_genes, do_pathwview_result_lr)
+          # back to the previous working directory
+          setwd(wd_prev)
+        }
+      }
+      # extract the ligand-target matrix
+      if('ligand_target' %in% names(nichenet_output[[receiver]][[sender]])){
+        ligand_target <- nichenet_output[[receiver]][[sender]][['ligand_target']]
+        if(nrow(ligand_target) > 0){
+           # backup the current working directory
+          wd_prev <- getwd()
+          # create a new directory
+          working_dir <- paste(output_loc, receiver, '_', sender, '_lt/', sep = '')
+          dir.create(working_dir, recursive = T)
+          setwd(working_dir)
+          # create pathview results, but also return the significant genes
+          do_pathwview_result_lt <- matrix_to_pathview(ligand_target, pathways.ids)
+          significant_genes <- c(significant_genes, do_pathwview_result_lr)
+          # back to the previous working directory
+          setwd(wd_prev)
+        }
+      }
+      # get an LFC picture as well
+      if (length(significant_genes) > 0) {
+        lfcs <- get_lfs_for_genes(mast_output_loc = mast_output_loc, condition_combination = condition_combination, cell_types = c(receiver, sender), genes = significant_genes)
+        # backup the current working directory
+        wd_prev <- getwd()
+        # create a new directory
+        working_dir <- paste(output_loc, receiver, '_', sender, '_senderlfc/', sep = '')
+        dir.create(working_dir, recursive = T)
+        setwd(working_dir)
+        de_table_to_pathview(lfcs, pathways.ids, sender)
+        # for the receiver
+        working_dir <- paste(output_loc, receiver, '_', sender, '_receiverlfc/', sep = '')
+        dir.create(working_dir, recursive = T)
+        setwd(working_dir)
+        de_table_to_pathview(lfcs, pathways.ids, receiver)
+        # back to the previous working directory
+        setwd(wd_prev)
+      }
+      # extract the ligand-receptor gene matrix
+      if('ligand_receptor_network' %in% names(nichenet_output[[receiver]][[sender]])){
+        ligand_receptor_matrix <- nichenet_output[[receiver]][[sender]][['ligand_receptor_network']]
+        if(nrow(ligand_receptor_matrix) > 0){
+          # for the receiver
+          working_dir <- paste(output_loc, receiver, '_', sender, '_summedlfc/', sep = '')
+          dir.create(working_dir, recursive = T)
+          setwd(working_dir)
+          # get summed LFCs per receptor
+          downstream_genes <- lfc_sums_to_pathview(ligand_receptor_matrix = ligand_receptor_matrix, receiver = receiver, sender = sender, mast_output_loc = mast_output_loc, condition_combination = condition_combination, cascade_matrix = cascade_matrix, pathways.ids = pathways.ids, significance_cutoff = significance_cutoff)
+          # back to the previous working directory
+          setwd(wd_prev)
+        }
+      }
+      
+    }
+  }
+}
+
+
+filter_gene_lists <- function(gene_lists_loc, filter_list, output_loc, list.regex = NULL) {
+  # list the files in the directory
+  original_files <- list.files(gene_lists_loc, full.names = F, pattern = list.regex)
+  # check each file
+  for (original_file in original_files) {
+    # get the basename
+    original_file_basename <- sub(pattern = "(.*?)\\..*$", replacement = "\\1", x = original_file)
+    # get the full path again
+    full_original_path <- paste(gene_lists_loc, original_file, sep = '')
+    if (file.size(full_original_path) == 0L) {
+        message(paste('output is empty for', full_original_path))
+    }
+    else {
+      # read the file
+      genes <- read.table(full_original_path, header = F)$V1
+      # filter the genes
+      filtered_genes <- setdiff(genes, filter_list)
+      # write the result
+      output_loc_full <- paste(output_loc, original_file_basename, '_filtered.txt', sep = '')
+      write.table(data.frame(x = filtered_genes), output_loc_full, row.names = F, col.names = F, quote = F)
+    }
+  }
+}
+
+
+get_significant_interactions <- function(nichenet_output, matrix_name, significance_cutoff=0){
+  # save a dataframe
+  interaction_table <- NULL
+  # check each receiver
+  for(receiver in names(nichenet_output)){
+    # check against each sender
+    for(sender in names(nichenet_output[[receiver]])){
+      # see if there were interactions described
+      if(matrix_name %in% names(nichenet_output[[receiver]][[sender]])){
+        # extract the matrix
+        ligand_target <- nichenet_output[[receiver]][[sender]][[matrix_name]]
+        if(nrow(ligand_target) > 0){
+           # extract the ligands
+          ligands <- colnames(ligand_target)
+          # extract the downstream genes
+          targets <- rownames(ligand_target)
+          # check each combination
+          for(ligand in ligands){
+            for(target in targets){
+              # get the value
+              interaction <- ligand_target[target, ligand]
+              # check if the interaction is enough
+              if (interaction > significance_cutoff) {
+                # make a new row
+                row <- data.frame(receiver=c(receiver), sender=c(sender), ligand=c(ligand), receptor=c(target), interaction=c(interaction))
+                # for ligand-target matrices this is the opposite
+                if (matrix_name == 'ligand_target') {
+                  row <- data.frame(receiver=c(receiver), sender=c(sender), ligand=c(target), target=c(ligand), interaction=c(interaction))
+                }
+                if (is.null(interaction_table)) {
+                  interaction_table <- row
+                }
+                else{
+                  interaction_table <- rbind(interaction_table, row)
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return(interaction_table)
+}
+
+
+get_downstream_lfc_sums_per_receptor <- function(nichenet_output, mast_output_loc, condition_combination, cascade_matrix=NULL, significance_cutoff=0, lfc_column='avg_logFC'){
+  # initialize the table
+  full_lfc_df <- NULL
+  # check each receiver
+  for(receiver in names(nichenet_output)){
+    # check against each sender
+    for(sender in names(nichenet_output[[receiver]])){
+      # extract the ligand-receptor gene matrix
+      if('ligand_receptor_network' %in% names(nichenet_output[[receiver]][[sender]])){
+        ligand_receptor_matrix <- nichenet_output[[receiver]][[sender]][['ligand_receptor_network']]
+        if(nrow(ligand_receptor_matrix) > 0){
+          # get the downstream genes
+          downstream_genes <- get_downstream_genes_per_receptor(ligand_receptor_matrix = ligand_receptor_matrix, receiver = receiver, mast_output_loc = mast_output_loc, condition_combination = condition_combination, cascade_matrix = cascade_matrix, significance_cutoff = significance_cutoff, lfc_column = lfc_column)
+          # get specifically the gene names
+          genes <- names(downstream_genes)
+          # get the actual values
+          lfc_sums <- as.vector(unlist(downstream_genes))
+          # create a dataframe
+          lfc_df <- data.frame(receiver = rep(receiver, times = length(genes)), sender = rep(sender, times = length(genes)), receptor = genes, lfc_sum = lfc_sums)
+          # add to the big dataframe
+          if (is.null(full_lfc_df)) {
+            full_lfc_df <- lfc_df
+          }
+          else{
+            full_lfc_df <- rbind(full_lfc_df, lfc_df)
+          }
+        }
+      }
+    }
+  }
+  return(full_lfc_df)
+}
+
+
+check_ligand_receptor_and_target_numbers <- function(lt_connections, lr_connections, ligand_column='ligand', receptor_column='receptor', target_column='target', sender_column='sender', receiver_column='receiver', trim_zero=T, target_interaction_column='interaction', receptor_interaction_column='interaction'){
+  # check each ligand
+  unique_ligands <- unique(c(lr_connections[[ligand_column]], lt_connections[[ligand_column]]))
+  # check each cell type
+  unique_celltypes <- unique(c(lt_connections[[sender_column]], lt_connections[[receiver_column]], lr_connections[[sender_column]], lr_connections[[receiver_column]]))
+  # create an empty dataframe
+  nr_of_combinations <- length(unique_celltypes) * (length(unique_celltypes) - 1) * length(unique_ligands)
+  target_and_receptor_numbers <- data.frame(sender = rep(NA, times = nr_of_combinations), receiver = rep(NA, times = nr_of_combinations), ligand = rep(NA, times = nr_of_combinations), nr_receptors = rep(0, times = nr_of_combinations), nr_targets = rep(0, times = nr_of_combinations))
+  # keep an index to add to the dataframe
+  i <- 1
+  # turn into dataframes
+  lt_connections <- data.frame(lt_connections)
+  lr_connections <- data.frame(lr_connections)
+  # check each sender
+  for (sender in unique_celltypes) {
+    # against each receiver
+    for (receiver in unique_celltypes) {
+      # only if the sender and receiver are different of course
+      if (sender != receiver) {
+        # check each ligand
+        for (ligand in unique_ligands) {
+          # get the number of receptors for the ligand
+          nr_receptors <- nrow(lr_connections[lr_connections[[sender_column]] == sender &
+                                              lr_connections[[receiver_column]] == receiver &
+                                              lr_connections[[ligand_column]] == ligand &
+                                              !is.na(lr_connections[[receptor_interaction_column]]) &
+                                              lr_connections[[receptor_interaction_column]] > 0, ])
+          
+          # and the number of targets for the ligand
+          nr_targets <- nrow(lt_connections[lt_connections[[sender_column]] == sender &
+                                            lt_connections[[receiver_column]] == receiver &
+                                            lt_connections[[ligand_column]] == ligand &
+                                            !is.na(lt_connections[[target_interaction_column]]) &
+                                            lt_connections[[target_interaction_column]] > 0, ])
+          # add to the dataframe
+          target_and_receptor_numbers[i, c('sender', 'receiver', 'ligand', 'nr_receptors', 'nr_targets')] <- c(sender, receiver, ligand, nr_receptors, nr_targets)
+          # increase index
+          i <- i + 1
+        }
+      }
+    }
+  }
+  # set the numbers to be actual numbers
+  target_and_receptor_numbers[['nr_receptors']] <- as.numeric(target_and_receptor_numbers[['nr_receptors']])
+  target_and_receptor_numbers[['nr_targets']] <- as.numeric(target_and_receptor_numbers[['nr_targets']])
+  # if requested, remove the rows where both the receptors and targets are zero
+  if (trim_zero) {
+    target_and_receptor_numbers <- target_and_receptor_numbers[target_and_receptor_numbers[['nr_receptors']] > 0 | target_and_receptor_numbers[['nr_targets']] > 0, ]
+  }
+  return(target_and_receptor_numbers)
+}
+
+
+get_distinct_downstream_gene_numbers <- function(lt_connections, lr_connections, ligand_column='ligand', receptor_column='receptor', target_column='target', sender_column='sender', receiver_column='receiver', target_interaction_column='interaction', receptor_interaction_column='interaction'){
+  # get the ligand numbers
+  nr_recep_target_per_ligand <- data.frame(check_ligand_receptor_and_target_numbers(lt_connections = lt_connections, lr_connections = lr_connections, ligand_column=ligand_column, receptor_column=receptor_column, target_column=target_column, sender_column=sender_column, receiver_column=receiver_column, target_interaction_column=target_interaction_column, receptor_interaction_column=receptor_interaction_column))
+  # get the cell types present
+  cell_types <- unique(c(nr_recep_target_per_ligand[[sender_column]], nr_recep_target_per_ligand[[receiver_column]]))
+  # create an empty dataframe
+  induced_genes <- data.frame(matrix(data = NA, nrow = length(cell_types) * (length(cell_types) - 1), ncol = 4))
+  colnames(induced_genes) <- c('sender', 'receiver', 'nr_downstream_genes', 'induced_genes')
+  # keep an index
+  i <- 1
+  # check each cell type
+  for (sender in cell_types) {
+    # against each other cell type
+    for(receiver in cell_types) {
+      # of course only when they are different
+      if (receiver != sender) {
+        # first get the ligands that have both a receptor link, and induce downstream DE effects
+        connections_subset <- nr_recep_target_per_ligand[
+            nr_recep_target_per_ligand[[sender_column]] == sender &
+            nr_recep_target_per_ligand[[receiver_column]] == receiver &
+            nr_recep_target_per_ligand[['nr_receptors']] > 0 &
+            nr_recep_target_per_ligand[['nr_targets']] > 0, ]
+        # then extract those ligands, if there are any
+        if (nrow(connections_subset) > 0) {
+          ligands_with_consequences <- connections_subset[[ligand_column]]
+          # now get the unique downstream genes beloninging to those ligands that are significant
+          downstream_genes <- unique(
+            lt_connections[
+              lt_connections[[sender_column]] == sender &
+              lt_connections[[receiver_column]] == receiver &
+              lt_connections[[ligand_column]] %in% ligands_with_consequences &
+              !is.na(lt_connections[[target_interaction_column]]) &
+              lt_connections[[target_interaction_column]] > 0, 
+              target_column]
+          )
+          # and we need how many
+          nr_downstream_genes <- length(downstream_genes)
+          # add this entry
+          if (nr_downstream_genes > 0) {
+            induced_genes[i, ] <- c(sender, receiver, nr_downstream_genes, paste(downstream_genes, collapse = ','))
+          }
+          else{
+            induced_genes[i, ] <- c(sender, receiver, nr_downstream_genes, NA)
+          }
+        }
+        else{
+          induced_genes[i, ] <- c(sender, receiver, 0, NA)
+        }
+        i <- i + 1
+      }
+    }
+  }
+  # set the type of the numbers
+  induced_genes[['nr_downstream_genes']] <- as.numeric(induced_genes[['nr_downstream_genes']])
+  return(induced_genes)
+}
+
+ligand_numbers_to_interactions <- function(nr_recep_target_per_ligand, sender_column='sender', receiver_column='receiver', ligand_column='ligand', nr_recep_column='nr_receptors', nr_tar_column='nr_targets') {
+  # get the cell types present
+  cell_types <- unique(c(nr_recep_target_per_ligand[[sender_column]], nr_recep_target_per_ligand[[receiver_column]]))
+  # create an empty dataframe
+  connecting_ligands <- data.frame(matrix(data = NA, nrow = length(cell_types) * (length(cell_types) - 1), ncol = 3))
+  colnames(connecting_ligands) <- c('sender', 'receiver', 'nr_connections')
+  # keep an index
+  i <- 1
+  # check each cell type
+  for (sender in cell_types) {
+    # against each other cell type
+    for(receiver in cell_types) {
+      # of course only when they are different
+      if (receiver != sender) {
+        # check now many connections, so there are both downstream genes and receptor connections
+        nr_connections <- nrow(nr_recep_target_per_ligand[
+            nr_recep_target_per_ligand[[sender_column]] == sender &
+            nr_recep_target_per_ligand[[receiver_column]] == receiver &
+            nr_recep_target_per_ligand[[nr_recep_column]] > 0 &
+            nr_recep_target_per_ligand[[nr_tar_column]] > 0, ])
+        # add at the index
+        connecting_ligands[i, ] <- c(sender, receiver, nr_connections)
+        # update the index
+        i <- i + 1
+      }
+    }
+  }
+  # set numeric for the number of connections column
+  connecting_ligands[['nr_connections']] <- as.numeric(connecting_ligands[['nr_connections']])
+  return(connecting_ligands)
+}
+
+
+ligand_target_numbers_to_interactions <- function(lr_connections, lt_connections, ligand_column='ligand', receptor_column='receptor', target_column='target', sender_column='sender', receiver_column='receiver', target_interaction_column='interaction', receptor_interaction_column='interaction'){
+    # get the ligand numbers
+  nr_recep_target_per_ligand <- data.frame(check_ligand_receptor_and_target_numbers(lt_connections = lt_connections, lr_connections = lr_connections, ligand_column=ligand_column, receptor_column=receptor_column, target_column=target_column, sender_column=sender_column, receiver_column=receiver_column, target_interaction_column=target_interaction_column, receptor_interaction_column=receptor_interaction_column))
+  # get the cell types present
+  cell_types <- unique(c(nr_recep_target_per_ligand[[sender_column]], nr_recep_target_per_ligand[[receiver_column]]))
+  # create an empty dataframe
+  lt_connection_numbers <- data.frame(matrix(data = NA, nrow = length(cell_types) * (length(cell_types) - 1), ncol = 3))
+  colnames(lt_connection_numbers) <- c('sender', 'receiver', 'nr_lt_links')
+  # keep an index
+  i <- 1
+  # check each cell type
+  for (sender in cell_types) {
+    # against each other cell type
+    for(receiver in cell_types) {
+      # of course only when they are different
+      if (receiver != sender) {
+        # first get the ligands that have both a receptor link, and induce downstream DE effects
+        connections_subset <- nr_recep_target_per_ligand[
+            nr_recep_target_per_ligand[[sender_column]] == sender &
+            nr_recep_target_per_ligand[[receiver_column]] == receiver &
+            nr_recep_target_per_ligand[['nr_receptors']] > 0 &
+            nr_recep_target_per_ligand[['nr_targets']] > 0, ]
+        # set a default for the number of ligand-target entries
+        nr_lt_links <- 0
+        # if there are still connections, then we need those ligands
+        if (nrow(connections_subset) > 0) {
+          ligands_with_effects <- unique(connections_subset[[ligand_column]])
+          # now check how many have downstream genes
+          downstream_effects_subset <- lt_connections[lt_connections[[sender_column]] == sender &
+                                                        lt_connections[[receiver_column]] == receiver &
+                                                        lt_connections[[ligand_column]] %in% ligands_with_effects &
+                                                        !is.na(lt_connections[[target_interaction_column]]) &
+                                                        lt_connections[[target_interaction_column]] > 0, 
+                                                      ]
+          # and check how many
+          nr_lt_links <- nrow(downstream_effects_subset)
+        }
+        # add to the table
+        lt_connection_numbers[i, c('sender', 'receiver', 'nr_lt_links')] <- c(sender, receiver, nr_lt_links)
+        # update index
+        i <- i +1
+      }
+    }
+  }
+  # set the type of the numbers
+  lt_connection_numbers[['nr_lt_links']] <- as.numeric(lt_connection_numbers[['nr_lt_links']])
+  return(lt_connection_numbers)
+}
+
+
+ligand_receptor_numbers_to_interactions <- function(nr_recep_target_per_ligand, sender_column='sender', receiver_column='receiver', ligand_column='ligand', nr_recep_column='nr_receptors', nr_tar_column='nr_targets') {
+  # get the cell types present
+  cell_types <- unique(c(nr_recep_target_per_ligand[[sender_column]], nr_recep_target_per_ligand[[receiver_column]]))
+  # create an empty dataframe
+  connecting_ligand_targets <- data.frame(matrix(data = NA, nrow = length(cell_types) * (length(cell_types) - 1), ncol = 3))
+  colnames(connecting_ligand_targets) <- c('sender', 'receiver', 'nr_connections')
+  # keep an index
+  i <- 1
+  # check each cell type
+  for (sender in cell_types) {
+    # against each other cell type
+    for(receiver in cell_types) {
+      # of course only when they are different
+      if (receiver != sender) {
+        # get the subset of ligands of this celltype combination, that has downstream effects
+        connections_sr_wtargets <- nr_recep_target_per_ligand[
+          nr_recep_target_per_ligand[[sender_column]] == sender &
+          nr_recep_target_per_ligand[[receiver_column]] == receiver &
+          !is.na(nr_recep_target_per_ligand[[nr_recep_column]]) &
+          nr_recep_target_per_ligand[[nr_recep_column]]> 0 &
+          !is.na(nr_recep_target_per_ligand[[nr_tar_column]]) &
+          nr_recep_target_per_ligand[[nr_tar_column]] > 0
+          , 
+        ]
+        # now for each ligand, there are connecting receptors, each ligand is a row, so the sum of the number of receptors of each ligand, is the total amount of LR connections
+        nr_connections <- sum(connections_sr_wtargets[[nr_recep_column]])
+        # add at the index
+        connecting_ligand_targets[i, ] <- c(sender, receiver, nr_connections)
+        # update the index
+        i <- i + 1
+      }
+    }
+  }
+  # set numeric for the number of connections column
+  connecting_ligand_targets[['nr_connections']] <- as.numeric(connecting_ligand_targets[['nr_connections']])
+  return(connecting_ligand_targets)
+}
+
+get_color_coding_dict <- function(){
+  # set the condition colors
+  color_coding <- list()
+  color_coding[["UTBaseline"]] <- "khaki2"
+  color_coding[["UTt24h"]] <- "khaki4"
+  color_coding[["UTt8w"]] <- "paleturquoise1"
+  color_coding[["Baselinet24h"]] <- "paleturquoise3"
+  color_coding[["Baselinet8w"]] <- "rosybrown1"
+  color_coding[["t24ht8w"]] <- "rosybrown3"
+  color_coding[["UT\nBaseline"]] <- "khaki2"
+  color_coding[["UT\nt24h"]] <- "khaki4"
+  color_coding[["UT\nt8w"]] <- "paleturquoise1"
+  color_coding[["Baseline\nt24h"]] <- "paleturquoise3"
+  color_coding[["Baseline\nt8w"]] <- "rosybrown1"
+  color_coding[["t24h\nt8w"]] <- "rosybrown3"
+  color_coding[["UT-Baseline"]] <- "khaki2"
+  color_coding[["UT-t24h"]] <- "khaki4"
+  color_coding[["UT-t8w"]] <- "paleturquoise1"
+  color_coding[["Baseline-t24h"]] <- "paleturquoise3"
+  color_coding[["Baseline-t8w"]] <- "rosybrown1"
+  color_coding[["t24h-t8w"]] <- "rosybrown3"
+  color_coding[["UT-t0"]] <- "khaki2"
+  color_coding[["UT-t24h"]] <- "khaki4"
+  color_coding[["UT-t8w"]] <- "paleturquoise1"
+  color_coding[["HC-t0"]] <- "khaki2"
+  color_coding[["t0-HC"]] <- "khaki2"
+  color_coding[["HC-t24h"]] <- "khaki4"
+  color_coding[["t24h-HC"]] <- "khaki4"
+  color_coding[["HC-t8w"]] <- "paleturquoise1"
+  color_coding[["t8w-HC"]] <- "paleturquoise1"
+  color_coding[["t0-t24h"]] <- "#FF6066" #"paleturquoise3"
+  color_coding[["t24h-t0"]] <- "#FF6066" #"paleturquoise3"
+  color_coding[["t0-t8w"]] <- "#C060A6" #"rosybrown1"
+  color_coding[["t8w-t0"]] <- "#C060A6" #"rosybrown1"
+  color_coding[["t24h-t8w"]] <- "#C00040" #"rosybrown3"
+  color_coding[["t8w-t24h"]] <- "#C00040" #"rosybrown3"
+  # set condition colors
+  color_coding[["HC"]] <- "grey"
+  color_coding[["t0"]] <- "pink"
+  color_coding[["t24h"]] <- "red"
+  color_coding[["t8w"]] <- "purple"
+  # set the cell type colors
+  color_coding[["Bulk"]] <- "black"
+  color_coding[["CD4T"]] <- "#153057"
+  color_coding[["CD8T"]] <- "#009DDB"
+  color_coding[["monocyte"]] <- "#EDBA1B"
+  color_coding[["NK"]] <- "#E64B50"
+  color_coding[["B"]] <- "#71BC4B"
+  color_coding[["DC"]] <- "#965EC8"
+  color_coding[["CD4+ T"]] <- "#153057"
+  color_coding[["CD8+ T"]] <- "#009DDB"
+  # other cell type colors
+  color_coding[["HSPC"]] <- "#009E94"
+  color_coding[["platelet"]] <- "#9E1C00"
+  color_coding[["plasmablast"]] <- "#DB8E00"
+  color_coding[["other T"]] <- "#FF63B6"
+  return(color_coding)
+}
+
+
+label_dict <- function(){
+  label_dict <- list()
+  # condition combinations
+  label_dict[['UTBaseline']] <- 'UT-Baseline'
+  label_dict[['UTt24h']] <- 'UT-t24h'
+  label_dict[['UTt8w']] <- 'UT-t8w'
+  label_dict[['Baselinet24h']] <- 'Baseline-t24h'
+  label_dict[['Baselinet8w']] <- 'Baseline-t8w'
+  label_dict[['t24ht8w']] <- 't24h-t8w'
+  label_dict[['UTBaseline']] <- 'HC-t0'
+  label_dict[['UTt24h']] <- 'HC-t24h'
+  label_dict[['UTt8w']] <- 'HC-t8w'
+  label_dict[['Baselinet24h']] <- 't0-t24h'
+  label_dict[['Baselinet8w']] <- 't0-t8w'
+  # conditions
+  label_dict[['UT']] <- 'HC'
+  label_dict[['Baseline']] <- 't0'
+  label_dict[['t24h']] <- 't24h'
+  label_dict[['t8w']] <- 't8w'
+  # major cell types
+  label_dict[["Bulk"]] <- "bulk-like"
+  label_dict[["CD4T"]] <- "CD4+ T"
+  label_dict[["CD8T"]] <- "CD8+ T"
+  label_dict[["monocyte"]] <- "monocyte"
+  label_dict[["NK"]] <- "NK"
+  label_dict[["B"]] <- "B"
+  label_dict[["DC"]] <- "DC"
+  label_dict[["HSPC"]] <- "HSPC"
+  label_dict[["plasmablast"]] <- "plasmablast"
+  label_dict[["platelet"]] <- "platelet"
+  label_dict[["T_other"]] <- "other T"
+  # minor cell types
+  label_dict[["CD4_TCM"]] <- "CD4 TCM"
+  label_dict[["Treg"]] <- "T regulatory"
+  label_dict[["CD4_Naive"]] <- "CD4 naive"
+  label_dict[["CD4_CTL"]] <- "CD4 CTL"
+  label_dict[["CD8_TEM"]] <- "CD8 TEM"
+  label_dict[["cMono"]] <- "cMono"
+  label_dict[["CD8_TCM"]] <- "CD8 TCM"
+  label_dict[["ncMono"]] <- "ncMono"
+  label_dict[["cDC2"]] <- "cDC2"
+  label_dict[["B_intermediate"]] <- "B intermediate"
+  label_dict[["NKdim"]] <- "NK dim"
+  label_dict[["pDC"]] <- "pDC"
+  label_dict[["ASDC"]] <- "ASDC"
+  label_dict[["CD8_Naive"]] <- "CD8 naive"
+  label_dict[["MAIT"]] <- "MAIT"
+  label_dict[["CD8_Proliferating"]] <- "CD8 proliferating"
+  label_dict[["CD4_TEM"]] <- "CD4 TEM"
+  label_dict[["B_memory"]] <- "B memory"
+  label_dict[["NKbright"]] <- "NK bright"
+  label_dict[["B_naive"]] <- "B naive"
+  label_dict[["gdT"]] <- "gamma delta T"
+  label_dict[["CD4_Proliferating"]] <- "CD4 proliferating"
+  label_dict[["NK_Proliferating"]] <- "NK proliferating"
+  label_dict[["cDC1"]] <- "cDC1"
+  label_dict[["ILC"]] <- "ILC"
+  label_dict[["dnT"]] <- "double negative T"
+  return(label_dict)
+}
+
+
+text_color_dict <- function(){
+  text_color_dict <- list()
+  # set the cell type colors
+  text_color_dict[["Bulk"]] <- "#000000ff"
+  text_color_dict[["CD4T"]] <- "#000000ff"
+  text_color_dict[["CD8T"]] <- "#000000ff"
+  text_color_dict[["monocyte"]] <- "#ffffffff"
+  text_color_dict[["NK"]] <- "#000000ff"
+  text_color_dict[["B"]] <- "#fffffff"
+  text_color_dict[["DC"]] <- "#000000ff"
+  text_color_dict[["CD4+ T"]] <- "#000000ff"
+  text_color_dict[["CD8+ T"]] <- "#000000ff"
+  # other cell type colors
+  text_color_dict[["HSPC"]] <- "#000000ff"
+  text_color_dict[["platelet"]] <- "#000000ff"
+  text_color_dict[["plasmablast"]] <- "#000000ff"
+  text_color_dict[["other T"]] <- "#000000ff"
+  return(text_color_dict)
+}
+
+
+turn_sizes_to_ranges <- function(link_sizes_df, size_column, from_column, to_column){
+  # get the possible entries
+  entries <- unique(c(link_sizes_df[[from_column]], link_sizes_df[[to_column]]))
+  # create the dataframe to store everything in
+  link_df <- data.frame(matrix(, nrow=(length(entries))*(length(entries)-1)/2, ncol=6))
+  colnames(link_df) <- c(from_column, to_column, 'from_start', 'from_stop','to_start', 'to_stop')
+  # we'll add entries by index, that is a lot faster than rbinding new rows
+  i <- 1
+  # check each entry
+  for(x in 1:(length(entries))){
+    # the column on the horizontal axis is the number, and we'll grab the entry for that number
+    from_entry <- entries[x]
+    # from the bottom left and from the top right are the same, and the entry against itself is always empty
+    for(y in (1):(length(entries))){
+      # grab on the vertical axis
+      to_entry <- entries[y]
+      # store the link size
+      link_size <- NA
+      # get the entry if it exists
+      if(nrow(link_sizes_df[link_sizes_df[[from_column]] == from_entry & link_sizes_df[[to_column]] == to_entry, ]) > 0){
+        link_size <- as.numeric(link_sizes_df[link_sizes_df[[from_column]] == from_entry & link_sizes_df[[to_column]] == to_entry, size_column])
+      }
+      # if this link exists, we can continue
+      if(!is.na(link_size)){
+        max_from <- max(c(0,
+                          as.numeric(link_df[!is.na(link_df[[from_column]]) & !is.na(link_df[[to_column]]) &
+                                               link_df[[from_column]] == from_entry, 'from_stop']),
+                          as.numeric(link_df[!is.na(link_df[[from_column]]) & !is.na(link_df[[to_column]]) &
+                                               link_df[[to_column]] == from_entry, 'to_stop'])
+        )
+        )
+        max_to <- max(c(0,
+                        as.numeric(link_df[!is.na(link_df[[to_column]]) & !is.na(link_df[[to_column]]) &
+                                             link_df[[from_column]] == to_entry, 'from_stop']),
+                        as.numeric(link_df[!is.na(link_df[[to_column]]) & !is.na(link_df[[to_column]]) &
+                                             (link_df[[to_column]] == to_entry), 'to_stop'])
+        )
+        )
+        
+        # now we are either zero or the max of both entries, we'll turn that into the actual entries
+        link_df[i, from_column] <- from_entry
+        link_df[i, to_column] <- to_entry
+        link_df[i, 'from_start'] <- max_from
+        link_df[i, 'from_stop'] <- (max_from + link_size)
+        link_df[i, 'to_start'] <- max_to
+        link_df[i, 'to_stop'] <- (max_to + link_size)
+        # update the index
+        i <- i + 1
+      }
+    }
+  }
+  return(link_df)
+}
+
+
+combine_directions_cells <- function(slim_connection_df, cell_types){
+  # we will save the sum of the incoming and outgoing connections per cell type
+  total_sum_per_cell_type <- NULL
+  # we will check each sender
+  for(cell_type in unique(c(slim_connection_df[['sender']], slim_connection_df[['receiver']]))){
+    # check that sender against each receiver
+    sent_connections <- sum(slim_connection_df[!is.na(slim_connection_df[['connections']]) & slim_connection_df[['sender']] == cell_type, 'connections'])
+    # check the incoming the connections
+    incoming_connections <- sum(slim_connection_df[!is.na(slim_connection_df[['connections']]) & slim_connection_df[['receiver']] == cell_type, 'connections'])
+    # add these two together
+    total_connections <- sent_connections + incoming_connections
+    # turn this into a row for tht dataframe
+    connection_row <- data.frame(cell_type=c(cell_type), connections=total_connections)
+    # add to dataframe
+    if(is.null(total_sum_per_cell_type)){
+      total_sum_per_cell_type <- connection_row
+    }
+    else{
+      total_sum_per_cell_type <- rbind(total_sum_per_cell_type, connection_row)
+    }
+  }
+  return(total_sum_per_cell_type)
+}
+
+
+interactions_to_circle_from_table <- function(interactions_table, plot_title='cell communication', combine_directions=T){
+  # we'll use colors
+  color_coding <- get_color_coding_dict()
+  # set the correct column names
+  colnames(interactions_table) <- c('sender', 'receiver', 'connections')
+  # remove the empty connections
+  interactions_table <- interactions_table[interactions_table[['connections']] > 0, ]
+  # if we are not combining directions, we need to make sender and receiver unique
+  if (!combine_directions) {
+    interactions_table[['sender']] <- paste(interactions_table[['sender']], 'sent', sep = '_')
+    interactions_table[['receiver']] <- paste(interactions_table[['receiver']], 'received', sep = '_')
+    # we also need to send those as colours
+    color_coding[paste(names(get_color_coding_dict()), 'sent', sep = '_')] <- as.vector(unlist(get_color_coding_dict()))
+    color_coding[paste(names(get_color_coding_dict()), 'received', sep = '_')] <- as.vector(unlist(get_color_coding_dict()))
+  }
+  # add receiver and sender together
+  connections_all_ct <- combine_directions_cells(interactions_table)
+  # okay, I did this somewhere in the past, so afraid I have to do it again
+  colnames(connections_all_ct) <- c('a', 'b')
+  # get the data in a start/stop manner, instead of a size-manner
+  connections_start_stop <- turn_sizes_to_ranges(interactions_table, 'connections', 'sender', 'receiver')
+  # make sure the other plot is gone
+  circos.clear()
+  # start making the plot, set height of track (cell types)
+  circos.par('track.height' = 0.1)
+  xlims <- data.frame(a=rep(0, times=nrow(connections_all_ct)), b=connections_all_ct$b)
+  # start building
+  circos.initialize(sectors = connections_all_ct$a, xlim = xlims)
+  # add track with labels
+  circos.track(connections_all_ct$a, y=connections_all_ct$b, panel.fun = function(x, y){
+    circos.text(CELL_META$xcenter, 
+                CELL_META$ycenter, 
+                CELL_META$sector.index)
+    circos.axis(labels.cex = 0.6, labels.facing = 'outside')
+  })
+  # color the tracks
+  for(cell_type in unique(connections_all_ct$a)){
+    draw.sector(get.cell.meta.data("cell.start.degree", sector.index = cell_type),
+                get.cell.meta.data("cell.end.degree", sector.index = cell_type),
+                rou1 = get.cell.meta.data("cell.top.radius", track.index = 1),
+                rou2 = get.cell.meta.data("cell.bottom.radius", track.index = 1),
+                col = color_coding[[cell_type]])
+  }
+  # draw colour on the sectors, representing the cell types
+  for(cell_type in unique(connections_all_ct$a)){
+    if (combine_directions) {
+      highlight.sector(c(cell_type), track.index = 1, text=label_dict()[[cell_type]], col = '#ffffff00', text.col = '#ffffffff')
+    }
+    else{
+      # take the label dict
+      label_dict_modified <- label_dict()
+      # add the keys for senders and receivers
+      label_dict_modified[paste(names(label_dict()), 'sent', sep = '_')] <- paste(as.vector(unlist(label_dict())), 'sent', sep = ' ')
+      label_dict_modified[paste(names(label_dict()), 'received', sep = '_')] <- paste(as.vector(unlist(label_dict())), 'received', sep = ' ')
+          highlight.sector(c(cell_type), track.index = 1, text=label_dict_modified[[cell_type]], col = '#ffffff00', text.col = '#ffffffff')
+    }
+  }
+  # draw the connections
+  apply(connections_start_stop, 1, function(row){
+    if(!is.na(row['sender'])){
+      # grab the color of the sender
+      send_color <- color_coding[[row['sender']]]
+      # and of the receiver
+      receiver_color <- color_coding[[row['receiver']]]
+      # split colors in five
+      ramp_colors <- colorRampPalette(c(send_color, receiver_color))(5)
+      # color slightly more towards the sender, by taking the second color from the 5 levels, and add remove possible existing transparancy
+      connection_color <- substr(ramp_colors[2], 1, 7)
+      # manually add transparancy by adding it to normal 6-colour hex code
+      connection_color <- paste(connection_color, '80', sep = '')
+      # grab the positions on the sender
+      from_start <- as.numeric(row['from_start'])
+      from_stop <- as.numeric(row['from_stop'])
+      # grab the positions on the receiver
+      to_start <- as.numeric(row['to_start'])
+      to_stop <- as.numeric(row['to_stop'])
+      # draw the connection
+      circos.link(row['sender'], c(from_start, from_stop), row['receiver'], c(to_start, to_stop), col = connection_color, directional = 1)
+    }
+  })
+  title(plot_title)
+}
+
+
+get_de_vs_induced_genes_per_celltype <- function(downstream_gene_table, mast_output_path, condition_1, condition_2, significance_column='p_val_adj', pval_cutoff=0.05, sender_column='sender', receiver_column='receiver', gene_column='induced_genes'){
+  # get the cell types present
+  cell_types <- unique(c(downstream_gene_table[[sender_column]], downstream_gene_table[[receiver_column]]))
+  # create a table
+  de_gene_source <- data.frame(matrix(NA, nrow = length(cell_types), ncol = 5))
+  colnames(de_gene_source) <- c('cell_type', 'nr_de', 'nr_induced', 'nr_de_induced', 'nr_de_noninduced')
+  # keep an index
+  i <- 1
+  # check each cell type
+  for (cell_type in cell_types) {
+    # if there is no output, we will just assume there is nothing
+    nr_de_genes <- 0
+    # set there to be zero induced an genes, in case there are no entries
+    nr_genes_induced <- 0
+    # which also means that there will be nothing induced
+    nr_de_genes_induced <- 0
+    nr_de_genes_noninduced <- 0
+    # paste together the output path
+    mast_output_path_full <- paste(mast_output_path, cell_type, condition_1, condition_2, '.tsv', sep = '')
+    # check if the file exists
+    if (file.exists(mast_output_path_full)) {
+      # read the table
+      mast_output <- read.table(mast_output_path_full, sep = '\t', header = T, row.names = 1)
+      # get the significant entries
+      mast_output_significant <- mast_output[mast_output[[significance_column]] < pval_cutoff, ]
+      # get genes
+      if (nrow(mast_output_significant) > 0) {
+        genes_de <- rownames(mast_output_significant)
+        # we want to know how many
+        nr_de_genes <- length(genes_de)
+        # get the genes that were induced
+        entries_receiving_celltype <- downstream_gene_table[downstream_gene_table[[receiver_column]] == cell_type &
+                                                            !is.na(downstream_gene_table[[gene_column]]), ]
+        # now check if there are any entries
+        if (nrow(entries_receiving_celltype) > 0) {
+          # first paste together all of the entries
+          all_genes_induced_string <- paste(entries_receiving_celltype[[gene_column]], collapse = ',')
+          # then split by comma
+          all_genes_induced <- unlist(strsplit(all_genes_induced_string, split = ','))
+          # then make unique
+          all_genes_induced <- unique(all_genes_induced)
+          # check which overlap with the DE genes (sanity check, should be all)
+          de_genes_induced <- intersect(genes_de, all_genes_induced)
+          # and which don't (again, a sanity check)
+          de_genes_noninduced <- setdiff(genes_de, all_genes_induced)
+          # now get some numbers
+          nr_genes_induced <- length(all_genes_induced)
+          nr_de_genes_induced <- length(de_genes_induced)
+          nr_de_genes_noninduced <- length(de_genes_noninduced)
+        }else{
+          # if not, that means also that was is there, is not induced
+          nr_de_genes_noninduced <- nr_de_genes
+        }
+      }
+    }
+    # add entry to table
+    de_gene_source[i, ] <- c(cell_type, nr_de_genes, nr_genes_induced, nr_de_genes_induced, nr_de_genes_noninduced)
+    # update index
+    i <- i + 1
+  }
+  # set the correct types
+  de_gene_source[['nr_de']] <- as.numeric(de_gene_source[['nr_de']])
+  de_gene_source[['nr_induced']] <- as.numeric(de_gene_source[['nr_induced']])
+  de_gene_source[['nr_de_induced']] <- as.numeric(de_gene_source[['nr_de_induced']])
+  de_gene_source[['nr_de_noninduced']] <- as.numeric(de_gene_source[['nr_de_noninduced']])
+  return(de_gene_source)
+}
+
+
+plot_de_induced_vs_noninduced <- function(induced_vs_noninduced_table, cell_type_column='cell_type', induced_column='nr_de_induced', noninduced_column='nr_de_noninduced', paper_style=T, legendless=F){
+  # split the induced versus noninduced
+  induced_entries <- induced_vs_noninduced_table[, c(cell_type_column, induced_column)]
+  noninduced_entries <- induced_vs_noninduced_table[, c(cell_type_column, noninduced_column)]
+  # harmonize column names
+  colnames(induced_entries) <- c('cell_type', 'nr_de_genes')
+  colnames(noninduced_entries) <- c('cell_type', 'nr_de_genes')
+  # add a designation for induced vs non-induced
+  induced_entries[['induced']] <- 'induced'
+  noninduced_entries[['induced']] <- 'not induced'
+  # combine below one another
+  entries <- rbind(induced_entries, noninduced_entries)
+  # build the plot
+  p <- ggplot(mapping = aes(x = entries[['cell_type']], y = entries[['nr_de_genes']], fill = entries[['induced']])) + 
+    geom_bar(stat = 'identity', position='stack') +
+    scale_fill_manual(name = 'induced by ligands', values = list('not induced' = 'blue', 'induced' = 'red')) +
+    xlab('cell type') +
+    ylab('number of differentially expressed genes')
+  # add paper style
+  if (paper_style) {
+    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  if(legendless){
+    p <- p + theme(legend.position = 'none')
+  }
+  return(p)
+}
+
+
+filter_lr_by_lt_ligands <- function(lr_connections, lt_connections, receptor_interaction_column, target_interaction_column, sender_column='sender', receiver_column='receiver', ligand_column='ligand', receptor_column='receptor', target_column='target') {
+  # create a new dataframe
+  filtered_lr <- NULL
+  # check each receiver
+  for (receiver in unique(lr_connections[[receiver_column]])) {
+    # check each sender
+    for (sender in unique(lr_connections[[sender_column]])) {
+      # only if they are no the same, can we get entries
+      if (sender != receiver){
+        # check if there are ligands
+        significant_receiver_sender <- lt_connections[lt_connections[[sender_column]] == sender &
+                                                      lt_connections[[receiver_column]] == receiver &
+                                                      !is.na(lt_connections[[target_interaction_column]]) & 
+                                                      lt_connections[[target_interaction_column]] != 0, ]
+        if (nrow(significant_receiver_sender)) {
+          # then get the significant ligands
+          ligands_significant <- significant_receiver_sender[[ligand_column]]
+          # and subset the ligand receptors that have a DE downstream gene
+          lr_significant_l <- lr_connections[lr_connections[[sender_column]] == sender &
+                                             lr_connections[[receiver_column]] == receiver &
+                                             lr_connections[[ligand_column]] %in% ligands_significant & 
+                                               !is.na(lr_connections[[receptor_interaction_column]]) &
+                                               lr_connections[[receptor_interaction_column]] != 0, ]
+          # add to the filtered dataframe
+          if (is.null(filtered_lr)) {
+            filtered_lr <- lr_significant_l
+          }
+          else{
+            filtered_lr <- rbind(filtered_lr, lr_significant_l)
+          }
+        }
+      }
+    }
+  }
+  return(filtered_lr)
+}
+
+
+lr_pairs_per_celtype <- function(lr_table, celltype_column, ligand_column='ligand', receptor_column='receptor') {
+  # put per celltype in a list
+  lr_per_celltype <- list()
+  # check each celltype
+  for (celltype in unique(lr_table[[celltype_column]])) {
+    # get the subset for this celltype
+    lr_celltype <- lr_table[lr_table[[celltype_column]] == celltype, ]
+    # get the lr connections
+    lr_connections_celltype <- paste(lr_celltype[[ligand_column]], lr_celltype[[receptor_column]])
+    # put in that list
+    lr_per_celltype[[celltype]] <- lr_connections_celltype
+  }
+  return(lr_per_celltype)
+}
+
+  
+ligands_per_celltype <- function(lr_table, celltype_column, ligand_column='ligand') {
+  # put per celltype in a list
+  ligands_per_celltype <- list()
+  # check each celltype
+  for (celltype in unique(lr_table[[celltype_column]])) {
+    # get the unique ligands
+    ligands <- unique(lr_table[lr_table[[celltype_column]] == celltype, ligand_column])
+    # add to list
+    ligands_per_celltype[[celltype]] <- ligands
+  }
+  return(ligands_per_celltype)
+}
+
+
+receptors_per_celltype <- function(lr_table, celltype_column, receptor_column='receptor') {
+  # put per celltype in a list
+  receptors_per_celltype <- list()
+  # check each celltype
+  for (celltype in unique(lr_table[[celltype_column]])) {
+    # get the unique receptors
+    receptors <- unique(lr_table[lr_table[[celltype_column]] == celltype, receptor_column])
+    # add to list
+    receptors_per_celltype[[celltype]] <- receptors
+  }
+  return(receptors_per_celltype)
+}
+
+
+lr_pairs_to_upset <- function(connections_per_celltype, use_label_dict=T, use_color_dict=T) {
+  if(use_label_dict){
+    names(connections_per_celltype) <- label_dict()[names(connections_per_celltype)]
+  }
+  queries = NULL
+  sets.bar.color <- 'black'
+  if(use_color_dict){
+    queries <- list()
+    # create df to store the number of each set, so we know how to order
+    nrs_df <- NULL
+    # add the colors for the cell types
+    for(i in 1:length(names(connections_per_celltype))){
+      cell_type <- names(connections_per_celltype)[i]
+      # add for the singles in the intersection sizes
+      ct_list <- list(
+        query = intersects,
+        params = list(cell_type),
+        color = get_color_coding_dict()[[cell_type]],
+        active = T)
+      queries[[i]] <- ct_list
+      # add for the DF to order the set sizes, but only if there are more than zero, otherwise the entries are removed and the colours don't match anymore
+      if (length(connections_per_celltype[[cell_type]]) > 0) {
+        numbers_row <- data.frame(ct=c(cell_type), nr=c(length(connections_per_celltype[[cell_type]])), stringsAsFactors = F)
+        if(is.null(nrs_df)){
+          nrs_df <- numbers_row
+        }
+        else{
+          nrs_df <- rbind(nrs_df, numbers_row)
+        }
+      }
+    }
+    # get the order of the sets
+    ordered_cts <- nrs_df[order(nrs_df$nr, nrs_df$ct, decreasing = T), 'ct']
+    # add the colors for the sets
+    sets.bar.color <- unlist(get_color_coding_dict()[ordered_cts])
+  }
+  upset(fromList(connections_per_celltype), order.by = 'freq', nsets = length(names(connections_per_celltype)), queries = queries, sets.bar.color=sets.bar.color	)
+}
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# Main Code        #
+####################
+
+# set the organism
+kegg.organism <- "hsa"
+organism <- 'org.Hs.eg.db'
+# mast output location
+mast_output_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/rna/'
+# read Baseline vs 24h
+v2_Baseline_vs_t24h_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds'
+v2_Baseline_vs_t24h_perct_omni_unweighted <- readRDS(v2_Baseline_vs_t24h_perct_omni_unweighted_loc)
+v3_Baseline_vs_t24h_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds'
+v3_Baseline_vs_t24h_perct_omni_unweighted <- readRDS(v3_Baseline_vs_t24h_perct_omni_unweighted_loc)
+# read Baseline vs 24h
+v2_Baseline_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds'
+v2_Baseline_vs_t8w_perct_omni_unweighted <- readRDS(v2_Baseline_vs_t8w_perct_omni_unweighted_loc)
+v3_Baseline_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds'
+v3_Baseline_vs_t8w_perct_omni_unweighted <- readRDS(v3_Baseline_vs_t8w_perct_omni_unweighted_loc)
+v2_t24h_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v2_t24h_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds'
+v2_t24h_vs_t8w_perct_omni_unweighted <- readRDS(v2_t24h_vs_t8w_perct_omni_unweighted_loc)
+v3_t24h_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v3_t24h_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds'
+v3_t24h_vs_t8w_perct_omni_unweighted <- readRDS(v3_t24h_vs_t8w_perct_omni_unweighted_loc)
+
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+v2_Baseline_vs_t24h_perct_omni_unweighted_genes <- extract_significant_ligands_and_downstream_genes(v2_Baseline_vs_t24h_perct_omni_unweighted, significance_cutoff = 0)
+v2_Baseline_vs_t24h_perct_omni_unweighted_genes_all <- get_unique_ligands_targets(v2_Baseline_vs_t24h_perct_omni_unweighted_genes)
+v3_Baseline_vs_t24h_perct_omni_unweighted_genes <- extract_significant_ligands_and_downstream_genes(v3_Baseline_vs_t24h_perct_omni_unweighted, significance_cutoff = 0)
+v3_Baseline_vs_t24h_perct_omni_unweighted_genes_all <- get_unique_ligands_targets(v3_Baseline_vs_t24h_perct_omni_unweighted_genes)
+
+# now also the receptors
+v2_Baseline_vs_t24h_perct_omni_unweighted_receptors <- extract_significant_ligands_and_downstream_genes(v2_Baseline_vs_t24h_perct_omni_unweighted, matrix = 'ligand_receptor_network', significance_cutoff = 0)
+v2_Baseline_vs_t24h_perct_omni_unweighted_receptors_all <- get_unique_ligands_targets(v2_Baseline_vs_t24h_perct_omni_unweighted_receptors)
+v3_Baseline_vs_t24h_perct_omni_unweighted_receptors <- extract_significant_ligands_and_downstream_genes(v3_Baseline_vs_t24h_perct_omni_unweighted, matrix = 'ligand_receptor_network', significance_cutoff = 0)
+v3_Baseline_vs_t24h_perct_omni_unweighted_receptors_all <- get_unique_ligands_targets(v3_Baseline_vs_t24h_perct_omni_unweighted_receptors)
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# merge the version chemistry
+Baseline_vs_t24h_perct_omni_unweighted_ligands <- unique(c(v2_Baseline_vs_t24h_perct_omni_unweighted_genes_all[['ligands']], 
+                                                           v3_Baseline_vs_t24h_perct_omni_unweighted_genes_all[['ligands']],
+                                                           v2_Baseline_vs_t24h_perct_omni_unweighted_receptors_all[['ligands']],
+                                                           v3_Baseline_vs_t24h_perct_omni_unweighted_receptors_all[['ligands']]))
+Baseline_vs_t24h_perct_omni_unweighted_targets <- unique(c(v2_Baseline_vs_t24h_perct_omni_unweighted_genes_all[['targets']], 
+                                                           v3_Baseline_vs_t24h_perct_omni_unweighted_genes_all[['targets']],
+                                                           v2_Baseline_vs_t24h_perct_omni_unweighted_receptors_all[['targets']],
+                                                           v3_Baseline_vs_t24h_perct_omni_unweighted_receptors_all[['targets']]))
+# combine the ligands and downstream genes
+Baseline_vs_t24h_perct_omni_unweighted_ligands_targets <- c(Baseline_vs_t24h_perct_omni_unweighted_ligands, Baseline_vs_t24h_perct_omni_unweighted_targets)
+# get the entrez IDs for the gene symbols
+Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_mapping <- bitr(Baseline_vs_t24h_perct_omni_unweighted_ligands_targets, fromType = "SYMBOL", toType = "ENTREZID", OrgDb=organism)
+# get the IDs which are not duplicated, and are not NA
+Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_mapping <- Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_mapping[!is.na(Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_mapping[['ENTREZID']]), ]
+# now get the LFCs
+Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_lfcs <- get_lfs_for_genes(mast_output_loc, 'Baselinet24h', Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_mapping[['SYMBOL']], lfc_column = 'metafc')
+# set to zero if empty
+Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_lfcs[is.na(Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_lfcs)] <- 0
+# get the max absolute LFC
+Baseline_vs_t24h_perct_omni_unweighted_max_lfcs <- apply(Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_lfcs, 1, get_absolute_max)
+# extract the values
+Baseline_vs_t24h_perct_omni_unweighted_genes_lfcs <- names(Baseline_vs_t24h_perct_omni_unweighted_max_lfcs)
+Baseline_vs_t24h_perct_omni_unweighted_values_lfcs <- as.vector(unlist(Baseline_vs_t24h_perct_omni_unweighted_max_lfcs))
+Baseline_vs_t24h_perct_omni_unweighted_genes_lfcs <- Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_mapping[match(Baseline_vs_t24h_perct_omni_unweighted_genes_lfcs, Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_mapping[['SYMBOL']]), 'ENTREZID']
+names(Baseline_vs_t24h_perct_omni_unweighted_values_lfcs) <- Baseline_vs_t24h_perct_omni_unweighted_genes_lfcs
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# view the pathways
+wd_prev <- getwd()
+dir.create(paste(wd_prev, '/Baselinet24h/', sep = ''))
+setwd(paste(wd_prev, '/Baselinet24h/', sep = ''))
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04060', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04061', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04657', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04659', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04620', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa05321', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa05417', species = kegg.organism)
+setwd(wd_prev)
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+v2_Baseline_vs_t8w_perct_omni_unweighted_genes <- extract_significant_ligands_and_downstream_genes(v2_Baseline_vs_t8w_perct_omni_unweighted, significance_cutoff = 0)
+v2_Baseline_vs_t8w_perct_omni_unweighted_genes_all <- get_unique_ligands_targets(v2_Baseline_vs_t8w_perct_omni_unweighted_genes)
+v3_Baseline_vs_t8w_perct_omni_unweighted_genes <- extract_significant_ligands_and_downstream_genes(v3_Baseline_vs_t8w_perct_omni_unweighted, significance_cutoff = 0)
+v3_Baseline_vs_t8w_perct_omni_unweighted_genes_all <- get_unique_ligands_targets(v3_Baseline_vs_t8w_perct_omni_unweighted_genes)
+# now also the receptors
+v2_Baseline_vs_t8w_perct_omni_unweighted_receptors <- extract_significant_ligands_and_downstream_genes(v2_Baseline_vs_t8w_perct_omni_unweighted, matrix = 'ligand_receptor_network', significance_cutoff = 0)
+v2_Baseline_vs_t8w_perct_omni_unweighted_receptors_all <- get_unique_ligands_targets(v2_Baseline_vs_t8w_perct_omni_unweighted_receptors)
+v3_Baseline_vs_t8w_perct_omni_unweighted_receptors <- extract_significant_ligands_and_downstream_genes(v3_Baseline_vs_t8w_perct_omni_unweighted, matrix = 'ligand_receptor_network', significance_cutoff = 0)
+v3_Baseline_vs_t8w_perct_omni_unweighted_receptors_all <- get_unique_ligands_targets(v3_Baseline_vs_t8w_perct_omni_unweighted_receptors)
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# merge the version chemistry
+Baseline_vs_t8w_perct_omni_unweighted_ligands <- unique(c(v2_Baseline_vs_t8w_perct_omni_unweighted_genes_all[['ligands']], 
+                                                           v3_Baseline_vs_t8w_perct_omni_unweighted_genes_all[['ligands']],
+                                                           v2_Baseline_vs_t8w_perct_omni_unweighted_receptors_all[['ligands']],
+                                                           v3_Baseline_vs_t8w_perct_omni_unweighted_receptors_all[['ligands']]))
+Baseline_vs_t8w_perct_omni_unweighted_targets <- unique(c(v2_Baseline_vs_t8w_perct_omni_unweighted_genes_all[['targets']], 
+                                                           v3_Baseline_vs_t8w_perct_omni_unweighted_genes_all[['targets']],
+                                                           v2_Baseline_vs_t8w_perct_omni_unweighted_receptors_all[['targets']],
+                                                           v3_Baseline_vs_t8w_perct_omni_unweighted_receptors_all[['targets']]))
+# combine the ligands and downstream genes
+Baseline_vs_t8w_perct_omni_unweighted_ligands_targets <- c(Baseline_vs_t8w_perct_omni_unweighted_ligands, Baseline_vs_t8w_perct_omni_unweighted_targets)
+# get the entrez IDs for the gene symbols
+Baseline_vs_t8w_perct_omni_unweighted_ligands_targets_mapping <- bitr(Baseline_vs_t8w_perct_omni_unweighted_ligands_targets, fromType = "SYMBOL", toType = "ENTREZID", OrgDb=organism)
+# get the IDs which are not duplicated, and are not NA
+Baseline_vs_t8w_perct_omni_unweighted_ligands_targets_mapping <- Baseline_vs_t8w_perct_omni_unweighted_ligands_targets_mapping[!is.na(Baseline_vs_t8w_perct_omni_unweighted_ligands_targets_mapping[['ENTREZID']]), ]
+# now get the LFCs
+Baseline_vs_t8w_perct_omni_unweighted_ligands_targets_lfcs <- get_lfs_for_genes(mast_output_loc, 'Baselinet8w', Baseline_vs_t8w_perct_omni_unweighted_ligands_targets_mapping[['SYMBOL']], lfc_column = 'metafc')
+# set to zero if empty
+Baseline_vs_t8w_perct_omni_unweighted_ligands_targets_lfcs[is.na(Baseline_vs_t8w_perct_omni_unweighted_ligands_targets_lfcs)] <- 0
+# get the max absolute LFC
+Baseline_vs_t8w_perct_omni_unweighted_max_lfcs <- apply(Baseline_vs_t8w_perct_omni_unweighted_ligands_targets_lfcs, 1, get_absolute_max)
+# extract the values
+Baseline_vs_t8w_perct_omni_unweighted_genes_lfcs <- names(Baseline_vs_t8w_perct_omni_unweighted_max_lfcs)
+Baseline_vs_t8w_perct_omni_unweighted_values_lfcs <- as.vector(unlist(Baseline_vs_t8w_perct_omni_unweighted_max_lfcs))
+Baseline_vs_t8w_perct_omni_unweighted_genes_lfcs <- Baseline_vs_t8w_perct_omni_unweighted_ligands_targets_mapping[match(Baseline_vs_t8w_perct_omni_unweighted_genes_lfcs, Baseline_vs_t8w_perct_omni_unweighted_ligands_targets_mapping[['SYMBOL']]), 'ENTREZID']
+names(Baseline_vs_t8w_perct_omni_unweighted_values_lfcs) <- Baseline_vs_t8w_perct_omni_unweighted_genes_lfcs
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# view the pathways
+wd_prev <- getwd()
+dir.create(paste(wd_prev, '/Baselinet8w/', sep = ''))
+setwd(paste(wd_prev, '/Baselinet8w/', sep = ''))
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04060', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04061', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04657', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04659', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04620', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa05321', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa05417', species = kegg.organism)
+setwd(wd_prev)
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get the receptor values
+v2_Baseline_vs_t8w_perct_omni_unweighted_target_values <- get_max_interaction_per_receptor(v2_Baseline_vs_t8w_perct_omni_unweighted)
+# v3 as well
+v3_Baseline_vs_t8w_perct_omni_unweighted_target_values <- get_max_interaction_per_receptor(v3_Baseline_vs_t8w_perct_omni_unweighted)
+# get the max for each gene
+combined_Baseline_vs_t8w_perct_omni_unweighted_target_values <- get_max_value_from_lists(list(v2_Baseline_vs_t8w_perct_omni_unweighted_target_values, v3_Baseline_vs_t8w_perct_omni_unweighted_target_values))
+# get the entrez IDs
+combined_Baseline_vs_t8w_perct_omni_unweighted_target_values_mapping <- bitr(names(combined_Baseline_vs_t8w_perct_omni_unweighted_target_values), fromType = "SYMBOL", toType = "ENTREZID", OrgDb=organism)
+# filter empty results
+combined_Baseline_vs_t8w_perct_omni_unweighted_target_values_mapping <- combined_Baseline_vs_t8w_perct_omni_unweighted_target_values_mapping[!is.na(combined_Baseline_vs_t8w_perct_omni_unweighted_target_values_mapping[['SYMBOL']]) & !is.na(combined_Baseline_vs_t8w_perct_omni_unweighted_target_values_mapping[['ENTREZID']]), ]
+# only include what we can map
+combined_Baseline_vs_t8w_perct_omni_unweighted_target_values <- combined_Baseline_vs_t8w_perct_omni_unweighted_target_values[names(combined_Baseline_vs_t8w_perct_omni_unweighted_target_values) %in% combined_Baseline_vs_t8w_perct_omni_unweighted_target_values_mapping[['SYMBOL']]]
+# swap to entrez
+combined_Baseline_vs_t8w_perct_omni_unweighted_target_names <- combined_Baseline_vs_t8w_perct_omni_unweighted_target_values_mapping[match(names(combined_Baseline_vs_t8w_perct_omni_unweighted_target_values), combined_Baseline_vs_t8w_perct_omni_unweighted_target_values_mapping[['SYMBOL']]), 'ENTREZID']
+combined_Baseline_vs_t8w_perct_omni_unweighted_target_values <- unlist(combined_Baseline_vs_t8w_perct_omni_unweighted_target_values)
+names(combined_Baseline_vs_t8w_perct_omni_unweighted_target_values) <- combined_Baseline_vs_t8w_perct_omni_unweighted_target_names
+# replace the targets with these values instead of the LFCs
+Baseline_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors <- Baseline_vs_t8w_perct_omni_unweighted_values_lfcs
+Baseline_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors[names(combined_Baseline_vs_t8w_perct_omni_unweighted_target_values)] <- combined_Baseline_vs_t8w_perct_omni_unweighted_target_values
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+wd_prev <- getwd()
+dir.create(paste(wd_prev, '/cors_Baselinet8w/', sep = ''))
+setwd(paste(wd_prev, '/cors_Baselinet8w/', sep = ''))
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04060', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04061', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04657', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04659', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04620', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa05321', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa05417', species = kegg.organism)
+setwd(wd_prev)
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+v2_t24h_vs_t8w_perct_omni_unweighted_genes <- extract_significant_ligands_and_downstream_genes(v2_t24h_vs_t8w_perct_omni_unweighted, significance_cutoff = 0)
+v2_t24h_vs_t8w_perct_omni_unweighted_genes_all <- get_unique_ligands_targets(v2_t24h_vs_t8w_perct_omni_unweighted_genes)
+v3_t24h_vs_t8w_perct_omni_unweighted_genes <- extract_significant_ligands_and_downstream_genes(v3_t24h_vs_t8w_perct_omni_unweighted, significance_cutoff = 0)
+v3_t24h_vs_t8w_perct_omni_unweighted_genes_all <- get_unique_ligands_targets(v3_t24h_vs_t8w_perct_omni_unweighted_genes)
+# now also the receptors
+v2_t24h_vs_t8w_perct_omni_unweighted_receptors <- extract_significant_ligands_and_downstream_genes(v2_t24h_vs_t8w_perct_omni_unweighted, matrix = 'ligand_receptor_network', significance_cutoff = 0)
+v2_t24h_vs_t8w_perct_omni_unweighted_receptors_all <- get_unique_ligands_targets(v2_t24h_vs_t8w_perct_omni_unweighted_receptors)
+v3_t24h_vs_t8w_perct_omni_unweighted_receptors <- extract_significant_ligands_and_downstream_genes(v3_t24h_vs_t8w_perct_omni_unweighted, matrix = 'ligand_receptor_network', significance_cutoff = 0)
+v3_t24h_vs_t8w_perct_omni_unweighted_receptors_all <- get_unique_ligands_targets(v3_t24h_vs_t8w_perct_omni_unweighted_receptors)
+
+```
+
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# merge the version chemistry
+t24h_vs_t8w_perct_omni_unweighted_ligands <- unique(c(v2_t24h_vs_t8w_perct_omni_unweighted_genes_all[['ligands']], 
+                                                           v3_t24h_vs_t8w_perct_omni_unweighted_genes_all[['ligands']],
+                                                           v2_t24h_vs_t8w_perct_omni_unweighted_receptors_all[['ligands']],
+                                                           v3_t24h_vs_t8w_perct_omni_unweighted_receptors_all[['ligands']]))
+t24h_vs_t8w_perct_omni_unweighted_targets <- unique(c(v2_t24h_vs_t8w_perct_omni_unweighted_genes_all[['targets']], 
+                                                           v3_t24h_vs_t8w_perct_omni_unweighted_genes_all[['targets']],
+                                                           v2_t24h_vs_t8w_perct_omni_unweighted_receptors_all[['targets']],
+                                                           v3_t24h_vs_t8w_perct_omni_unweighted_receptors_all[['targets']]))
+# combine the ligands and downstream genes
+t24h_vs_t8w_perct_omni_unweighted_ligands_targets <- c(t24h_vs_t8w_perct_omni_unweighted_ligands, t24h_vs_t8w_perct_omni_unweighted_targets)
+# get the entrez IDs for the gene symbols
+t24h_vs_t8w_perct_omni_unweighted_ligands_targets_mapping <- bitr(t24h_vs_t8w_perct_omni_unweighted_ligands_targets, fromType = "SYMBOL", toType = "ENTREZID", OrgDb=organism)
+# get the IDs which are not duplicated, and are not NA
+t24h_vs_t8w_perct_omni_unweighted_ligands_targets_mapping <- t24h_vs_t8w_perct_omni_unweighted_ligands_targets_mapping[!is.na(t24h_vs_t8w_perct_omni_unweighted_ligands_targets_mapping[['ENTREZID']]), ]
+# now get the LFCs
+t24h_vs_t8w_perct_omni_unweighted_ligands_targets_lfcs <- get_lfs_for_genes(mast_output_loc, 't24ht8w', t24h_vs_t8w_perct_omni_unweighted_ligands_targets_mapping[['SYMBOL']], lfc_column = 'metafc')
+# set to zero if empty
+t24h_vs_t8w_perct_omni_unweighted_ligands_targets_lfcs[is.na(t24h_vs_t8w_perct_omni_unweighted_ligands_targets_lfcs)] <- 0
+# get the max absolute LFC
+t24h_vs_t8w_perct_omni_unweighted_max_lfcs <- apply(t24h_vs_t8w_perct_omni_unweighted_ligands_targets_lfcs, 1, get_absolute_max)
+# extract the values
+t24h_vs_t8w_perct_omni_unweighted_genes_lfcs <- names(t24h_vs_t8w_perct_omni_unweighted_max_lfcs)
+t24h_vs_t8w_perct_omni_unweighted_values_lfcs <- as.vector(unlist(t24h_vs_t8w_perct_omni_unweighted_max_lfcs))
+t24h_vs_t8w_perct_omni_unweighted_genes_lfcs <- t24h_vs_t8w_perct_omni_unweighted_ligands_targets_mapping[match(t24h_vs_t8w_perct_omni_unweighted_genes_lfcs, t24h_vs_t8w_perct_omni_unweighted_ligands_targets_mapping[['SYMBOL']]), 'ENTREZID']
+names(t24h_vs_t8w_perct_omni_unweighted_values_lfcs) <- t24h_vs_t8w_perct_omni_unweighted_genes_lfcs
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# view the pathways
+wd_prev <- getwd()
+dir.create(paste(wd_prev, '/t24ht8w/', sep = ''))
+setwd(paste(wd_prev, '/t24ht8w/', sep = ''))
+pathview(gene.data=t24h_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04060', species = kegg.organism)
+pathview(gene.data=t24h_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04061', species = kegg.organism)
+pathview(gene.data=t24h_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04657', species = kegg.organism)
+pathview(gene.data=t24h_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04659', species = kegg.organism)
+pathview(gene.data=t24h_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa04620', species = kegg.organism)
+pathview(gene.data=t24h_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa05321', species = kegg.organism)
+pathview(gene.data=t24h_vs_t8w_perct_omni_unweighted_values_lfcs, pathway.id = 'hsa05417', species = kegg.organism)
+setwd(wd_prev)
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get the receptor values
+v2_t24h_vs_t8w_perct_omni_unweighted_target_values <- get_max_interaction_per_receptor(v2_t24h_vs_t8w_perct_omni_unweighted)
+# v3 as well
+v3_t24h_vs_t8w_perct_omni_unweighted_target_values <- get_max_interaction_per_receptor(v3_t24h_vs_t8w_perct_omni_unweighted)
+# get the max for each gene
+combined_t24h_vs_t8w_perct_omni_unweighted_target_values <- get_max_value_from_lists(list(v2_t24h_vs_t8w_perct_omni_unweighted_target_values, v3_t24h_vs_t8w_perct_omni_unweighted_target_values))
+# get the entrez IDs
+combined_t24h_vs_t8w_perct_omni_unweighted_target_values_mapping <- bitr(names(combined_t24h_vs_t8w_perct_omni_unweighted_target_values), fromType = "SYMBOL", toType = "ENTREZID", OrgDb=organism)
+# filter empty results
+combined_t24h_vs_t8w_perct_omni_unweighted_target_values_mapping <- combined_t24h_vs_t8w_perct_omni_unweighted_target_values_mapping[!is.na(combined_t24h_vs_t8w_perct_omni_unweighted_target_values_mapping[['SYMBOL']]) & !is.na(combined_t24h_vs_t8w_perct_omni_unweighted_target_values_mapping[['ENTREZID']]), ]
+# only include what we can map
+combined_t24h_vs_t8w_perct_omni_unweighted_target_values <- combined_t24h_vs_t8w_perct_omni_unweighted_target_values[names(combined_t24h_vs_t8w_perct_omni_unweighted_target_values) %in% combined_t24h_vs_t8w_perct_omni_unweighted_target_values_mapping[['SYMBOL']]]
+# swap to entrez
+combined_t24h_vs_t8w_perct_omni_unweighted_target_names <- combined_t24h_vs_t8w_perct_omni_unweighted_target_values_mapping[match(names(combined_t24h_vs_t8w_perct_omni_unweighted_target_values), combined_t24h_vs_t8w_perct_omni_unweighted_target_values_mapping[['SYMBOL']]), 'ENTREZID']
+combined_t24h_vs_t8w_perct_omni_unweighted_target_values <- unlist(combined_t24h_vs_t8w_perct_omni_unweighted_target_values)
+names(combined_t24h_vs_t8w_perct_omni_unweighted_target_values) <- combined_t24h_vs_t8w_perct_omni_unweighted_target_names
+# replace the targets with these values instead of the LFCs
+t24h_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors <- t24h_vs_t8w_perct_omni_unweighted_values_lfcs
+t24h_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors[names(combined_t24h_vs_t8w_perct_omni_unweighted_target_values)] <- combined_t24h_vs_t8w_perct_omni_unweighted_target_values
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+wd_prev <- getwd()
+dir.create(paste(wd_prev, '/cors_t24ht8w/', sep = ''))
+setwd(paste(wd_prev, '/cors_t24ht8w/', sep = ''))
+pathview(gene.data=t24h_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04060', species = kegg.organism)
+pathview(gene.data=t24h_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04061', species = kegg.organism)
+pathview(gene.data=t24h_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04657', species = kegg.organism)
+pathview(gene.data=t24h_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04659', species = kegg.organism)
+pathview(gene.data=t24h_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04620', species = kegg.organism)
+pathview(gene.data=t24h_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa05321', species = kegg.organism)
+pathview(gene.data=t24h_vs_t8w_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa05417', species = kegg.organism)
+setwd(wd_prev)
+
+```
+
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get the receptor values
+v2_Baseline_vs_t24h_perct_omni_unweighted_target_values <- get_max_interaction_per_receptor(v2_Baseline_vs_t24h_perct_omni_unweighted)
+# v3 as well
+v3_Baseline_vs_t24h_perct_omni_unweighted_target_values <- get_max_interaction_per_receptor(v3_Baseline_vs_t24h_perct_omni_unweighted)
+# get the max for each gene
+combined_Baseline_vs_t24h_perct_omni_unweighted_target_values <- get_max_value_from_lists(list(v2_Baseline_vs_t24h_perct_omni_unweighted_target_values, v3_Baseline_vs_t24h_perct_omni_unweighted_target_values))
+# get the entrez IDs
+combined_Baseline_vs_t24h_perct_omni_unweighted_target_values_mapping <- bitr(names(combined_Baseline_vs_t24h_perct_omni_unweighted_target_values), fromType = "SYMBOL", toType = "ENTREZID", OrgDb=organism)
+# filter empty results
+combined_Baseline_vs_t24h_perct_omni_unweighted_target_values_mapping <- combined_Baseline_vs_t24h_perct_omni_unweighted_target_values_mapping[!is.na(combined_Baseline_vs_t24h_perct_omni_unweighted_target_values_mapping[['SYMBOL']]) & !is.na(combined_Baseline_vs_t24h_perct_omni_unweighted_target_values_mapping[['ENTREZID']]), ]
+# only include what we can map
+combined_Baseline_vs_t24h_perct_omni_unweighted_target_values <- combined_Baseline_vs_t24h_perct_omni_unweighted_target_values[names(combined_Baseline_vs_t24h_perct_omni_unweighted_target_values) %in% combined_Baseline_vs_t24h_perct_omni_unweighted_target_values_mapping[['SYMBOL']]]
+# swap to entrez
+combined_Baseline_vs_t24h_perct_omni_unweighted_target_names <- combined_Baseline_vs_t24h_perct_omni_unweighted_target_values_mapping[match(names(combined_Baseline_vs_t24h_perct_omni_unweighted_target_values), combined_Baseline_vs_t24h_perct_omni_unweighted_target_values_mapping[['SYMBOL']]), 'ENTREZID']
+combined_Baseline_vs_t24h_perct_omni_unweighted_target_values <- unlist(combined_Baseline_vs_t24h_perct_omni_unweighted_target_values)
+names(combined_Baseline_vs_t24h_perct_omni_unweighted_target_values) <- combined_Baseline_vs_t24h_perct_omni_unweighted_target_names
+# replace the targets with these values instead of the LFCs
+Baseline_vs_t24h_perct_omni_unweighted_values_lfcs_and_cors <- Baseline_vs_t24h_perct_omni_unweighted_values_lfcs
+Baseline_vs_t24h_perct_omni_unweighted_values_lfcs_and_cors[names(combined_Baseline_vs_t24h_perct_omni_unweighted_target_values)] <- combined_Baseline_vs_t24h_perct_omni_unweighted_target_values
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+wd_prev <- getwd()
+dir.create(paste(wd_prev, '/cors_Baselinet24h/', sep = ''))
+setwd(paste(wd_prev, '/cors_Baselinet24h/', sep = ''))
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04060', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04061', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04657', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04659', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa04620', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa05321', species = kegg.organism)
+pathview(gene.data=Baseline_vs_t24h_perct_omni_unweighted_values_lfcs_and_cors, pathway.id = 'hsa05417', species = kegg.organism)
+setwd(wd_prev)
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# combine v2 and v3
+Baseline_vs_t8w_perct_omni_unweighted_genes <- combine_lists(list('v2' = v2_Baseline_vs_t8w_perct_omni_unweighted_genes, 'v3' = v3_Baseline_vs_t8w_perct_omni_unweighted_genes))
+Baseline_vs_t8w_perct_omni_unweighted_receptors <- combine_lists(list('v2' = v2_Baseline_vs_t8w_perct_omni_unweighted_receptors, 'v3' = v3_Baseline_vs_t8w_perct_omni_unweighted_receptors))
+# and then receptors and downstream genes
+Baseline_vs_t8w_perct_omni_unweighted_genes_and_receptors <- combine_lists(list('downstream' = Baseline_vs_t8w_perct_omni_unweighted_genes, 'receptors' = Baseline_vs_t8w_perct_omni_unweighted_receptors))
+# do the enrichment analysis
+Baseline_vs_t8w_perct_omni_unweighted_pathways <- enrich_for_significant_interactions(Baseline_vs_t8w_perct_omni_unweighted_genes_and_receptors)
+
+# and t24h
+Baseline_vs_t24h_perct_omni_unweighted_genes <- combine_lists(list('v2' = v2_Baseline_vs_t24h_perct_omni_unweighted_genes, 'v3' = v3_Baseline_vs_t24h_perct_omni_unweighted_genes))
+Baseline_vs_t24h_perct_omni_unweighted_receptors <- combine_lists(list('v2' = v2_Baseline_vs_t24h_perct_omni_unweighted_receptors, 'v3' = v3_Baseline_vs_t24h_perct_omni_unweighted_receptors))
+Baseline_vs_t24h_perct_omni_unweighted_genes_and_receptors <- combine_lists(list('downstream' = Baseline_vs_t24h_perct_omni_unweighted_genes, 'receptors' = Baseline_vs_t24h_perct_omni_unweighted_receptors))
+Baseline_vs_t24h_perct_omni_unweighted_pathways <- enrich_for_significant_interactions(Baseline_vs_t24h_perct_omni_unweighted_genes_and_receptors)
+
+# and t24h vs t8w
+t24h_vs_t8w_perct_omni_unweighted_genes <- combine_lists(list('v2' = v2_t24h_vs_t8w_perct_omni_unweighted_genes, 'v3' = v3_t24h_vs_t8w_perct_omni_unweighted_genes))
+t24h_vs_t8w_perct_omni_unweighted_receptors <- combine_lists(list('v2' = v2_t24h_vs_t8w_perct_omni_unweighted_receptors, 'v3' = v3_t24h_vs_t8w_perct_omni_unweighted_receptors))
+t24h_vs_t8w_perct_omni_unweighted_genes_and_receptors <- combine_lists(list('downstream' = t24h_vs_t8w_perct_omni_unweighted_genes, 'receptors' = t24h_vs_t8w_perct_omni_unweighted_receptors))
+t24h_vs_t8w_perct_omni_unweighted_pathways <- enrich_for_significant_interactions(t24h_vs_t8w_perct_omni_unweighted_genes_and_receptors)
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# write the resulting genes
+write_significant_genes(Baseline_vs_t24h_perct_omni_unweighted_genes_and_receptors, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/Baseline_vs_t24h_perct_omni_unweighted_genes_and_receptors.txt')
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# write the results
+Baseline_vs_t8w_perct_omni_unweighted_pathways_output_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/pathways/Baseline_t8w_omni_unweighted/'
+write_enrichment_results(Baseline_vs_t8w_perct_omni_unweighted_pathways, Baseline_vs_t8w_perct_omni_unweighted_pathways_output_loc)
+Baseline_vs_t24h_perct_omni_unweighted_pathways_output_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/pathways/Baseline_t24h_omni_unweighted/'
+write_enrichment_results(Baseline_vs_t24h_perct_omni_unweighted_pathways, Baseline_vs_t24h_perct_omni_unweighted_pathways_output_loc)
+t24h_vs_t8w_perct_omni_unweighted_pathways_output_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/pathways/t24h_t8w_omni_unweighted/'
+write_enrichment_results(t24h_vs_t8w_perct_omni_unweighted_pathways, t24h_vs_t8w_perct_omni_unweighted_pathways_output_loc)
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# plot the gene overlap
+plot_gene_overlap(Baseline_vs_t24h_perct_omni_unweighted_genes, Baseline_vs_t8w_perct_omni_unweighted_genes, target_key = 'ligands', output_prepend = './ctc_genes_Baseline_vs_t24h_or_t8w_', set_1_name = 'Baseline-t24h', set_2_name = 'Baseline-t8w')
+plot_gene_overlap(Baseline_vs_t24h_perct_omni_unweighted_genes, Baseline_vs_t8w_perct_omni_unweighted_genes, target_key = 'targets', output_prepend = './ctc_genes_Baseline_vs_t24h_or_t8w_', set_1_name = 'Baseline-t24h', set_2_name = 'Baseline-t8w')
+plot_gene_overlap(Baseline_vs_t24h_perct_omni_unweighted_receptors, Baseline_vs_t8w_perct_omni_unweighted_receptors, target_key = 'targets', output_prepend = './ctc_receptors_Baseline_vs_t24h_or_t8w_', set_1_name = 'Baseline-t24h', set_2_name = 'Baseline-t8w')
+
+# make lists where we combined both senders and receivers
+Baseline_vs_t24h_perct_omni_unweighted_genes_combined <- combine_senders_and_combine_receivers(Baseline_vs_t24h_perct_omni_unweighted_genes)
+Baseline_vs_t8w_perct_omni_unweighted_genes_combined <- combine_senders_and_combine_receivers(Baseline_vs_t8w_perct_omni_unweighted_genes)
+Baseline_vs_t24h_perct_omni_unweighted_receptors_combined <- combine_senders_and_combine_receivers(Baseline_vs_t24h_perct_omni_unweighted_receptors)
+Baseline_vs_t8w_perct_omni_unweighted_receptors_combined <- combine_senders_and_combine_receivers(Baseline_vs_t8w_perct_omni_unweighted_receptors)
+# and plot overlap again
+plot_gene_overlap(Baseline_vs_t24h_perct_omni_unweighted_genes_combined, Baseline_vs_t8w_perct_omni_unweighted_genes_combined, target_key = 'ligands', output_prepend = './ctc_genes_Baseline_vs_t24h_or_t8w_', set_1_name = 'Baseline-t24h', set_2_name = 'Baseline-t8w')
+plot_gene_overlap(Baseline_vs_t24h_perct_omni_unweighted_genes_combined, Baseline_vs_t8w_perct_omni_unweighted_genes_combined, target_key = 'targets', output_prepend = './ctc_genes_Baseline_vs_t24h_or_t8w_', set_1_name = 'Baseline-t24h', set_2_name = 'Baseline-t8w')
+plot_gene_overlap(Baseline_vs_t24h_perct_omni_unweighted_receptors_combined, Baseline_vs_t8w_perct_omni_unweighted_receptors_combined, target_key = 'targets', output_prepend = './ctc_receptors_Baseline_vs_t24h_or_t8w_', set_1_name = 'Baseline-t24h', set_2_name = 'Baseline-t8w')
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get the summed LFCs
+Baseline_vs_t24h_perct_omni_unweighted_summed_lfcs <- apply(Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_lfcs, 1, sum)
+Baseline_vs_t24h_perct_omni_unweighted_summed_genenames_lfcs <- names(Baseline_vs_t24h_perct_omni_unweighted_summed_lfcs)
+Baseline_vs_t24h_perct_omni_unweighted_summed_values_lfcs <- as.vector(unlist(Baseline_vs_t24h_perct_omni_unweighted_max_lfcs))
+Baseline_vs_t24h_perct_omni_unweighted_summed_genenames_lfcs <- Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_mapping[match(Baseline_vs_t24h_perct_omni_unweighted_summed_genenames_lfcs, Baseline_vs_t24h_perct_omni_unweighted_ligands_targets_mapping[['SYMBOL']]), 'ENTREZID']
+names(Baseline_vs_t24h_perct_omni_unweighted_summed_values_lfcs) <- Baseline_vs_t24h_perct_omni_unweighted_summed_genenames_lfcs
+
+Baseline_vs_t8w_perct_omni_unweighted_summed_lfcs <- apply(Baseline_vs_t8w_perct_omni_unweighted_ligands_targets_lfcs, 1, sum)
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+mast_output_loc_v2 <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v2_paired_lores_lfc01minpct01ncountrna_20201209/rna/'
+#pathwview_per_celltype_combination(nichenet_output = v2_Baseline_vs_t24h_perct_omni_unweighted, output_loc = './', mast_output_loc_v2, pathways.ids = c('hsa04060','hsa04061','hsa04657','hsa04659','hsa04620','hsa05321','hsa05417'))
+pathwview_per_celltype_combination(nichenet_output = v2_Baseline_vs_t24h_perct_omni_unweighted, output_loc = './v2_', mast_output_loc_v2, 'Baselinet24h', pathways.ids = c('hsa04060','hsa04061','hsa04657','hsa04659','hsa04620','hsa05321','hsa05417'),cascade_matrix=weighted_networks$gr, significance_cutoff=0)
+mast_output_loc_v3 <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20201209/rna/'
+pathwview_per_celltype_combination(nichenet_output = v3_Baseline_vs_t24h_perct_omni_unweighted, output_loc = './v3_', mast_output_loc_v3, 'Baselinet24h', pathways.ids = c('hsa04060','hsa04061','hsa04657','hsa04659','hsa04620','hsa05321','hsa05417'),cascade_matrix=weighted_networks$gr, significance_cutoff=0)
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+write_significant_genes(nichenet_output = v2_Baseline_vs_t24h_perct_omni_unweighted, output_prepend = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/Baseline_t24h/v2_')
+write_significant_genes(nichenet_output = v3_Baseline_vs_t24h_perct_omni_unweighted, output_prepend = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/Baseline_t24h/v3_')
+write_significant_genes(nichenet_output = v2_Baseline_vs_t8w_perct_omni_unweighted, output_prepend = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/Baseline_t8w/v2_')
+write_significant_genes(nichenet_output = v3_Baseline_vs_t8w_perct_omni_unweighted, output_prepend = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/Baseline_t8w/v3_')
+write_significant_genes(nichenet_output = v2_t24h_vs_t8w_perct_omni_unweighted, output_prepend = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/t24h_t8w/v2_')
+write_significant_genes(nichenet_output = v3_t24h_vs_t8w_perct_omni_unweighted, output_prepend = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/t24h_t8w/v3_')
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+combine_gene_lists(output_loc_original =  '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/Baseline_t24h/', output_combined_prepend = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/Baseline_t24h/combined_', cell_types = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK', 'all'))
+combine_gene_lists(output_loc_original =  '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/Baseline_t8w/', output_combined_prepend = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/Baseline_t8w/combined_', cell_types = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK', 'all'))
+combine_gene_lists(output_loc_original =  '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/t24h_t8w/', output_combined_prepend = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/t24h_t8w/combined_', cell_types = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK', 'all'))
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+read_partition <- 'tmp01'
+# try with the omni data
+ligand_target_matrix_omni_unweighted_loc <-paste('/groups/umcg-franke-scrna/', read_partition, '/releases/blokland-2020/v1/cell_cell_interactions/omni/', 'ligand_target_matrixNoweights.rds', sep = '')
+lr_network_omni_loc <- paste('/groups/umcg-franke-scrna/', read_partition, '/releases/blokland-2020/v1/cell_cell_interactions/omni/','lr_Network_Omnipath.rds', sep = '')
+unweighted_networks_omni_loc <- paste('/groups/umcg-franke-scrna/', read_partition, '/releases/blokland-2020/v1/cell_cell_interactions/omni/','weighted_networksNonSourceWeights.rds', sep = '')
+# there are weighted matrices as well
+ligand_target_matrix_omni_weighted_loc <-paste('/groups/umcg-franke-scrna/', read_partition, '/releases/blokland-2020/v1/cell_cell_interactions/omni/', 'ligand_target_matrixWithweights.rds', sep = '')
+weighted_networks_omni_loc <- paste('/groups/umcg-franke-scrna/', read_partition, '/releases/blokland-2020/v1/cell_cell_interactions/omni/','weighted_networksWithSourceWeights.rds', sep = '')
+# read network data
+ligand_target_matrix_omni_unweighted = readRDS(ligand_target_matrix_omni_unweighted_loc)
+ligand_target_matrix_omni_weighted = readRDS(ligand_target_matrix_omni_weighted_loc)
+lr_network_omni = readRDS(lr_network_omni_loc)
+unweighted_networks_omni = readRDS(unweighted_networks_omni_loc)
+weighted_networks_omni = readRDS(weighted_networks_omni_loc)
+
+
+# make a background set
+all_genes_possible <- c(unweighted_networks_omni[['lr_sig']][['from']],
+                        unweighted_networks_omni[['lr_sig']][['to']],
+                        unweighted_networks_omni[['gr']][['from']],
+                        unweighted_networks_omni[['gr']][['to']]
+                        )
+all_genes_possible <- unique(all_genes_possible)
+# write that
+write.table(data.frame(x = all_genes_possible), '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/possible_genes.txt', row.names = F, col.names = F, quote = F)
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+filter_gene_lists(gene_lists_loc = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/Baseline_t24h/', filter_list = unique(c(unweighted_networks_omni[['lr_sig']][['from']], unweighted_networks_omni[['lr_sig']][['to']])), output_loc = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes_no_lr/Baseline_t24h/', list.regex = 'combined_*')
+filter_gene_lists(gene_lists_loc = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/Baseline_t8w/', filter_list = unique(c(unweighted_networks_omni[['lr_sig']][['from']], unweighted_networks_omni[['lr_sig']][['to']])), output_loc = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes_no_lr/Baseline_t8w/', list.regex = 'combined_*')
+filter_gene_lists(gene_lists_loc = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes/t24h_t8w/', filter_list = unique(c(unweighted_networks_omni[['lr_sig']][['from']], unweighted_networks_omni[['lr_sig']][['to']])), output_loc = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/significant_genes_no_lr/t24h_t8w/', list.regex = 'combined_*')
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get interactions for each set
+lr_v2_Baseline_vs_t24h_perct_omni_unweighted <- data.table(get_significant_interactions(v2_Baseline_vs_t24h_perct_omni_unweighted, 'ligand_receptor_network'))
+lr_v3_Baseline_vs_t24h_perct_omni_unweighted <- data.table(get_significant_interactions(v3_Baseline_vs_t24h_perct_omni_unweighted, 'ligand_receptor_network'))
+lr_v2_Baseline_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v2_Baseline_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+lr_v3_Baseline_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v3_Baseline_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+lr_v2_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v2_t24h_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+lr_v3_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v3_t24h_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+
+# set the column name of the iteraction to be different for each set
+lr_v2_Baseline_vs_t24h_perct_omni_unweighted[['v2_Baseline_vs_t24h']] <- lr_v2_Baseline_vs_t24h_perct_omni_unweighted[['interaction']]
+lr_v2_Baseline_vs_t24h_perct_omni_unweighted[['interaction']] <- NULL
+lr_v3_Baseline_vs_t24h_perct_omni_unweighted[['v3_Baseline_vs_t24h']] <- lr_v3_Baseline_vs_t24h_perct_omni_unweighted[['interaction']]
+lr_v3_Baseline_vs_t24h_perct_omni_unweighted[['interaction']] <- NULL
+lr_v2_Baseline_vs_t8w_perct_omni_unweighted[['v2_Baseline_vs_t8w']] <- lr_v2_Baseline_vs_t8w_perct_omni_unweighted[['interaction']]
+lr_v2_Baseline_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+lr_v3_Baseline_vs_t8w_perct_omni_unweighted[['v3_Baseline_vs_t8w']] <- lr_v3_Baseline_vs_t8w_perct_omni_unweighted[['interaction']]
+lr_v3_Baseline_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+lr_v2_t24h_vs_t8w_perct_omni_unweighted[['v2_t24h_vs_t8w']] <- lr_v2_t24h_vs_t8w_perct_omni_unweighted[['interaction']]
+lr_v2_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+lr_v3_t24h_vs_t8w_perct_omni_unweighted[['v3_t24h_vs_t8w']] <- lr_v3_t24h_vs_t8w_perct_omni_unweighted[['interaction']]
+lr_v3_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+
+# merge all of them
+lr_all <- merge(lr_v2_Baseline_vs_t24h_perct_omni_unweighted, lr_v3_Baseline_vs_t24h_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+lr_all <- merge(lr_all, lr_v2_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+lr_all <- merge(lr_all, lr_v3_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+lr_all <- merge(lr_all, lr_v2_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+lr_all <- merge(lr_all, lr_v3_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get interactions for each set
+lt_v2_Baseline_vs_t24h_perct_omni_unweighted <- data.table(get_significant_interactions(v2_Baseline_vs_t24h_perct_omni_unweighted, 'ligand_target'))
+lt_v3_Baseline_vs_t24h_perct_omni_unweighted <- data.table(get_significant_interactions(v3_Baseline_vs_t24h_perct_omni_unweighted, 'ligand_target'))
+lt_v2_Baseline_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v2_Baseline_vs_t8w_perct_omni_unweighted, 'ligand_target'))
+lt_v3_Baseline_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v3_Baseline_vs_t8w_perct_omni_unweighted, 'ligand_target'))
+lt_v2_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v2_t24h_vs_t8w_perct_omni_unweighted, 'ligand_target'))
+lt_v3_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v3_t24h_vs_t8w_perct_omni_unweighted, 'ligand_target'))
+
+# set the column name of the iteraction to be different for each set
+lt_v2_Baseline_vs_t24h_perct_omni_unweighted[['v2_Baseline_vs_t24h']] <- lt_v2_Baseline_vs_t24h_perct_omni_unweighted[['interaction']]
+lt_v2_Baseline_vs_t24h_perct_omni_unweighted[['interaction']] <- NULL
+lt_v3_Baseline_vs_t24h_perct_omni_unweighted[['v3_Baseline_vs_t24h']] <- lt_v3_Baseline_vs_t24h_perct_omni_unweighted[['interaction']]
+lt_v3_Baseline_vs_t24h_perct_omni_unweighted[['interaction']] <- NULL
+lt_v2_Baseline_vs_t8w_perct_omni_unweighted[['v2_Baseline_vs_t8w']] <- lt_v2_Baseline_vs_t8w_perct_omni_unweighted[['interaction']]
+lt_v2_Baseline_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+lt_v3_Baseline_vs_t8w_perct_omni_unweighted[['v3_Baseline_vs_t8w']] <- lt_v3_Baseline_vs_t8w_perct_omni_unweighted[['interaction']]
+lt_v3_Baseline_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+lt_v2_t24h_vs_t8w_perct_omni_unweighted[['v2_t24h_vs_t8w']] <- lt_v2_t24h_vs_t8w_perct_omni_unweighted[['interaction']]
+lt_v2_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+lt_v3_t24h_vs_t8w_perct_omni_unweighted[['v3_t24h_vs_t8w']] <- lt_v3_t24h_vs_t8w_perct_omni_unweighted[['interaction']]
+lt_v3_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+
+# merge all of them
+lt_all <- merge(lt_v2_Baseline_vs_t24h_perct_omni_unweighted, lt_v3_Baseline_vs_t24h_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'target'), all = T)
+lt_all <- merge(lt_all, lt_v2_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'target'), all = T)
+lt_all <- merge(lt_all, lt_v3_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'target'), all = T)
+lt_all <- merge(lt_all, lt_v2_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'target'), all = T)
+lt_all <- merge(lt_all, lt_v3_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'target'), all = T)
+# set correct column name
+colnames(lt_all) <- gsub('receptor', 'target', colnames(lt_all))
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get the summed LFC for each receptor
+summed_lfcs_v2_Baseline_vs_t24h_perct_omni_unweighted <- get_downstream_lfc_sums_per_receptor(v2_Baseline_vs_t24h_perct_omni_unweighted, mast_output_loc='/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v2_paired_lores_lfc01minpct01ncountrna_20201209/rna/', 'Baselinet24h', cascade_matrix=unweighted_networks_omni$gr, significance_cutoff=0)
+summed_lfcs_v3_Baseline_vs_t24h_perct_omni_unweighted <- get_downstream_lfc_sums_per_receptor(v3_Baseline_vs_t24h_perct_omni_unweighted, mast_output_loc='/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20201209/rna/', 'Baselinet24h', cascade_matrix=unweighted_networks_omni$gr, significance_cutoff=0)
+summed_lfcs_v2_Baseline_vs_t8w_perct_omni_unweighted <- get_downstream_lfc_sums_per_receptor(v2_Baseline_vs_t8w_perct_omni_unweighted, mast_output_loc='/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v2_paired_lores_lfc01minpct01ncountrna_20201209/rna/', 'Baselinet8w', cascade_matrix=unweighted_networks_omni$gr, significance_cutoff=0)
+summed_lfcs_v3_Baseline_vs_t8w_perct_omni_unweighted <- get_downstream_lfc_sums_per_receptor(v3_Baseline_vs_t8w_perct_omni_unweighted, mast_output_loc='/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20201209/rna/', 'Baselinet8w', cascade_matrix=unweighted_networks_omni$gr, significance_cutoff=0)
+summed_lfcs_v2_t24h_vs_t8w_perct_omni_unweighted <- get_downstream_lfc_sums_per_receptor(v2_t24h_vs_t8w_perct_omni_unweighted, mast_output_loc='/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v2_paired_lores_lfc01minpct01ncountrna_20201209/rna/', 't24ht8w', cascade_matrix=unweighted_networks_omni$gr, significance_cutoff=0)
+summed_lfcs_v3_t24h_vs_t8w_perct_omni_unweighted <- get_downstream_lfc_sums_per_receptor(v3_t24h_vs_t8w_perct_omni_unweighted, mast_output_loc='/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20201209/rna/', 't24ht8w', cascade_matrix=unweighted_networks_omni$gr, significance_cutoff=0)
+
+# now combine this with the receptor values
+llfc_v2_Baseline_vs_t24h_perct_omni_unweighted <- data.table(get_significant_interactions(v2_Baseline_vs_t24h_perct_omni_unweighted, 'ligand_receptor_network'))
+llfc_v3_Baseline_vs_t24h_perct_omni_unweighted <- data.table(get_significant_interactions(v3_Baseline_vs_t24h_perct_omni_unweighted, 'ligand_receptor_network'))
+llfc_v2_Baseline_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v2_Baseline_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+llfc_v3_Baseline_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v3_Baseline_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+llfc_v2_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v2_t24h_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+llfc_v3_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v3_t24h_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+
+# add the summed LFCs
+llfc_v2_Baseline_vs_t24h_perct_omni_unweighted <- merge(llfc_v2_Baseline_vs_t24h_perct_omni_unweighted, summed_lfcs_v2_Baseline_vs_t24h_perct_omni_unweighted, by = c('receiver', 'sender', 'receptor'), all = T)
+llfc_v3_Baseline_vs_t24h_perct_omni_unweighted <- merge(llfc_v3_Baseline_vs_t24h_perct_omni_unweighted, summed_lfcs_v3_Baseline_vs_t24h_perct_omni_unweighted, by = c('receiver', 'sender', 'receptor'), all = T)
+llfc_v2_Baseline_vs_t8w_perct_omni_unweighted <- merge(llfc_v2_Baseline_vs_t8w_perct_omni_unweighted, summed_lfcs_v2_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'receptor'), all = T)
+llfc_v3_Baseline_vs_t8w_perct_omni_unweighted <- merge(llfc_v3_Baseline_vs_t8w_perct_omni_unweighted, summed_lfcs_v3_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'receptor'), all = T)
+llfc_v2_t24h_vs_t8w_perct_omni_unweighted <- merge(llfc_v2_t24h_vs_t8w_perct_omni_unweighted, summed_lfcs_v2_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'receptor'), all = T)
+llfc_v3_t24h_vs_t8w_perct_omni_unweighted <- merge(llfc_v3_t24h_vs_t8w_perct_omni_unweighted, summed_lfcs_v3_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'receptor'), all = T)
+
+# set the names
+llfc_v2_Baseline_vs_t24h_perct_omni_unweighted[['v2_Baseline_vs_t24h']] <- llfc_v2_Baseline_vs_t24h_perct_omni_unweighted[['lfc_sum']]
+llfc_v2_Baseline_vs_t24h_perct_omni_unweighted[['interaction']] <- NULL
+llfc_v2_Baseline_vs_t24h_perct_omni_unweighted[['lfc_sum']] <- NULL
+llfc_v3_Baseline_vs_t24h_perct_omni_unweighted[['v3_Baseline_vs_t24h']] <- llfc_v3_Baseline_vs_t24h_perct_omni_unweighted[['lfc_sum']]
+llfc_v3_Baseline_vs_t24h_perct_omni_unweighted[['interaction']] <- NULL
+llfc_v3_Baseline_vs_t24h_perct_omni_unweighted[['lfc_sum']] <- NULL
+llfc_v2_Baseline_vs_t8w_perct_omni_unweighted[['v2_Baseline_vs_t8w']] <- llfc_v2_Baseline_vs_t8w_perct_omni_unweighted[['lfc_sum']]
+llfc_v2_Baseline_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+llfc_v2_Baseline_vs_t8w_perct_omni_unweighted[['lfc_sum']] <- NULL
+llfc_v3_Baseline_vs_t8w_perct_omni_unweighted[['v3_Baseline_vs_t8w']] <- llfc_v3_Baseline_vs_t8w_perct_omni_unweighted[['lfc_sum']]
+llfc_v3_Baseline_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+llfc_v3_Baseline_vs_t8w_perct_omni_unweighted[['lfc_sum']] <- NULL
+llfc_v2_t24h_vs_t8w_perct_omni_unweighted[['v2_t24h_vs_t8w']] <- llfc_v2_t24h_vs_t8w_perct_omni_unweighted[['lfc_sum']]
+llfc_v2_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+llfc_v2_t24h_vs_t8w_perct_omni_unweighted[['lfc_sum']] <- NULL
+llfc_v3_t24h_vs_t8w_perct_omni_unweighted[['v3_t24h_vs_t8w']] <- llfc_v3_t24h_vs_t8w_perct_omni_unweighted[['lfc_sum']]
+llfc_v3_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+llfc_v3_t24h_vs_t8w_perct_omni_unweighted[['lfc_sum']] <- NULL
+
+# merge all of them
+llfc_all <- merge(llfc_v2_Baseline_vs_t24h_perct_omni_unweighted, llfc_v3_Baseline_vs_t24h_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+llfc_all <- merge(llfc_all, llfc_v2_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+llfc_all <- merge(llfc_all, llfc_v3_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+llfc_all <- merge(llfc_all, llfc_v2_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+llfc_all <- merge(llfc_all, llfc_v3_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get the lr table, subsetted by ligands with a downstream effect
+lr_filtered_Baseline_t24h_v3 <- filter_lr_by_lt_ligands(data.frame(lt_v3_Baseline_vs_t24h_perct_omni_unweighted), lr_connections = data.frame(lr_v3_Baseline_vs_t24h_perct_omni_unweighted), target_interaction_column = 'v3_Baseline_vs_t24h', receptor_interaction_column = 'v3_Baseline_vs_t24h')
+lr_filtered_Baseline_t8w_v3 <- filter_lr_by_lt_ligands(data.frame(lt_v3_Baseline_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v3_Baseline_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_Baseline_vs_t8w', receptor_interaction_column = 'v3_Baseline_vs_t8w')
+lr_filtered_t24h_t8w_v3 <- filter_lr_by_lt_ligands(data.frame(lt_v3_t24h_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v3_t24h_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_t24h_vs_t8w', receptor_interaction_column = 'v3_t24h_vs_t8w')
+lr_filtered_Baseline_t24h_v2 <- filter_lr_by_lt_ligands(data.frame(lt_v2_Baseline_vs_t24h_perct_omni_unweighted), lr_connections = data.frame(lr_v2_Baseline_vs_t24h_perct_omni_unweighted), target_interaction_column = 'v2_Baseline_vs_t24h', receptor_interaction_column = 'v2_Baseline_vs_t24h')
+lr_filtered_Baseline_t8w_v2 <- filter_lr_by_lt_ligands(data.frame(lt_v2_Baseline_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v2_Baseline_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v2_Baseline_vs_t8w', receptor_interaction_column = 'v2_Baseline_vs_t8w')
+lr_filtered_t24h_t8w_v2 <- filter_lr_by_lt_ligands(data.frame(lt_v2_t24h_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v2_t24h_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v2_t24h_vs_t8w', receptor_interaction_column = 'v2_t24h_vs_t8w')
+
+# merge all of them
+lr_filtered_all <- merge(lr_filtered_Baseline_t24h_v2, lr_filtered_Baseline_t24h_v3, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+lr_filtered_all <- merge(lr_filtered_all, lr_filtered_Baseline_t8w_v2, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+lr_filtered_all <- merge(lr_filtered_all, lr_filtered_Baseline_t8w_v3, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+lr_filtered_all <- merge(lr_filtered_all, lr_filtered_t24h_t8w_v2, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+lr_filtered_all <- merge(lr_filtered_all, lr_filtered_t24h_t8w_v3, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+r_vs_t_v3_Baseline_vs_t24h_perct_omni_unweighted <- check_ligand_receptor_and_target_numbers(lt_connections = data.frame(lt_v3_Baseline_vs_t24h_perct_omni_unweighted), lr_connections = data.frame(lr_v3_Baseline_vs_t24h_perct_omni_unweighted), target_interaction_column = 'v3_Baseline_vs_t24h', receptor_interaction_column = 'v3_Baseline_vs_t24h')
+ligand_connection_numbers_v3_Baseline_vs_t24h_perct_omni_unweighted <- ligand_numbers_to_interactions(r_vs_t_v3_Baseline_vs_t24h_perct_omni_unweighted)
+r_vs_t_v3_Baseline_vs_t8w_perct_omni_unweighted <- check_ligand_receptor_and_target_numbers(lt_connections = data.frame(lt_v3_Baseline_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lt_v3_Baseline_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_Baseline_vs_t8w', receptor_interaction_column = 'v3_Baseline_vs_t8w')
+ligand_connection_numbers_v3_Baseline_vs_t8w_perct_omni_unweighted <- ligand_numbers_to_interactions(r_vs_t_v3_Baseline_vs_t8w_perct_omni_unweighted)
+r_vs_t_v3_t24h_vs_t8w_perct_omni_unweighted <- check_ligand_receptor_and_target_numbers(lr_connections = data.frame(lr_v3_t24h_vs_t8w_perct_omni_unweighted), lt_connections = data.frame(lt_v3_t24h_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_t24h_vs_t8w', receptor_interaction_column = 'v3_t24h_vs_t8w')
+ligand_connection_numbers_v3_t24h_vs_t8w_perct_omni_unweighted <- ligand_numbers_to_interactions(r_vs_t_v3_t24h_vs_t8w_perct_omni_unweighted)
+```
+
+```{r, include=TRUE, fig.width=4, fig.height=4}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(ligand_connection_numbers_v3_Baseline_vs_t24h_perct_omni_unweighted, plot_title = 'communicating ligands t0 vs t24h (v3 chemistry)', combine_directions = T)
+```
+
+```{r, include=TRUE, fig.width=4, fig.height=4}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(ligand_connection_numbers_v3_Baseline_vs_t24h_perct_omni_unweighted, plot_title = 'communicating ligands t0 vs t24h (v3 chemistry)', combine_directions = F)
+```
+
+```{r, include=TRUE, fig.width=4, fig.height=4}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(ligand_connection_numbers_v3_Baseline_vs_t24h_perct_omni_unweighted, plot_title = 'communicating ligands t0 vs t24h (v3 chemistry)', combine_directions = T)
+```
+```{r, include=TRUE, fig.width=4, fig.height=4}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(ligand_connection_numbers_v3_Baseline_vs_t24h_perct_omni_unweighted, plot_title = 'communicating ligands t0 vs t24h (v3 chemistry)', combine_directions = F)
+```
+
+```{r, include=TRUE, fig.width=4, fig.height=4}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(ligand_connection_numbers_v3_Baseline_vs_t8w_perct_omni_unweighted, plot_title = 'communicating ligands t0 vs t6-8w (v3 chemistry)')
+```
+
+```{r, include=TRUE, fig.width=4, fig.height=4}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(ligand_connection_numbers_v3_Baseline_vs_t8w_perct_omni_unweighted, plot_title = 'communicating ligands t0 vs t6-8w (v3 chemistry)', combine_directions = F)
+```
+
+```{r, include=TRUE, fig.width=4, fig.height=4}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(ligand_connection_numbers_v3_t24h_vs_t8w_perct_omni_unweighted, plot_title = 'communicating ligands t24h vs t6-8w (v3 chemistry)')
+```
+
+```{r, include=TRUE, fig.width=4, fig.height=4}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(ligand_connection_numbers_v3_t24h_vs_t8w_perct_omni_unweighted, plot_title = 'communicating ligands t24h vs t6-8w (v3 chemistry)', combine_directions = F)
+```
+
+```{r, include=FALSE, fig.width=4, fig.height=4}
+knitr::opts_chunk$set(echo = FALSE)
+# now based on the downstream genes
+downstream_gene_nrs_Baseline_vs_t24h <- get_distinct_downstream_gene_numbers(lt_connections = data.frame(lt_v3_Baseline_vs_t24h_perct_omni_unweighted), lr_connections = data.frame(lr_v3_Baseline_vs_t24h_perct_omni_unweighted), target_interaction_column = 'v3_Baseline_vs_t24h', receptor_interaction_column = 'v3_Baseline_vs_t24h')
+downstream_gene_nrs_Baseline_vs_t8w <- get_distinct_downstream_gene_numbers(lt_connections = data.frame(lt_v3_Baseline_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v3_Baseline_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_Baseline_vs_t8w', receptor_interaction_column = 'v3_Baseline_vs_t8w')
+downstream_gene_nrs_t24h_vs_t8w <- get_distinct_downstream_gene_numbers(lt_connections = data.frame(lt_v3_t24h_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v3_t24h_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_t24h_vs_t8w', receptor_interaction_column = 'v3_t24h_vs_t8w')
+```
+
+```{r, include=TRUE, fig.width=4, fig.height=4}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(downstream_gene_nrs_Baseline_vs_t24h[, c('sender', 'receiver', 'nr_downstream_genes')], plot_title = 'induced DE t0 vs t24h (v3 chemistry)')
+```
+
+```{r, include=TRUE, fig.width=4, fig.height=4}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(downstream_gene_nrs_Baseline_vs_t24h[, c('sender', 'receiver', 'nr_downstream_genes')], plot_title = 'induced DE t0 vs t24h (v3 chemistry)', combine_directions = F)
+```
+
+```{r, include=TRUE, fig.width=4, fig.height=4}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(downstream_gene_nrs_Baseline_vs_t8w[, c('sender', 'receiver', 'nr_downstream_genes')], plot_title = 'induced DE t0 vs t6-8w (v3 chemistry)')
+```
+
+```{r, include=TRUE, fig.width=4, fig.height=4}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(downstream_gene_nrs_Baseline_vs_t8w[, c('sender', 'receiver', 'nr_downstream_genes')], plot_title = 'induced DE t0 vs t6-8w (v3 chemistry)', combine_directions = F)
+```
+
+```{r, include=TRUE, fig.width=4, fig.height=4}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(downstream_gene_nrs_t24h_vs_t8w[, c('sender', 'receiver', 'nr_downstream_genes')], plot_title = 'induced DE t24h vs t6-8w (v3 chemistry)')
+```
+
+```{r, include=TRUE, fig.width=4, fig.height=4}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(downstream_gene_nrs_t24h_vs_t8w[, c('sender', 'receiver', 'nr_downstream_genes')], plot_title = 'induced DE t24h vs t6-8w (v3 chemistry)', combine_directions = F)
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# now based on the combinations of ligand and downstream genes
+lt_nrs_Baseline_vs_t24h <- ligand_target_numbers_to_interactions(lt_connections = data.frame(lt_v3_Baseline_vs_t24h_perct_omni_unweighted), lr_connections = data.frame(lr_v3_Baseline_vs_t24h_perct_omni_unweighted), target_interaction_column = 'v3_Baseline_vs_t24h', receptor_interaction_column = 'v3_Baseline_vs_t24h')
+lt_nrs_Baseline_vs_t8w <- ligand_target_numbers_to_interactions(lt_connections = data.frame(lt_v3_Baseline_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v3_Baseline_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_Baseline_vs_t8w', receptor_interaction_column = 'v3_Baseline_vs_t8w')
+lt_nrs_t24h_vs_t8w <- ligand_target_numbers_to_interactions(lt_connections = data.frame(lt_v3_t24h_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v3_t24h_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_t24h_vs_t8w', receptor_interaction_column = 'v3_t24h_vs_t8w')
+
+```
+
+```{r, include=TRUE, fig.width=4, fig.height=4}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(lt_nrs_Baseline_vs_t24h[, c('sender', 'receiver', 'nr_lt_links')], plot_title = 'active ligand-target links\nt0 vs t24h (v3 chemistry)')
+```
+
+```{r, include=TRUE, fig.width=4, fig.height=4}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(lt_nrs_Baseline_vs_t24h[, c('sender', 'receiver', 'nr_lt_links')], plot_title = 'active ligand-target links\nt0 vs t24h (v3 chemistry)', combine_directions = F)
+```
+
+```{r, include=TRUE, fig.width=4, fig.height=4}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(lt_nrs_Baseline_vs_t8w[, c('sender', 'receiver', 'nr_lt_links')], plot_title = 'active ligand-target links\nt0 vs t6-8w (v3 chemistry)')
+```
+
+```{r, include=TRUE, fig.width=4, fig.height=4}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(lt_nrs_Baseline_vs_t8w[, c('sender', 'receiver', 'nr_lt_links')], plot_title = 'active ligand-target links\nt0 vs t6-8w (v3 chemistry)', combine_directions = F)
+```
+
+```{r, include=TRUE, fig.width=4, fig.height=4}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(lt_nrs_t24h_vs_t8w[, c('sender', 'receiver', 'nr_lt_links')], plot_title = 'active ligand-target links\nt24h vs t6-8w (v3 chemistry)')
+```
+
+```{r, include=TRUE, fig.width=4, fig.height=4}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(lt_nrs_t24h_vs_t8w[, c('sender', 'receiver', 'nr_lt_links')], plot_title = 'active ligand-target links\nt24h vs t6-8w (v3 chemistry)', combine_directions = F)
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# now based on the combinations of ligand and receptor
+lr_nrs_Baseline_vs_t24h <- ligand_receptor_numbers_to_interactions(r_vs_t_v3_Baseline_vs_t24h_perct_omni_unweighted)
+lr_nrs_Baseline_vs_t8w <- ligand_receptor_numbers_to_interactions(r_vs_t_v3_Baseline_vs_t8w_perct_omni_unweighted)
+lr_nrs_t24h_vs_t8w <- ligand_receptor_numbers_to_interactions(r_vs_t_v3_t24h_vs_t8w_perct_omni_unweighted)
+
+```
+
+```{r, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(lr_nrs_Baseline_vs_t24h[, c('sender', 'receiver', 'nr_connections')], plot_title = 'active ligand-receptor links\nt0 vs t24h (v3 chemistry)')
+```
+
+```{r, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(lr_nrs_Baseline_vs_t8w[, c('sender', 'receiver', 'nr_connections')], plot_title = 'active ligand-receptor links\nt0 vs t8w (v3 chemistry)')
+```
+
+```{r, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(lr_nrs_t24h_vs_t8w[, c('sender', 'receiver', 'nr_connections')], plot_title = 'active ligand-receptor links\nt24h vs t8w (v3 chemistry)')
+```
+
+```{r, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(lr_nrs_Baseline_vs_t24h[, c('sender', 'receiver', 'nr_connections')], plot_title = 'active ligand-receptor links\nt0 vs t24h (v3 chemistry)' ,combine_directions = F)
+```
+
+```{r, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(lr_nrs_Baseline_vs_t8w[, c('sender', 'receiver', 'nr_connections')], plot_title = 'active ligand-receptor links\nt0 vs t8w (v3 chemistry)' ,combine_directions = F)
+```
+
+```{r, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+interactions_to_circle_from_table(lr_nrs_t24h_vs_t8w[, c('sender', 'receiver', 'nr_connections')], plot_title = 'active ligand-receptor links\nt24h vs t8w (v3 chemistry)' ,combine_directions = F)
+```
+
+```{r, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+lr_overlap_received_v3_Baseline_vs_t24h <- lr_pairs_per_celtype(lr_filtered_Baseline_t24h_v3, celltype_column = 'receiver')
+lr_pairs_to_upset(lr_overlap_received_v3_Baseline_vs_t24h)
+grid.text("LR-sharedness per receiving celltype Baseline-t24h (V3 chemistry)",x = 0.65, y=0.95, gp=gpar(fontsize=15))
+```
+
+```{r, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+lr_overlap_received_v3_Baseline_vs_t8w <- lr_pairs_per_celtype(lr_filtered_Baseline_t8w_v3, celltype_column = 'receiver')
+lr_pairs_to_upset(lr_overlap_received_v3_Baseline_vs_t8w)
+grid.text("LR-sharedness per receiving celltype Baseline-t8w (V3 chemistry)",x = 0.65, y=0.95, gp=gpar(fontsize=15))
+```
+```{r, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+lr_overlap_received_v3_t24h_vs_t8w <- lr_pairs_per_celtype(lr_filtered_t24h_t8w_v3, celltype_column = 'receiver')
+lr_pairs_to_upset(lr_overlap_received_v3_t24h_vs_t8w)
+grid.text("LR-sharedness per receiving celltype t24h-t8w (V3 chemistry)",x = 0.65, y=0.95, gp=gpar(fontsize=15))
+```
+
+```{r, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+l_overlap_received_v3_Baseline_vs_t24h <- ligands_per_celltype(lr_filtered_Baseline_t24h_v3, celltype_column = 'receiver')
+lr_pairs_to_upset(l_overlap_received_v3_Baseline_vs_t24h, use_label_dict = T, use_color_dict = T)
+grid.text("ligand-sharedness per receiving celltype Baseline-t24h (V3 chemistry)",x = 0.65, y=0.95, gp=gpar(fontsize=12))
+```
+
+```{r, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+l_overlap_received_v3_Baseline_vs_t8w <- ligands_per_celltype(lr_filtered_Baseline_t8w_v3, celltype_column = 'receiver')
+lr_pairs_to_upset(l_overlap_received_v3_Baseline_vs_t8w)
+grid.text("ligand-sharedness per receiving celltype Baseline-t8w (V3 chemistry)",x = 0.65, y=0.95, gp=gpar(fontsize=12))
+```
+```{r, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+l_overlap_received_v3_t24h_vs_t8w <- ligands_per_celltype(lr_filtered_t24h_t8w_v3, celltype_column = 'receiver')
+lr_pairs_to_upset(l_overlap_received_v3_t24h_vs_t8w)
+grid.text("ligand-sharedness per receiving celltype t24h-t8w (V3 chemistry)",x = 0.65, y=0.95, gp=gpar(fontsize=12))
+```
+```{r, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+r_overlap_received_v3_Baseline_vs_t24h <- receptors_per_celltype(lr_filtered_Baseline_t24h_v3, celltype_column = 'receiver')
+lr_pairs_to_upset(r_overlap_received_v3_Baseline_vs_t24h, use_label_dict = T, use_color_dict = T)
+grid.text("receptor-sharedness per receiving celltype Baseline-t24h (V3 chemistry)",x = 0.65, y=0.95, gp=gpar(fontsize=12))
+```
+```{r, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+r_overlap_received_v3_Baseline_vs_t8w <- receptors_per_celltype(lr_filtered_Baseline_t8w_v3, celltype_column = 'receiver')
+lr_pairs_to_upset(r_overlap_received_v3_Baseline_vs_t8w, use_label_dict = T, use_color_dict = T)
+grid.text("receptor-sharedness per receiving celltype Baseline-t8w (V3 chemistry)",x = 0.65, y=0.95, gp=gpar(fontsize=12))
+```
+```{r, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+r_overlap_received_v3_t24h_vs_t8w <- receptors_per_celltype(lr_filtered_t24h_t8w_v3, celltype_column = 'receiver')
+lr_pairs_to_upset(r_overlap_received_v3_t24h_vs_t8w, use_label_dict = T, use_color_dict = T)
+grid.text("receptor-sharedness per receiving celltype t24h-t8w (V3 chemistry)",x = 0.65, y=0.95, gp=gpar(fontsize=12))
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# now get the induced vs non-induced numbers
+induced_noninduced_v3_Baseline_vs_t24h <- get_de_vs_induced_genes_per_celltype(downstream_gene_nrs_Baseline_vs_t24h, mast_output_path = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20201209/rna/', condition_1 = 'Baseline', condition_2 = 't24h')
+induced_noninduced_v3_Baseline_vs_t8w <- get_de_vs_induced_genes_per_celltype(downstream_gene_nrs_Baseline_vs_t8w, mast_output_path = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20201209/rna/', condition_1 = 'Baseline', condition_2 = 't8w')
+induced_noninduced_v3_t24h_vs_t8w <- get_de_vs_induced_genes_per_celltype(downstream_gene_nrs_t24h_vs_t8w, mast_output_path = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20201209/rna/', condition_1 = 't24h', condition_2 = 't8w')
+
+```
+
+```{r, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+plot_grid(
+  plot_de_induced_vs_noninduced(induced_noninduced_v3_Baseline_vs_t24h, legendless = T) + ggtitle('t0 vs t24h differentially expressed genes') + ylim(0,600),
+  plot_de_induced_vs_noninduced(induced_noninduced_v3_Baseline_vs_t8w, legendless = T) + ggtitle('t0 vs t6-8w differentially expressed genes') + ylim(0,600) + ylab(''),
+  plot_de_induced_vs_noninduced(induced_noninduced_v3_t24h_vs_t8w, legendless = T) + ggtitle('t24h vs t6-8w differentially expressed genes') + ylim(0,600),
+  get_legend(plot_de_induced_vs_noninduced(induced_noninduced_v3_Baseline_vs_t24h, legendless = F) + ggtitle('t0 vs t24h differentially expressed genes')),
+  nrow = 2,
+  ncol = 2
+)
+
+```

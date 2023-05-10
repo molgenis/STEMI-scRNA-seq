@@ -169,22 +169,30 @@ test_expression_to_metadata <- function(expression_table, metadata_table, genes,
 }
 
 
-get_relevant_metadata <- function(variables_per_table, interested_pseudo_ids, sep = '\t'){
+get_relevant_metadata <- function(variables_per_table, interested_pseudo_ids, sep = ','){
   # create the result table
   result_table <- NULL
   # check each variable
-  for(variables in variables_per_table){
+  for(table in names(variables_per_table)){
     # get the table
-    table_path <- variables[['tbl_loc']]
+    table_path <- table
     # get the interesting columns
-    interested_columns <- variables[['columns']]
+    interested_columns <- variables_per_table[[table_path]]
     try({
       # read the table
-      table_meta <- read.table(table_path, header = T, row.names = 1, stringsAsFactors = F, sep = sep)
+      table_meta <- read.table(table_path, header = T, stringsAsFactors = F, sep = sep)
       # subset to the participants
-      table_meta <- table_meta[match(interested_pseudo_ids, rownames(table_meta)), ,drop = F]
+      table_meta <- table_meta[match(interested_pseudo_ids, table_meta[['project_pseudo_id']]), ,drop = F]
+      # get the overlapping columns
+      columns_overlapping <- intersect(colnames(table_meta), interested_columns)
+      # report on what is missing
+      missing_columns <- setdiff(interested_columns, colnames(table_meta))
+      if(length(missing_columns) > 0){
+        print('missing columns:')
+        print(paste(missing_columns, collapse = ','))
+      }
       # grab the interested columns
-      table_interested <- table_meta[, interested_columns, drop = F]
+      table_interested <- table_meta[, columns_overlapping, drop = F]
       # add to result table
       if(is.null(result_table)){
         result_table <- table_interested
@@ -295,6 +303,24 @@ pseudo_ext_to_cytoid_map_loc <- '/groups/umcg-lifelines/tmp01/releases/cytosnp_l
 lifelines_tables_loc <- '/groups/umcg-lifelines/tmp01/releases/pheno_lifelines/v2/results/'
 lifelines_tables_1a_q_1_results_loc <- paste(lifelines_tables_loc, '1a_q_1_results.csv', sep = '')
 lifelines_tables_1a_q_2_results_loc <- paste(lifelines_tables_loc, '1a_q_2_results.csv', sep = '')
+lifelines_tables_1a_q_youth_results_loc <- paste(lifelines_tables_loc, '1a_q_youth_results.csv', sep = '')
+lifelines_tables_1a_v_1_results_loc <- paste(lifelines_tables_loc, '1a_v_1_results.csv', sep = '')
+lifelines_tables_1a_v_2_results_loc <- paste(lifelines_tables_loc, '1a_v_2_results.csv', sep = '')
+lifelines_tables_1b_q_1_results_loc <- paste(lifelines_tables_loc, '1b_q_1_results.csv', sep = '')
+lifelines_tables_1c_q_1_results_loc <- paste(lifelines_tables_loc, '1c_q_1_results.csv', sep = '')
+
+lifelines_tables_2a_q_1_results_loc <- paste(lifelines_tables_loc, '2a_q_1_results.csv', sep = '')
+lifelines_tables_2a_q_2_results_loc <- paste(lifelines_tables_loc, '2a_q_2_results.csv', sep = '')
+lifelines_tables_2a_q_youth_results_loc <- paste(lifelines_tables_loc, '2a_q_youth_results.csv', sep = '')
+lifelines_tables_2a_v_1_results_loc <- paste(lifelines_tables_loc, '2a_v_1_results.csv', sep = '')
+lifelines_tables_2a_v_2_results_loc <- paste(lifelines_tables_loc, '2a_v_2_results.csv', sep = '')
+lifelines_tables_2b_q_1_results_loc <- paste(lifelines_tables_loc, '2b_q_1_results.csv', sep = '')
+
+lifelines_tables_3a_q_1_results_loc <- paste(lifelines_tables_loc, '3a_q_1_results.csv', sep = '')
+lifelines_tables_3a_q_2_results_loc <- paste(lifelines_tables_loc, '3a_q_2_results.csv', sep = '')
+lifelines_tables_3a_q_youth_results_loc <- paste(lifelines_tables_loc, '3a_q_youth_results.csv', sep = '')
+lifelines_tables_3a_v_1_results_loc <- paste(lifelines_tables_loc, '3a_v_1_results.csv', sep = '')
+lifelines_tables_3b_q_1_results_loc <- paste(lifelines_tables_loc, '3b_q_1_results.csv', sep = '')
 
 
 # read the tables
@@ -339,8 +365,56 @@ check_missingnes(stim_mapping_loc, full_id_table_X1[!is.na(full_id_table_X1$ugli
 # get the ll data  #
 ####################
 
-table_and_columns <- list(
-  lifelines_tables_1a_q_1_results_loc = c('	hypertension_presence_adu_q_1', 'highcholesterol_presence_adu_q_1', 'cigarettes_smoking_adu_q_1', '	cigarettes_lifetime_ach_q_1', )
-)
+# the table that has the names of the variable I want
+variable_mapping_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata/stemi_lifelines_variables_codes.tsv'
+variable_mapping <- read.table(variable_mapping_loc, sep = '\t', header = F)
+# get the variables for a1
+variables_1aq1 <- variable_mapping[variable_mapping[['V4']] == '1aq1', 'V3']
+variables_1aq2 <- variable_mapping[variable_mapping[['V4']] == '1aq2', 'V3']
+variables_1aqyouth <- variable_mapping[variable_mapping[['V4']] == '1aqyouth', 'V3']
+variables_1av1 <- variable_mapping[variable_mapping[['V4']] == '1av1', 'V3']
+variables_1av2 <- variable_mapping[variable_mapping[['V4']] == '1av2', 'V3']
+variables_1bq1 <- variable_mapping[variable_mapping[['V4']] == '1bq1', 'V3']
+variables_1cq1 <- variable_mapping[variable_mapping[['V4']] == '1cq1', 'V3']
 
+variables_2aq1 <- variable_mapping[variable_mapping[['V4']] == '2aq1', 'V3']
+variables_2aq2 <- variable_mapping[variable_mapping[['V4']] == '2aq2', 'V3']
+variables_2aqyouth <- variable_mapping[variable_mapping[['V4']] == '2aqyouth', 'V3']
+variables_2av1 <- variable_mapping[variable_mapping[['V4']] == '2av1', 'V3']
+variables_2av2 <- variable_mapping[variable_mapping[['V4']] == '2av2', 'V3']
+variables_2bq1 <- variable_mapping[variable_mapping[['V4']] == '2bq1', 'V3']
+
+variables_3aq1 <- variable_mapping[variable_mapping[['V4']] == '3aq1', 'V3']
+variables_3aq2 <- variable_mapping[variable_mapping[['V4']] == '3aq2', 'V3']
+variables_3aqyouth <- variable_mapping[variable_mapping[['V4']] == '3aqyouth', 'V3']
+variables_3av1 <- variable_mapping[variable_mapping[['V4']] == '3av1', 'V3']
+variables_3bq1 <- variable_mapping[variable_mapping[['V4']] == '3bq1', 'V3']
+
+
+# have the variables per result file from lifelines
+table_and_columns <- list()
+table_and_columns[[lifelines_tables_1a_q_1_results_loc]] <- variables_1aq1
+table_and_columns[[lifelines_tables_1a_q_2_results_loc]] <- variables_1aq2
+table_and_columns[[lifelines_tables_1a_q_youth_results_loc]] <- variables_1aqyouth
+table_and_columns[[lifelines_tables_1a_v_1_results_loc]] <- variables_1av1
+table_and_columns[[lifelines_tables_1a_v_2_results_loc]] <- variables_1av2
+table_and_columns[[lifelines_tables_1b_q_1_results_loc]] <- variables_1bq1
+table_and_columns[[lifelines_tables_1c_q_1_results_loc]] <- variables_1cq1
+
+table_and_columns[[lifelines_tables_2a_q_1_results_loc]] <- variables_2aq1
+table_and_columns[[lifelines_tables_2a_q_2_results_loc]] <- variables_2aq2
+table_and_columns[[lifelines_tables_2a_q_youth_results_loc]] <- variables_2aqyouth
+table_and_columns[[lifelines_tables_2a_v_1_results_loc]] <- variables_2av1
+table_and_columns[[lifelines_tables_2a_v_2_results_loc]] <- variables_2av2
+table_and_columns[[lifelines_tables_2b_q_1_results_loc]] <- variables_2bq1
+
+table_and_columns[[lifelines_tables_3a_q_1_results_loc]] <- variables_3aq1
+table_and_columns[[lifelines_tables_3a_q_2_results_loc]] <- variables_3aq2
+table_and_columns[[lifelines_tables_3a_q_youth_results_loc]] <- variables_3aqyouth
+table_and_columns[[lifelines_tables_3a_v_1_results_loc]] <- variables_3av1
+table_and_columns[[lifelines_tables_3b_q_1_results_loc]] <- variables_3bq1
+
+
+# get the metadata
+metadata_lifelines <- get_relevant_metadata(table_and_columns, full_id_table_X1$psext)
 

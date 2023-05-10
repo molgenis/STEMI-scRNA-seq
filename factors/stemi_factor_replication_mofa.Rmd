@@ -1,0 +1,754 @@
+---
+title: "stemi_factor_replication_mofa"
+author: "Roy Oelen"
+date: "2023-02-22"
+output: html_document
+---
+
+```{r header, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Corinna Losert, Roy Oelen
+# Name: stemi_factor_replication_mofa.Rmd
+# Function:
+############################################################################################################################
+
+```
+
+```{r libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# libraries        #
+####################
+
+library(ggplot2)
+library(stringr)
+library(data.table)
+library(dplyr)
+library(MOFA2) # NOT IN CONTAINER
+
+```
+
+```{r objects, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# objects          #
+####################
+
+```
+
+```{r functions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# Functions        #
+####################
+
+
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# Main Code        #
+####################
+
+###############################################
+# Preqrequisites Configurations & Parameters
+
+result_path = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/heinig_replication/objects/'
+#name = 'V_AZIMUTH_REPRODUCTION'  # name of dataset to load
+name = 'V_AZIMUTH_REPRODUCTION_v2'  # name of dataset to load
+features_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/heinig_replication/features/'
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+##################################################
+
+# Load Data 
+
+## Prepared combined data
+path = paste0(result_path, '/Combined_Data_',name,'.csv')
+data_long = read.csv(path)
+print(file.info(path)$mtime)
+
+head(data_long,2)
+
+## Selected Features
+features_gb = read.csv(paste0(features_loc, 'G10_Top_Features_V_Orig_GB', '.csv'))
+features_tp = read.csv(paste0(features_loc, 'G10_Top_Features_V_Orig_TP', '.csv'))
+
+
+
+# MOFA on all variables
+length(unique(data_long$variable))
+
+```
+
+```{r prepare_data, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+## Prepare data list
+
+#length(unique(data_long$sample_id))
+
+#final_data_long_backup = data_long
+
+final_data_long = data_long
+final_data_long$cell_type = NULL
+final_data_long$variable_transformed = NULL
+final_data_long$type[ final_data_long$type == 'single_cell'] = str_extract(final_data_long$variable[ final_data_long$type == 'single_cell'] , '.*__')
+final_data_long$config = NULL
+final_data_long$X = NULL
+
+head(final_data_long,2)
+
+unique(final_data_long$type)
+
+### Prepare data list for MOFA
+
+nrow(final_data_long)
+data_list= list()
+
+for(i in unique(final_data_long$type)){
+    data = final_data_long[final_data_long$type == i, ]
+    
+    data$type = NULL
+    data$cell_type = NULL
+    samples = unique(final_data_long$sample_id)
+    
+    data = data %>% dcast(variable ~ sample_id, value  = "value")
+    rownames(data) = data$variable
+    colnames(data) = str_replace(colnames(data), 'value\\.', '')
+    data$variable = NULL
+    
+    data[setdiff( samples, names(data))] = NA  # use all samples
+    
+    data = data[,order(colnames(data))]
+    data = data[,colnames(data) %in% samples]
+    
+    data_list[[i]] = as.matrix(data)
+    }
+
+dim(data)
+
+#str(data_list)
+
+head(data_list[[1]],2)
+
+## Create MOFA object
+
+### Create for own data and train
+
+names(data_list) = str_replace_all(names(data_list) , '__|\\.|\\.\\.|\\.\\.\\.', '')
+
+
+```
+
+```{r create_mofa, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+MOFAobject = create_mofa(data_list)
+
+```
+
+```{r data_overview, include=TRUE}
+knitr::opts_chunk$set(echo = FALSE)
+
+### Plot Data Overview
+
+options(repr.plot.width=30, repr.plot.height=10)
+mofa_overview = plot_data_overview(MOFAobject)
+
+length(unique(data_long$variable))
+
+# Specific Text Descriptions:
+xlabel = xlab('Samples') 
+ylabel = ylab('View')
+
+# Sizes of the plot
+width_par = 8.07
+height_par =6
+
+mofa_overview = mofa_overview + 
+                xlabel + ylabel + theme(axis.text.x = element_blank())
+
+mofa_overview
+
+```
+```{r set_options, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+
+### Use orig MOFA object
+
+MOFAobject = create_mofa(data_list)
+
+###  Add covariates for mefisto
+
+MOFAobject
+
+#cov = as.data.frame(cov)
+
+### Set data options
+
+mefisto_opts = get_default_mefisto_options(MOFAobject)
+data_opts = get_default_data_options(MOFAobject)
+data_opts
+data_opts$scale_views = TRUE # decide whether to scale the data
+
+## Define model options
+
+model_opts = get_default_model_options(MOFAobject)
+model_opts
+model_opts$num_factors = 20 # define number of factors
+
+#model_opts$likelihoods
+
+### Define training options
+
+train_opts  = get_default_training_options(MOFAobject)
+train_opts
+train_opts$maxiter = 50000
+train_opts$verbose = TRUE
+train_opts$seed = 42
+train_opts$weight_views = FALSE
+
+### Stochastic Options
+
+stoch_options = get_default_stochastic_options(MOFAobject)
+stoch_options
+
+```
+
+```{r train_model, include=TRUE}
+knitr::opts_chunk$set(echo = FALSE)
+
+
+### Build and train the model
+
+MOFAobject = prepare_mofa(
+  object = MOFAobject,
+  data_options = data_opts,
+  model_options = model_opts,
+  mefisto_options = mefisto_opts,
+  training_options = train_opts #,
+  #stochastic_options = stoch_options
+)
+
+```
+```{r train_model, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+
+### Save the model
+
+train_opts$weight_views
+model_name = paste0("MOFA_MODEL", name, '-', train_opts$weight_views,'.hdf5')
+model_name
+
+
+outfile = file.path( paste0(result_path, '/',  model_name) )
+outfile
+
+
+MOFAobject.trained = run_mofa(MOFAobject, outfile, use_basilisk = TRUE)
+model = MOFAobject.trained
+
+## Extract MOFA estimates
+
+### Investigate Variance decomposition
+
+variant = '_'
+write.csv(model@cache$variance_explained$r2_per_factor[[1]], paste0(result_path, '/MOFA_Variance_Decomposition_',name, variant, train_opts$weight_views, '.csv'))
+
+### Extract data 
+
+factors = get_factors(model, factors = "all")
+factors = factors$group1
+head(factors,2)
+factors = as.data.frame(factors)
+factors$sample_id = rownames(factors)
+
+name
+
+### Save Factor Data - potentially as supplementary Table
+
+write.csv(factors, paste0(result_path, '/Factor_Data_' , name,'_', train_opts$weight_views,  '.csv'), row.names = FALSE)
+weights = get_weights(model, views = "all", factors = "all")
+head(data_list[[1]])
+weight_data = data.frame()
+names(weights)
+
+for (i in names(weights)){
+    data = data.frame(weights[[i]])
+    data$type = i
+    weight_data = rbind(weight_data,data)
+    }
+
+weight_data$variable_name = rownames(weight_data)
+name
+
+#### Save weight data potentially as supplementary table
+
+write.csv(weight_data, paste0(result_path, '/Weight_Data_' , name, '_', train_opts$weight_views, '.csv'), row.names = FALSE)
+
+```
+
+```{r set_options_rv, include=TRUE}
+knitr::opts_chunk$set(echo = FALSE)
+
+
+# MOFA reduced variables (TP)
+
+## Prepare data list
+
+final_data_long = data_long
+final_data_long$cell_type = NULL
+final_data_long$variable_transformed = NULL
+final_data_long$type[ final_data_long$type == 'single_cell'] = str_extract(final_data_long$variable[ final_data_long$type == 'single_cell'] , '.*__')
+final_data_long$config = NULL
+final_data_long$X = NULL
+
+final_data_long$type = str_replace(final_data_long$type, '__', '')
+final_data_long$type = str_replace(final_data_long$type, '\\.', '')
+final_data_long$variable_name = str_replace(final_data_long$variable, '.*__', '')
+final_data_long$variable = paste0(final_data_long$type, '__', final_data_long$variable_name)
+
+head(final_data_long,2)
+
+unique(final_data_long$type)
+
+### Filter out variables
+
+unique(features_tp$type)
+features_tp$variable = paste0(features_tp$type, '__', features_tp$variable_name)
+length(unique(features_tp$variable))
+final_data_long = final_data_long[final_data_long$variable %in% unique(features_tp$variable),]
+amount_features_per_type = unique(final_data_long[,c('variable', 'type')]) %>% group_by(type) %>% dplyr::count()
+filter = amount_features_per_type$type[amount_features_per_type$n > 1]
+final_data_long = final_data_long[final_data_long$type %in% filter,]
+length(unique(final_data_long$variable))
+head(final_data_long,2)
+
+### Prepare data list for MOFA
+
+nrow(final_data_long)
+data_list= list()
+for(i in unique(final_data_long$type)){
+    data = final_data_long[final_data_long$type == i, ]
+    
+    data$type = NULL
+    data$cell_type = NULL
+    samples = unique(final_data_long$sample_id)
+    
+    data = data %>% dcast(variable ~ sample_id, value  = "value")
+    rownames(data) = data$variable
+    colnames(data) = str_replace(colnames(data), 'value\\.', '')
+    data$variable = NULL
+    
+    data[setdiff( samples, names(data))] = NA  # use all samples
+    
+    data = data[,order(colnames(data))]
+    data = data[,colnames(data) %in% samples]
+    
+    data_list[[i]] = as.matrix(data)
+    }
+
+dim(data)
+
+#str(data_list)
+
+head(data_list[[1]],2)
+
+## Create MOFA object
+
+### Create for own data and train
+
+names(data_list) = str_replace_all(names(data_list) , '__|\\.|\\.\\.|\\.\\.\\.', '')
+
+#str(data_list)
+
+MOFAobject = create_mofa(data_list)
+
+### Plot Data Overview
+
+options(repr.plot.width=30, repr.plot.height=10)
+mofa_overview = plot_data_overview(MOFAobject)
+
+length(unique(data_long$variable))
+
+# Specific Text Descriptions:
+xlabel = xlab('Samples') 
+ylabel = ylab('View')
+
+# Sizes of the plot
+width_par = 8.07
+height_par =6
+
+mofa_overview = mofa_overview + 
+                xlabel + ylabel + theme(axis.text.x = element_blank())
+
+mofa_overview
+
+### Use orig MOFA object
+
+MOFAobject = create_mofa(data_list)
+
+###  Add covariates for mefisto
+
+MOFAobject
+
+#cov = as.data.frame(cov)
+
+### Set data options
+
+mefisto_opts = get_default_mefisto_options(MOFAobject)
+
+data_opts = get_default_data_options(MOFAobject)
+
+data_opts
+
+data_opts$scale_views = TRUE # decide whether to scale the data
+
+## Define model options
+
+model_opts = get_default_model_options(MOFAobject)
+model_opts
+
+model_opts$num_factors = 1 # define number of factors
+
+#model_opts$likelihoods
+
+### Define training options
+
+train_opts  = get_default_training_options(MOFAobject)
+train_opts
+
+train_opts$maxiter = 50000
+
+train_opts$verbose = TRUE
+
+train_opts$seed = 42
+
+train_opts$weight_views = FALSE
+
+### Stochastic Options
+
+stoch_options = get_default_stochastic_options(MOFAobject)
+
+stoch_options
+
+### Build and train the model
+
+MOFAobject = prepare_mofa(
+  object = MOFAobject,
+  data_options = data_opts,
+  model_options = model_opts,
+  mefisto_options = mefisto_opts,
+  training_options = train_opts #,
+  #stochastic_options = stoch_options
+)
+
+
+```
+
+```{r save_model_rv, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+
+### Save the model
+
+#name = 'V26'
+
+train_opts$weight_views
+model_name = paste0("MOFA_MODEL_TP", name, '-', train_opts$weight_views,'.hdf5')
+model_name
+
+#  old: 'MOFA_Model_26_02V20_Duplicates-FALSE-TRUE-TRUE.hdf5'
+
+outfile = file.path( paste0(result_path, '/',  model_name) )
+outfile
+
+#outfile
+
+MOFAobject.trained = run_mofa(MOFAobject, outfile, use_basilisk = TRUE)
+
+model = MOFAobject.trained
+
+## Extract MOFA estimates
+
+### Investigate Variance decomposition
+
+variant = '_'
+write.csv(model@cache$variance_explained$r2_per_factor[[1]], paste0(result_path, '/MOFA_Variance_Decomposition_TP_',name, variant, train_opts$weight_views, '.csv'))
+
+### Extract data 
+
+factors = get_factors(model, factors = "all")
+factors = factors$group1
+head(factors,2)
+factors = as.data.frame(factors)
+factors$sample_id = rownames(factors)
+name
+
+### Save Factor Data - potentially as supplementary Table
+
+write.csv(factors, paste0(result_path, '/Factor_Data_TP' , name,'_', train_opts$weight_views,  '.csv'), row.names = FALSE)
+
+weights = get_weights(model, views = "all", factors = "all")
+head(data_list[[1]])
+weight_data = data.frame()
+names(weights)
+
+for (i in names(weights)){
+    data = data.frame(weights[[i]])
+    data$type = i
+    weight_data = rbind(weight_data,data)
+    }
+
+weight_data$variable_name = rownames(weight_data)
+
+name
+
+#### Save weight data potentially as supplementary table
+
+write.csv(weight_data, paste0(result_path, '/Weight_Data_TP' , name, '_', train_opts$weight_views, '.csv'), row.names = FALSE)
+
+```
+
+```{r set_options_gb, include=TRUE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# MOFA reduced variables (good/ bad)
+
+## Prepare data list
+
+final_data_long = data_long
+
+final_data_long$cell_type = NULL
+
+final_data_long$variable_transformed = NULL
+
+final_data_long$type[ final_data_long$type == 'single_cell'] = str_extract(final_data_long$variable[ final_data_long$type == 'single_cell'] , '.*__')
+
+final_data_long$config = NULL
+
+final_data_long$X = NULL
+
+final_data_long$type = str_replace(final_data_long$type, '__', '')
+final_data_long$type = str_replace(final_data_long$type, '\\.', '')
+final_data_long$variable_name = str_replace(final_data_long$variable, '.*__', '')
+final_data_long$variable = paste0(final_data_long$type, '__', final_data_long$variable_name)
+
+head(final_data_long,2)
+
+unique(final_data_long$type)
+
+### Filter out variables
+
+unique(features_gb$type)
+
+features_gb$variable = paste0(features_gb$type, '__', features_gb$variable_name)
+
+length(unique(features_gb$variable))
+
+final_data_long = final_data_long[final_data_long$variable %in% unique(features_gb$variable),]
+
+amount_features_per_type = unique(final_data_long[,c('variable', 'type')]) %>% group_by(type) %>% dplyr::count()
+filter = amount_features_per_type$type[amount_features_per_type$n > 1]
+
+final_data_long = final_data_long[final_data_long$type %in% filter,]
+
+length(unique(final_data_long$variable))
+
+head(final_data_long,2)
+
+### Prepare data list for MOFA
+
+nrow(final_data_long)
+
+data_list= list()
+
+for(i in unique(final_data_long$type)){
+    data = final_data_long[final_data_long$type == i, ]
+    
+    data$type = NULL
+    data$cell_type = NULL
+    samples = unique(final_data_long$sample_id)
+    
+    data = data %>% dcast(variable ~ sample_id, value  = "value")
+    rownames(data) = data$variable
+    colnames(data) = str_replace(colnames(data), 'value\\.', '')
+    data$variable = NULL
+    
+    data[setdiff( samples, names(data))] = NA  # use all samples
+    
+    data = data[,order(colnames(data))]
+    data = data[,colnames(data) %in% samples]
+    
+    data_list[[i]] = as.matrix(data)
+    }
+
+dim(data)
+
+#str(data_list)
+
+head(data_list[[1]],2)
+
+## Create MOFA object
+
+### Create for own data and train
+
+names(data_list) = str_replace_all(names(data_list) , '__|\\.|\\.\\.|\\.\\.\\.', '')
+
+#str(data_list)
+
+MOFAobject = create_mofa(data_list)
+
+### Plot Data Overview
+
+options(repr.plot.width=30, repr.plot.height=10)
+mofa_overview = plot_data_overview(MOFAobject)
+
+length(unique(data_long$variable))
+
+# Specific Text Descriptions:
+xlabel = xlab('Samples') 
+ylabel = ylab('View')
+
+# Sizes of the plot
+width_par = 8.07
+height_par =6
+
+mofa_overview = mofa_overview + 
+                xlabel + ylabel + theme(axis.text.x = element_blank())
+
+mofa_overview
+
+### Use orig MOFA object
+
+MOFAobject = create_mofa(data_list)
+
+###  Add covariates for mefisto
+
+MOFAobject
+
+#cov = as.data.frame(cov)
+
+### Set data options
+
+mefisto_opts = get_default_mefisto_options(MOFAobject)
+
+data_opts = get_default_data_options(MOFAobject)
+
+data_opts
+
+data_opts$scale_views = TRUE # decide whether to scale the data
+
+## Define model options
+
+model_opts = get_default_model_options(MOFAobject)
+model_opts
+
+model_opts$num_factors = 1 # define number of factors
+
+#model_opts$likelihoods
+
+### Define training options
+
+train_opts  = get_default_training_options(MOFAobject)
+train_opts
+
+train_opts$maxiter = 50000
+
+train_opts$verbose = TRUE
+
+train_opts$seed = 42
+
+train_opts$weight_views = FALSE
+
+### Stochastic Options
+
+stoch_options = get_default_stochastic_options(MOFAobject)
+
+stoch_options
+
+### Build and train the model
+
+MOFAobject = prepare_mofa(
+  object = MOFAobject,
+  data_options = data_opts,
+  model_options = model_opts,
+  mefisto_options = mefisto_opts,
+  training_options = train_opts #,
+  #stochastic_options = stoch_options
+)
+
+```
+
+```{r save_model_gb, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+### Save the model
+
+#name = 'V26'
+
+train_opts$weight_views
+model_name = paste0("MOFA_MODEL_GB", name, '-', train_opts$weight_views,'.hdf5')
+model_name
+
+#  old: 'MOFA_Model_26_02V20_Duplicates-FALSE-TRUE-TRUE.hdf5'
+
+outfile = file.path( paste0(result_path, '/',  model_name) )
+outfile
+
+#outfile
+
+MOFAobject.trained = run_mofa(MOFAobject, outfile, use_basilisk = TRUE)
+
+model = MOFAobject.trained
+
+## Extract MOFA estimates
+
+### Investigate Variance decomposition
+
+variant = '_'
+write.csv(model@cache$variance_explained$r2_per_factor[[1]], paste0(result_path, '/MOFA_Variance_Decomposition_GB',name, variant, train_opts$weight_views, '.csv'))
+
+### Extract data 
+
+factors = get_factors(model, factors = "all")
+factors = factors$group1
+head(factors,2)
+factors = as.data.frame(factors)
+factors$sample_id = rownames(factors)
+name
+
+### Save Factor Data - potentially as supplementary Table
+
+write.csv(factors, paste0(result_path, '/Factor_Data_GB' , name,'_', train_opts$weight_views,  '.csv'), row.names = FALSE)
+weights = get_weights(model, views = "all", factors = "all")
+head(data_list[[1]])
+weight_data = data.frame()
+names(weights)
+
+for (i in names(weights)){
+    data = data.frame(weights[[i]])
+    data$type = i
+    weight_data = rbind(weight_data,data)
+    }
+
+weight_data$variable_name = rownames(weight_data)
+
+name
+
+#### Save weight data potentially as supplementary table
+
+write.csv(weight_data, paste0(result_path, '/Weight_Data_GB' , name, '_', train_opts$weight_views, '.csv'), row.names = FALSE)
+
+```

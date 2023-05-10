@@ -1,0 +1,140 @@
+---
+title: "stemi_create_ega_metadata"
+author: "Roy Oelen"
+date: "2023-02-03"
+output: html_document
+---
+
+```{r header, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Roy Oelen
+# Name: stemi_create_ega_metadata.Rmd
+# Function:
+############################################################################################################################
+```
+
+```{r libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# libraries        #
+####################
+
+```
+
+```{r functions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# Functions        #
+####################
+
+create_samples_pooled_table <- function(fastqs_loc, output_loc) {
+  # get a files list
+  files_fastq <- list.files(fastqs_loc, pattern = '.fastq.gz.md5')
+  # strip of the last part
+  files_basenames <- gsub('\\.fastq.gz.md5', '', files_fastq)
+  # create dataframe
+  samples_pooled <- data.frame(
+    title = rep('', times = length(files_basenames)),
+    alias = files_basenames,
+    description = rep('Human cryopreserved PBMCs', times = length(files_basenames)),
+    subjectId = rep('Multiple', times = length(files_basenames)),
+    bioSampleId = rep('', times = length(files_basenames)),
+    caseOrControl = rep('Case', times = length(files_basenames)),
+    gender = rep('Mixed', times = length(files_basenames)),
+    organismPart = rep('Blood', times = length(files_basenames)),
+    cellLine = rep('', times = length(files_basenames)),
+    region = rep('Northern Netherlands', times = length(files_basenames)),
+    phenotype = rep('Mixed', times = length(files_basenames))
+  )
+  # write the result
+  write.table(samples_pooled, output_loc, sep = ',', row.names = F, col.names = T, quote = F)
+}
+
+create_donors_to_samples_table <- function(sample_table_loc, output_loc) {
+  # read the annotation file, use the lane as the row names
+  lane_to_samples <- read.table(sample_table_loc, sep = '\t', header = T, row.names = 1)
+  # create a new table to put our formatted data in
+  formatted_table <- data.frame(Pooled_sample = rownames(lane_to_samples), Donors = rep(NA, times = length(lane_to_samples)))
+  # now check each row
+  for (i in 1:nrow(lane_to_samples)) {
+    # grab the lane
+    lane <- rownames(lane_to_samples)[i]
+    # initialize the result for this row
+    donors_and_tp <- ''
+    # check each timepoint
+    for (timepoint in colnames(lane_to_samples)) {
+      # extract donors
+      donors_tp <- lane_to_samples[i, timepoint]
+      # if there are results, let's grab them
+      if (!is.na(donors_tp) & length(donors_tp) > 0) {
+        # split by the comma
+        donors <- strsplit(donors_tp, split = ',')[[1]]
+        # append the timepoint
+        donors_and_this_tp <- paste(donors, timepoint, sep = '-')
+        # paste donors together again
+        donors_and_this_tp_pasted <- paste(donors_and_this_tp, collapse = ',')
+        # add to the entry for this lane
+        donors_and_tp <- paste(donors_and_tp, donors_and_this_tp_pasted, sep = ',')
+      }
+    }
+    # add to the new table
+    formatted_table[i, 'Donors'] <- donors_and_tp
+  }
+  # write the result
+  write.table(formatted_table, output_loc, sep = ',', row.names = F, col.names = T, quote = T)
+}
+
+
+create_persample_table <- function(sample_table_loc, age_sex_loc, output_loc){
+  # read the annotation file, use the lane as the row names
+  lane_to_samples <- read.table(sample_table_loc, sep = '\t', header = T, row.names = 1, stringsAsFactors = F)
+  # read the age/sex file
+  age_sex <- read.table(age_sex_loc, sep = '\t', header = T, stringsAsFactors = F)
+  # put the rows of our new table in a list
+  sample_timepoint_rows <- list()
+  # now check each row
+  for (i in 1:nrow(lane_to_samples)) {
+    # grab the lane
+    lane <- rownames(lane_to_samples)[i]
+    # check each timepoint
+    for (timepoint in colnames(lane_to_samples)) {
+      # extract donors
+      donors_tp <- lane_to_samples[i, timepoint]
+      # if there are results, let's grab them
+      if (!is.na(donors_tp) & length(donors_tp) > 0) {
+        # split by the comma
+        donors <- strsplit(donors_tp, split = ',')[[1]]
+        # check each donor
+        for (donor in donors) {
+          # paste the alias
+          alias <- paste(donor, timepoint, sep = '-')
+          # get the sex
+          sex <- age_sex[match(donor, age_sex[['ID']]), 'gender']
+          # build the row
+          row_entry <- data.frame(
+            title=c(''),
+            alias=c(alias),
+            description=c('Human cryopreserved PBMCs'),
+            subjectId=c(donor),
+            bioSampleId=c(''),
+            caseOrControl=c('Case'),
+            gender=c(sex),
+            organismPart=c('Blood'),
+            cellLine=c(''),
+            region=c('Northern Netherlands'),
+            phenotype=c(timepoint)
+          )
+          # add to list
+          sample_timepoint_rows[[alias]] <- row_entry
+        }
+      }
+    }
+  }
+  # merge all rows
+  full_table <- do.call("rbind", sample_timepoint_rows)
+  # write result
+  write.table(full_table, output_loc, sep = ',', row.names = F, col.names = T, quote = F)
+}
+```

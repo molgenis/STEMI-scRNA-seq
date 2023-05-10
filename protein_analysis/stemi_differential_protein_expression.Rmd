@@ -1,0 +1,504 @@
+---
+title: "stemi_differential_protein_expression"
+output: html_document
+date: "2022-12-09"
+---
+
+```{r header, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Roy Oelen, Irene van Blokland
+# Name: stemi_differential_protein_expression.Rmd
+# Function: perform differential protein expression on the
+############################################################################################################################
+```
+
+```{r libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# libraries        #
+####################
+
+library(ggplot2)
+library(cowplot)
+
+```
+
+```{r functions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# Functions        #
+####################
+
+
+get_color_coding_dict <- function(){
+  # set the condition colors
+  color_coding <- list()
+  color_coding[["UTBaseline"]] <- "khaki2"
+  color_coding[["UTt24h"]] <- "khaki4"
+  color_coding[["UTt8w"]] <- "paleturquoise1"
+  color_coding[["Baselinet24h"]] <- "paleturquoise3"
+  color_coding[["Baselinet8w"]] <- "rosybrown1"
+  color_coding[["t24ht8w"]] <- "rosybrown3"
+  color_coding[["UT\nBaseline"]] <- "khaki2"
+  color_coding[["UT\nt24h"]] <- "khaki4"
+  color_coding[["UT\nt8w"]] <- "paleturquoise1"
+  color_coding[["Baseline\nt24h"]] <- "paleturquoise3"
+  color_coding[["Baseline\nt8w"]] <- "rosybrown1"
+  color_coding[["t24h\nt8w"]] <- "rosybrown3"
+  color_coding[["UT-Baseline"]] <- "khaki2"
+  color_coding[["UT-t24h"]] <- "khaki4"
+  color_coding[["UT-t8w"]] <- "paleturquoise1"
+  color_coding[["Baseline-t24h"]] <- "paleturquoise3"
+  color_coding[["Baseline-t8w"]] <- "rosybrown1"
+  color_coding[["t24h-t8w"]] <- "rosybrown3"
+  color_coding[["UT-t0"]] <- "khaki2"
+  color_coding[["UT-t24h"]] <- "khaki4"
+  color_coding[["UT-t8w"]] <- "paleturquoise1"
+  color_coding[["HC-t0"]] <- "khaki2"
+  color_coding[["HC-t24h"]] <- "khaki4"
+  color_coding[["HC-t8w"]] <- "paleturquoise1"
+  color_coding[["t0-t24h"]] <- "paleturquoise3"
+  color_coding[["t0-t8w"]] <- "rosybrown1"
+  color_coding[["t24h-t8w"]] <- "rosybrown3"
+  # set condition colors
+  color_coding[["HC"]] <- "grey"
+  color_coding[["t0"]] <- "pink"
+  color_coding[["Baseline"]] <- "pink"
+  color_coding[["t24h"]] <- "red"
+  color_coding[["t8w"]] <- "purple"
+  # set the cell type colors
+  color_coding[["bulk"]] <- "black"
+  color_coding[["Bulk"]] <- "black"
+  color_coding[["CD4T"]] <- "#153057"
+  color_coding[["CD8T"]] <- "#009DDB"
+  color_coding[["monocyte"]] <- "#EDBA1B"
+  color_coding[["NK"]] <- "#E64B50"
+  color_coding[["B"]] <- "#71BC4B"
+  color_coding[["DC"]] <- "#965EC8"
+  color_coding[["CD4+ T"]] <- "#153057"
+  color_coding[["CD8+ T"]] <- "#009DDB"
+  # other cell type colors
+  color_coding[["HSPC"]] <- "#009E94"
+  color_coding[["platelet"]] <- "#9E1C00"
+  color_coding[["plasmablast"]] <- "#DB8E00"
+  color_coding[["other T"]] <- "#FF63B6"
+  return(color_coding)
+}
+
+label_dict <- function(){
+  label_dict <- list()
+  # condition combinations
+  label_dict[['UTBaseline']] <- 'UT-Baseline'
+  label_dict[['UTt24h']] <- 'UT-t24h'
+  label_dict[['UTt8w']] <- 'UT-t8w'
+  label_dict[['Baselinet24h']] <- 'Baseline-t24h'
+  label_dict[['Baselinet8w']] <- 'Baseline-t8w'
+  label_dict[['t24ht8w']] <- 't24h-t8w'
+  label_dict[['UTBaseline']] <- 'HC-t0'
+  label_dict[['UTt24h']] <- 'HC-t24h'
+  label_dict[['UTt8w']] <- 'HC-t8w'
+  label_dict[['Baselinet24h']] <- 't0-t24h'
+  label_dict[['Baselinet8w']] <- 't0-t8w'
+  # conditions
+  label_dict[['UT']] <- 'HC'
+  label_dict[['Baseline']] <- 't0'
+  label_dict[['t24h']] <- 't24h'
+  label_dict[['t8w']] <- 't8w'
+  # major cell types
+  label_dict[["Bulk"]] <- "bulk-like"
+  label_dict[["CD4T"]] <- "CD4+ T"
+  label_dict[["CD8T"]] <- "CD8+ T"
+  label_dict[["monocyte"]] <- "monocyte"
+  label_dict[["NK"]] <- "NK"
+  label_dict[["B"]] <- "B"
+  label_dict[["DC"]] <- "DC"
+  label_dict[["HSPC"]] <- "HSPC"
+  label_dict[["plasmablast"]] <- "plasmablast"
+  label_dict[["platelet"]] <- "platelet"
+  label_dict[["T_other"]] <- "other T"
+  # minor cell types
+  label_dict[["CD4_TCM"]] <- "CD4 TCM"
+  label_dict[["Treg"]] <- "T regulatory"
+  label_dict[["CD4_Naive"]] <- "CD4 naive"
+  label_dict[["CD4_CTL"]] <- "CD4 CTL"
+  label_dict[["CD8_TEM"]] <- "CD8 TEM"
+  label_dict[["cMono"]] <- "cMono"
+  label_dict[["CD8_TCM"]] <- "CD8 TCM"
+  label_dict[["ncMono"]] <- "ncMono"
+  label_dict[["cDC2"]] <- "cDC2"
+  label_dict[["B_intermediate"]] <- "B intermediate"
+  label_dict[["NKdim"]] <- "NK dim"
+  label_dict[["pDC"]] <- "pDC"
+  label_dict[["ASDC"]] <- "ASDC"
+  label_dict[["CD8_Naive"]] <- "CD8 naive"
+  label_dict[["MAIT"]] <- "MAIT"
+  label_dict[["CD8_Proliferating"]] <- "CD8 proliferating"
+  label_dict[["CD4_TEM"]] <- "CD4 TEM"
+  label_dict[["B_memory"]] <- "B memory"
+  label_dict[["NKbright"]] <- "NK bright"
+  label_dict[["B_naive"]] <- "B naive"
+  label_dict[["gdT"]] <- "gamma delta T"
+  label_dict[["CD4_Proliferating"]] <- "CD4 proliferating"
+  label_dict[["NK_Proliferating"]] <- "NK proliferating"
+  label_dict[["cDC1"]] <- "cDC1"
+  label_dict[["ILC"]] <- "ILC"
+  label_dict[["dnT"]] <- "double negative T"
+  return(label_dict)
+}
+
+
+wide_to_high_ggplot <- function(wide_table, variable_col_name='number', new_col_name='cell_type'){
+  # init new table
+  table_high <- NULL
+  for(col in colnames(wide_table)){
+    # get the variables in the column
+    variables <- wide_table[[col]]
+    # turn into dataframe
+    table_high_rows <- data.frame(x=rep(col, times=length(variables)), y=variables)
+    # set column names
+    colnames(table_high_rows) <- c(new_col_name, variable_col_name)
+    # add to the rest of the table
+    if(is.null(table_high)){
+      table_high <- table_high_rows
+    }
+    else{
+      table_high <- rbind(table_high, table_high_rows)
+    }
+  }
+  return(table_high)
+}
+
+
+olink_to_plottable_table <- function(olink, split_char='\\.'){
+  id_and_timepoint_df <- NULL
+  # check the rownames
+  for(id_and_timepoint in rownames(olink)){
+    # split into id and timepoint
+    id_and_timepoint_split <- strsplit(id_and_timepoint, split_char)
+    id <- id_and_timepoint_split[[1]][[1]]
+    timepoint <- id_and_timepoint_split[[1]][[2]]
+    # turn into row
+    id_and_timepoint_row <- data.frame(id=c(id), timepoint=c(timepoint))
+    # add to dataframe
+    if(is.null(id_and_timepoint_df)){
+      id_and_timepoint_df <- id_and_timepoint_row
+    }
+    else{
+      id_and_timepoint_df <- rbind(id_and_timepoint_df, id_and_timepoint_row)
+    }
+  }
+  # add new columns to original data
+  olink <- cbind(id_and_timepoint_df, olink)
+  return(olink)
+}
+
+plot_olink_expression <- function(olink, identifier, olinkid_to_uid_loc=NULL, uniprotid_to_gs_loc=NULL, violin=F, paper_style=T, legendless=T, pointless=F, use_label_dict=F){
+  # add extra column
+  olink$protein_expression <- olink[[identifier]]
+  # change the name of the timepoint if requested
+  if (use_label_dict) {
+    olink[['timepoint']] <- as.vector(unlist(label_dict()[olink[['timepoint']]]))
+  }
+  # set colors based on condition
+  cc <- get_color_coding_dict()
+  colScale <- scale_fill_manual(name = "condition",values = unlist(cc[olink$timepoint]))
+  # create the plot
+  p <- NULL
+  if(violin){
+    p <- ggplot(data=olink, mapping=aes(x=timepoint, y=protein_expression, fill=timepoint)) +
+      geom_violin() +
+      colScale +
+      geom_jitter(size = 0.5, alpha = 0.5)
+  }
+  else{
+    p <- ggplot(data=olink, mapping=aes(x=timepoint, y=protein_expression, fill=timepoint)) +
+      geom_boxplot(outlier.shape = NA) +
+      colScale +
+      geom_jitter(size = 0.5, alpha = 0.5)
+  }
+  # create title
+  title <- paste('protein expression of', identifier)
+  if(!is.null(olinkid_to_uid)){
+    # read mapping of olink ID to uniprot ID
+    olinkid_to_uid <- read.table(olinkid_to_uid_loc, sep = '\t', header = T, stringsAsFactors = F)
+    # get the uid
+    uid <- olinkid_to_uid[olinkid_to_uid$OlinkID == identifier, 'Uniprot.ID']
+    # add to title
+    title <- paste(title, '-', uid, sep = '')
+    # if there is a gene symbol mapping, do that one as well
+    if(!is.null(uniprotid_to_gs_loc)){
+      uniprotid_to_gs <- read.table(uniprotid_to_gs_loc, sep = '\t', header = T, stringsAsFactors = F)
+      gs <- uniprotid_to_gs[uniprotid_to_gs$From == uid, 'To']
+      # add to title
+      title <- paste(title, '(', gs, ')')
+    }
+  }
+  # add paper style if requested
+  if (paper_style) {
+    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  # remove points if requested
+  if (pointless) {
+    p <- p + theme(axis.text.x=element_blank(),
+                   axis.ticks = element_blank(),
+                   axis.title.x = element_blank())
+  }
+  # remove legend if requested
+  if (legendless) {
+    p <- p + theme(legend.position = 'none')
+  }
+  # add title
+  p <- p + ggtitle(title)
+  # and y lab
+  p <- p + ylab('protein expression')
+  return(p)
+}
+
+plot_olink_expression_per_protein <- function(olink, output_loc, olinkid_to_uid_loc=NULL, uniprotid_to_gs_loc=NULL, use_label_dict=F, violin=F){
+  # make labels prettier for timepoint if requested
+  if(use_label_dict){
+    olink$timepoint <- as.vector(unlist(label_dict()[as.character(olink$timepoint)]))
+  }
+  # grab the IDs
+  identifiers <- setdiff(colnames(olink), c('timepoint', 'id'))
+  # plot each protein
+  for(identifier in identifiers){
+    p <- plot_olink_expression(olink, identifier, olinkid_to_uid_loc, uniprotid_to_gs_loc, violin=violin)
+    # set the location
+    output_file <- paste(output_loc, identifier, '.pdf', sep = '')
+    p
+    ggsave(output_file)
+  }
+}
+
+do_differential_expression_analysis_all <- function(olink, split_char='\\.', method='wilcoxon', paired=T, conditions.x=c('Baseline', 'Baseline'), conditions.y=c('t24h', 't8w'), mtc_method='bonferroni', paired_mtc=T, olinkid_to_uid_loc=NULL, uniprotid_to_gs_loc=NULL, inclusion_list_loc=NULL){
+  # get it so that the identifier and and timepoint are in the table
+  olink <- olink_to_plottable_table(olink, split_char = split_char)
+  # include only specific participants if requested
+  if(!is.null(inclusion_list_loc)){
+    included <- read.table(inclusion_list_loc, header=F, )$V1
+    olink <- olink[olink$id %in% included, ]
+  }
+  # init table
+  full_result_table <- NULL
+  # check each timepoint
+  for(i in 1:length(conditions.x)){
+    # grab the conditions
+    condition.x <- conditions.x[i]
+    condition.y <- conditions.y[i]
+    # do the analysis
+    result_table <- do_differential_expression_analysis(olink, condition.1 = condition.x, condition.2 = condition.y, timepoint_column='timepoint', sample_column='id',  method=method, paired=paired, olinkid_to_uid_loc=olinkid_to_uid_loc, uniprotid_to_gs_loc=uniprotid_to_gs_loc)
+    # to multiple testing if requested
+    if(!is.null(mtc_method) & paired_mtc){
+      result_table[[paste('p', mtc_method, sep = '_')]] <- p.adjust(result_table$p_nominal, method = mtc_method)
+      result_table$paired_mtc <- paired_mtc
+    }
+    # add to result table
+    if(is.null(full_result_table)){
+      full_result_table <- result_table
+    }
+    else{
+      full_result_table <- rbind(full_result_table, result_table)
+    }
+  }
+  if(!is.null(mtc_method) & !paired_mtc){
+    full_result_table[[paste('p', mtc_method, sep='_')]] <- p.adjust(full_result_table$p_nominal, method = mtc_method)
+    full_result_table$paired_mtc <- paired_mtc
+  }
+  # sort by the nominal p
+  full_result_table <- full_result_table[order(full_result_table[['p_nominal']]), ]
+  return(full_result_table)
+}
+
+do_differential_expression_analysis <- function(olink, condition.1, condition.2, timepoint_column='timepoint', sample_column='id',  method='wilcoxon', paired=T, olinkid_to_uid_loc=NULL, uniprotid_to_gs_loc=NULL){
+  # grab the samples
+  samples_x <- olink[olink[[timepoint_column]] == condition.1, sample_column]
+  samples_y <- olink[olink[[timepoint_column]] == condition.2, sample_column]
+  # if we go paired, we need to subset to what is in both
+  if(paired){
+    samples_x <- intersect(samples_x, samples_y)
+    samples_y <- intersect(samples_x, samples_y)
+  }
+  # subset to this data with these samples and that condition
+  expression_data_x <- olink[olink[[timepoint_column]] == condition.1 & olink[[sample_column]] %in% samples_x, ]
+  expression_data_y <- olink[olink[[timepoint_column]] == condition.2 & olink[[sample_column]] %in% samples_y, ]
+  # get the ids of the expression data
+  expressed_data <- setdiff(colnames(olink), c(timepoint_column, sample_column))
+  # initialize a matrix
+  result_matrix <- matrix(, nrow = length(expressed_data), ncol = 11, dimnames = list(expressed_data, c('olink_id', 'condition.1', 'condition.2', 'nsamples.x', 'nsamples.y', 'mean_exp.1', 'mean_exp.2', 'mean_lfc', 'method', 'paired', 'p_nominal')))
+  # check each expressed datapoint
+  for(expressed_datapoint in expressed_data){
+    # grab the expression data for x and y
+    expression_x <- expression_data_x[match(samples_x, expression_data_x[[sample_column]]), expressed_datapoint]
+    expression_y <- expression_data_y[match(samples_y, expression_data_y[[sample_column]]), expressed_datapoint]
+    # calculate mean expression
+    mean_exp_x <- mean(expression_x)
+    mean_exp_y <- mean(expression_y)
+    # calculate the mean LFC
+    mean_lfc <- log2(mean_exp_x/mean_exp_y)
+    # do a statistical analysis
+    stat <- NA
+    try({
+      if(method == 'wilcoxon'){
+        res <- wilcox.test(expression_x, expression_y, paired = paired)
+        stat <- res$p.value
+      }
+      else{
+        print('unsupported method')
+      }
+    })
+    # add these results
+    result_matrix[expressed_datapoint, 'olink_id'] <- expressed_datapoint
+    result_matrix[expressed_datapoint, 'mean_exp.1'] <- mean_exp_x
+    result_matrix[expressed_datapoint, 'mean_exp.2'] <- mean_exp_y
+    result_matrix[expressed_datapoint, 'mean_lfc'] <- mean_lfc
+    result_matrix[expressed_datapoint, 'p_nominal'] <- stat
+  }
+  # change to dataframe for easier access
+  result_matrix <- data.frame(result_matrix)
+  # set correct type
+  result_matrix[['mean_exp.1']] <- as.numeric(result_matrix[['mean_exp.1']])
+  result_matrix[['mean_exp.2']] <- as.numeric(result_matrix[['mean_exp.2']])
+  result_matrix[['mean_lfc']] <- as.numeric(result_matrix[['mean_lfc']])
+  result_matrix[['p_nominal']] <- as.numeric(result_matrix[['p_nominal']])
+  if(!is.null(olinkid_to_uid)){
+    # read mapping of olink ID to uniprot ID
+    olinkid_to_uid <- read.table(olinkid_to_uid_loc, sep = '\t', header = T, stringsAsFactors = F)
+    # get the uid
+    uid <- olinkid_to_uid[match(rownames(result_matrix), olinkid_to_uid$OlinkID), 'Uniprot.ID']
+    # add to table
+    result_matrix$uniprot.id <- uid
+    # if there is a gene symbol mapping, do that one as well
+    if(!is.null(uniprotid_to_gs)){
+      uniprotid_to_gs <- read.table(uniprotid_to_gs_loc, sep = '\t', header = T, stringsAsFactors = F)
+      gs <- uniprotid_to_gs[match(result_matrix$uniprot.id, uniprotid_to_gs$From), 'To']
+      # add to title
+      result_matrix$gs <- gs
+    }
+  }
+  # init some data that is the same across the data
+  result_matrix$condition.1 <- condition.1
+  result_matrix$condition.2 <- condition.2
+  result_matrix$nsamples.x <- nrow(expression_data_x)
+  result_matrix$nsamples.y <- nrow(expression_data_y)
+  result_matrix$method <- method
+  result_matrix$paired <- paired
+  return(result_matrix)
+}
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# Main Code        #
+####################
+
+# location of various files
+olinkid_to_uid_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/olink/olinkid_to_uniprotid.tsv'
+uniprotid_to_gs_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/olink/uniprot_to_genesymbol.tsv'
+gs_to_ens_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/features_v3.tsv'
+olink_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/olink/20200442_Groot_NPX-QC_format_fixed.tsv'
+inclusion_list_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata/included_participants.txt'
+metadata_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata//cardio.integrated.20210301.metadata.tsv'
+
+# load mapping files
+gs_to_ens <- read.table(gs_to_ens_loc, sep = '\t', header = F)
+uniprotid_to_gs <- read.table(uniprotid_to_gs_loc, sep = '\t', header = T)
+olinkid_to_uid <- read.table(olinkid_to_uid_loc, sep = '\t', header = T)
+
+# and read the actual data
+olink <- read.table(olink_loc, sep = '\t', header = T, row.names = 1)
+# covert so that the timepoint is split as a separate column
+olink_plottable <- olink_to_plottable_table(olink)
+
+# get the participants to include
+inclusion_list <- read.table(inclusion_list_loc, header = F)$V1
+# subset to the ones we want to include
+olink_plottable <- olink_plottable[!is.na(olink_plottable[['id']]) & olink_plottable[['id']] %in% inclusion_list, ]
+```
+
+```{r baseline_participants, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# show the Baseline participants
+
+print(
+  olink_plottable[olink_plottable[['timepoint']] == 'Baseline', c('id', 'timepoint')]
+)
+
+```
+
+```{r t24h_participants, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# show the Baseline participants
+
+print(
+  olink_plottable[olink_plottable[['timepoint']] == 't24h', c('id', 'timepoint')]
+)
+
+```
+
+```{r t8w_participants, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# show the Baseline participants
+
+print(
+  olink_plottable[olink_plottable[['timepoint']] == 't8w', c('id', 'timepoint')]
+)
+
+```
+
+```{r who_where, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+# check which participants are where, first make a table with those participants
+participants <- data.frame(participant = inclusion_list)
+# then add the check for each participant
+participants[['Baseline']] <- apply(participants, 1, function(x){
+  return(x['participant'] %in% olink_plottable[olink_plottable[['timepoint']] == 'Baseline', 'id'])
+})
+participants[['t24h']] <- apply(participants, 1, function(x){
+  return(x['participant'] %in% olink_plottable[olink_plottable[['timepoint']] == 't24h', 'id'])
+})
+participants[['t8w']] <- apply(participants, 1, function(x){
+  return(x['participant'] %in% olink_plottable[olink_plottable[['timepoint']] == 't8w', 'id'])
+})
+print(participants)
+```
+
+```{r wilcoxon_dpe, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# do differential protein expression analysis based on a wilcoxon rank sum
+olink_de <- do_differential_expression_analysis_all(olink=olink, olinkid_to_uid_loc = olinkid_to_uid_loc, uniprotid_to_gs_loc = uniprotid_to_gs_loc, inclusion_list_loc=inclusion_list_loc)
+
+```
+
+```{r report_wilcoxon_dpe, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# show the significant results
+print(
+  olink_de[olink_de[['p_bonferroni']] < 0.05, ]
+)
+
+```
+
+```{r report_wilcoxon_dpe, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+
+# plot the ones that Irene likes
+plot_grid(
+  plot_olink_expression(olink = olink_plottable, identifier = 'OID00131', olinkid_to_uid_loc = olinkid_to_uid_loc, use_label_dict = T, violin = T, legendless = T) + ggtitle('protein expression of NT-proBNP'),
+  plot_olink_expression(olink = olink_plottable, identifier = 'OID00634', olinkid_to_uid_loc = olinkid_to_uid_loc, use_label_dict = T, violin = T, legendless = T) + ggtitle('protein expression of IL1RL1'),
+  #get_legend(plot_olink_expression(olink = olink_plottable, identifier = 'OID00634', olinkid_to_uid_loc = olinkid_to_uid_loc, use_label_dict = T, violin = T, legendless = F)),
+  plot_olink_expression(olink = olink_plottable, identifier = 'OID00570', olinkid_to_uid_loc = olinkid_to_uid_loc, use_label_dict = T, violin = T, legendless = T) + ggtitle('protein expression of IL2RA'),
+  plot_olink_expression(olink = olink_plottable, identifier = 'OID00640', olinkid_to_uid_loc = olinkid_to_uid_loc, use_label_dict = T, violin = T, legendless = T) + ggtitle('protein expression of IL18BP'),
+  nrow = 2,
+  ncol = 2
+)
+```

@@ -838,7 +838,7 @@ text_color_dict <- function(){
 ####################
 
 # locations of the files
-interactions_loc <- '/data/cardiology/cell_cell_interactions/nichenet/objects/'
+interactions_loc <- '/Users/Shared/Relocated Items/Security/data/cardiology/cell_cell_interactions/nichenet/objects/'
 interactions_Baseline_t24h_v2_loc <- paste(interactions_loc, 'v2_Baseline_vs_t24h_nichenet_onlymajors_perct.rds', sep = '')
 interactions_Baseline_t8w_v2_loc <- paste(interactions_loc, 'v2_Baseline_vs_t8w_nichenet_onlymajor_perct.rds', sep = '')
 interactions_UT_Baseline_v2_loc <- paste(interactions_loc, 'v2_UT_vs_Baseline_nichenet_onlymajor_perct.rds', sep = '')

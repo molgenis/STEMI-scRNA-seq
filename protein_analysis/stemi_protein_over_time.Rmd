@@ -1,0 +1,301 @@
+---
+title: "stemi_protein_over_time"
+author: "Roy Oelen"
+date: "2023-03-09"
+output: html_document
+---
+
+```{r header, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Roy Oelen
+# Name: stemi_protein_over_time.Rmd
+# Function: plot protein expression over time
+############################################################################################################################
+```
+
+```{r libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# libraries        #
+####################
+
+library(ggplot2)
+# load genotype data
+library(vcfR)
+# efficient use of large matrices
+library(data.table)
+```
+
+```{r objects, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# objects.         #
+####################
+# object to hold the genotype information
+Genotypes <- setRefClass('Genotypes',
+  fields = list(
+    # the snps
+    calls = 'data.table',
+    # the metadata
+    meta = 'data.table'
+  ),
+  methods = list(
+    get_genotypes = function(.self, snp_id=NULL, chrom_pos=NULL, snp_pos=NULL, convert_alleles=F) {
+      # we need the index of the SNP
+      snp_index <- NULL
+      if (!is.null(snp_id)) {
+        # extract snp index
+        snp_index <- grep(snp_id, .self$meta[['ID']])
+      } else if (!is.null(chrom_pos) & !is.null(snp_pos)) {
+        # extract snp index
+        snp_index <- which(.self$meta[['CHROM']] == chrom_pos & .self$meta[['POS']] == snp_pos)
+      } else {
+        stop("Need to supply the variant ID, or both the CHROM and SNP positions")
+      }
+      # grab the genotypes
+      genotypes_raw <- as.vector(unlist(.self$calls[snp_index, ]))
+      # convert to alleles if requested
+      if (convert_alleles) {
+        # get the ref
+        ref <- .self$meta[snp_index, 'REF'][['REF']]
+        # and alt
+        alt <- .self$meta[snp_index, 'ALT'][['ALT']]
+        # harmonize placement of slash
+        genotypes_raw <- gsub('1\\|0', '0\\|1', genotypes_raw)
+        genotypes_raw <- gsub('1/0', '0/1', genotypes_raw)
+        # replace letters
+        genotypes_raw <- gsub('0', ref, genotypes_raw)
+        genotypes_raw <- gsub('1', alt, genotypes_raw)
+      }
+      # turn into list
+      genotypes_raw <- as.list(genotypes_raw)
+      # add the participants as the keys
+      names(genotypes_raw) <- colnames(.self$calls)
+      return(genotypes_raw)
+    }
+  )
+)
+```
+
+
+```{r functions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# Functions        #
+####################
+
+olink_to_plottable_table <- function(olink, split_char='\\.'){
+  id_and_timepoint_df <- NULL
+  # check the rownames
+  for(id_and_timepoint in rownames(olink)){
+    # split into id and timepoint
+    id_and_timepoint_split <- strsplit(id_and_timepoint, split_char)
+    id <- id_and_timepoint_split[[1]][[1]]
+    timepoint <- id_and_timepoint_split[[1]][[2]]
+    # turn into row
+    id_and_timepoint_row <- data.frame(id=c(id), timepoint=c(timepoint))
+    # add to dataframe
+    if(is.null(id_and_timepoint_df)){
+      id_and_timepoint_df <- id_and_timepoint_row
+    }
+    else{
+      id_and_timepoint_df <- rbind(id_and_timepoint_df, id_and_timepoint_row)
+    }
+  }
+  # add new columns to original data
+  olink <- cbind(id_and_timepoint_df, olink)
+  return(olink)
+}
+
+olinkid_to_genesymbol <- function(olink_ids, olinkid_to_uid_loc, uniprotid_to_gs_loc){
+    # read mapping of olink ID to uniprot ID
+    olinkid_to_uid <- read.table(olinkid_to_uid_loc, sep = '\t', header = T, stringsAsFactors = F)
+    # get the uid
+    uid <- olinkid_to_uid[match(olink_ids, olinkid_to_uid$OlinkID), 'Uniprot.ID']
+    # if there is a gene symbol mapping, do that one as well
+    uniprotid_to_gs <- read.table(uniprotid_to_gs_loc, sep = '\t', header = T, stringsAsFactors = F)
+    gs <- uniprotid_to_gs[match(uid, uniprotid_to_gs$From), 'To']
+    # put result into table
+    mapping <- data.frame(olinkid = olink_ids, uid = uid, gs = gs)
+    return(mapping)
+}
+
+create_genotypes_object <- function(genotypes_vcf){
+  # get the donors in the genotype data
+  donors_vcf <- colnames(genotypes_vcf@gt)
+  # get the intersection
+  donors <- setdiff(donors_vcf, c('FORMAT'))
+  # and the genotype data itself
+  gt_calls <- data.table(extract.gt(genotypes_vcf)[, donors])
+  # grab the genotypes
+  gt_metadata <- data.table(genotypes_vcf@fix[, c('CHROM', 'POS', 'ID', 'REF', 'ALT')])
+  # create object
+  genos <- Genotypes$new(calls = gt_calls, meta = gt_metadata)
+  return(genos)
+}
+
+
+plot_over_time <- function(olink_plottable, protein_id, timepoint_column='timepoint', id_column='id', timepoint_order=NULL, paper_style=T, genotypes=NULL, variant_id=NULL) {
+  # set a manual order for the timepoints if requested
+  if (!is.null(timepoint_order)) {
+    olink_plottable[[timepoint_column]] <- factor(olink_plottable[[timepoint_column]], levels = timepoint_order)
+  }
+  # otherwise the way they appear
+  else {
+    olink_plottable[[timepoint_column]] <- factor(olink_plottable[[timepoint_column]], levels = unique(olink_plottable[[timepoint_column]]))
+  }
+  # draw the plot
+  p <- NULL
+  # with genotypes if requested
+  if (!is.null(genotypes) & !is.null(variant_id)) {
+    # add the genotype data
+    genotypes_variant <- genotypes$get_genotypes(variant_id, convert_alleles = T)
+    # get the genotypes for the participants
+    genotypes_participants <- as.vector(unlist(genotypes_variant[olink_plottable[[id_column]]]))
+    # add as a column
+    olink_plottable[['genotype']] <- genotypes_participants
+    # colour by genotypw
+    p <- ggplot(data = NULL, mapping = aes(x = olink_plottable[[timepoint_column]], y = olink_plottable[[protein_id]], color = olink_plottable[['genotype']], group = olink_plottable[[id_column]]))
+    p <- p + labs(colour = 'genotype')
+  }
+  # otherwise colour by patient
+  else{
+    p <- ggplot(data = NULL, mapping = aes(x = olink_plottable[[timepoint_column]], y = olink_plottable[[protein_id]], color = olink_plottable[[id_column]], group = olink_plottable[[id_column]]))
+    p <- p + labs(colour = id_column)
+  }
+  p <- p +geom_point() + geom_line()
+  # add more descriptive axis labels
+  p <- p + xlab(timepoint_column)
+  p <- p + ylab(protein_id)
+  
+  # make style like paper one
+  if (paper_style) {
+    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  return(p)
+}
+
+get_protein_pattern <- function(olink_plottable, protein_id, timepoint_order, timepoint_column='timepoint', id_column='id') {
+  # get the participant
+  participants <- unique(olink_plottable[[id_column]])
+  # get the timepoints
+  timepoints <- unique(olink_plottable[[timepoint_column]])
+  # create a new dataframe to store the results
+  pattern_df <- data.frame(participant = participants, pattern = rep(NA, times = length(participants)))
+  # now check each participant
+  for (row_i in 1 : nrow(pattern_df)) {
+    # get the participant
+    participant <- pattern_df[row_i, 'participant']
+    # set the string that represents the pattern
+    pattern_string <- ''
+    # now check each timepoint
+    for (i in 1 : (length(timepoint_order) - 1)) {
+      # get timepoint 1
+      timepoint1 <- timepoint_order[i]
+      # get timepoint 2
+      timepoint2 <- timepoint_order[i + 1]
+      # now get the rows for this participant
+      timepoint1_participant <- olink_plottable[olink_plottable[[id_column]] == participant &
+                                                  olink_plottable[[timepoint_column]] == timepoint1, ]
+      timepoint2_participant <- olink_plottable[olink_plottable[[id_column]] == participant &
+                                                  olink_plottable[[timepoint_column]] == timepoint2, ]
+      # we can only really compare when they are both present
+      if (nrow(timepoint1_participant) > 0 & nrow(timepoint2_participant) > 0) {
+        # get the actual expression
+        expression_timepoint1 <- timepoint1_participant[[protein_id]][1]
+        expression_timepoint2 <- timepoint2_participant[[protein_id]][1]
+        # and add to the pattern
+        if (expression_timepoint1 == expression_timepoint2) {
+          pattern_string <- paste(pattern_string, '-', sep = '')
+        }
+        else if(expression_timepoint1 < expression_timepoint2) {
+          pattern_string <- paste(pattern_string, 'U', sep = '')
+        }
+        else if(expression_timepoint1 > expression_timepoint2) {
+          pattern_string <- paste(pattern_string, 'D', sep = '')
+        }
+        else {
+          pattern_string <- paste(pattern_string, 'X', sep = '')
+        }
+      }
+    }
+    # add the result to the table
+    pattern_df[row_i, 'pattern'] <- pattern_string
+  }
+  return(pattern_df)
+}
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# Main Code        #
+####################
+# location of various files
+olinkid_to_uid_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/olink/olinkid_to_uniprotid.tsv'
+uniprotid_to_gs_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/olink/uniprot_to_genesymbol.tsv'
+gs_to_ens_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/features_v3.tsv'
+olink_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/olink/20200442_Groot_NPX-QC_format_fixed.tsv'
+inclusion_list_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata/included_participants.txt'
+metadata_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata//cardio.integrated.20210301.metadata.tsv'
+# load mapping files
+gs_to_ens <- read.table(gs_to_ens_loc, sep = '\t', header = F)
+uniprotid_to_gs <- read.table(uniprotid_to_gs_loc, sep = '\t', header = T)
+olinkid_to_uid <- read.table(olinkid_to_uid_loc, sep = '\t', header = T)
+# and read the actual data
+olink <- read.table(olink_loc, sep = '\t', header = T, row.names = 1)
+# covert so that the timepoint is split as a separate column
+olink_plottable <- olink_to_plottable_table(olink)
+# subset for inclusion
+inclusion_list <- read.table(inclusion_list_loc, header = F)$V1
+olink_plottable <- olink_plottable[olink_plottable[['id']] %in% inclusion_list, ]
+# get the gene symbols
+symbol_table <- olinkid_to_genesymbol(colnames(olink), olinkid_to_uid_loc = olinkid_to_uid_loc, uniprotid_to_gs_loc = uniprotid_to_gs_loc)
+# location of the genotype data
+genotypes_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/genotype/stemi_all_merged_aragam2022.vcf.gz'
+# get genotype data
+genotypes <- read.vcfR(genotypes_loc)
+# turn into object
+genotype_object <- create_genotypes_object(genotypes)
+
+```
+
+```{r setup, include=TRUE, fig.width=5, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE)
+
+plot_over_time(olink_plottable, protein_id = 'OID00131', timepoint_order = c('Baseline', 't24h', 't8w')) + ggtitle('NT-proNB expression over time')
+
+```
+
+```{r setup, include=TRUE, fig.width=10, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE)
+
+plot_over_time(olink_plottable, protein_id = 'OID00602', timepoint_order = c('Baseline', 't24h', 't8w')) + ggtitle('IL6R protein expression over time')
+plot_over_time(olink_plottable, protein_id = 'OID00602', timepoint_order = c('Baseline', 't24h', 't8w'), genotypes = genotype_object, variant_id = 'rs6686750') + ggtitle('IL6R protein expression over time')
+# get genotypes for snp
+genotypes_variant <- genotype_object$get_genotypes('rs6686750', convert_alleles = T)
+genotypes_variant_df <- data.frame(participant = names(genotypes_variant), genotype = as.vector(unlist(genotypes_variant)))
+
+plot_over_time(olink_plottable[olink_plottable[['id']] %in% genotypes_variant_df[genotypes_variant_df[['genotype']] == 'A|A', 'participant'], ], protein_id = 'OID00602', timepoint_order = c('Baseline', 't24h', 't8w')) + ggtitle('IL6R protein expression over time for AA genotype')
+plot_over_time(olink_plottable[olink_plottable[['id']] %in% genotypes_variant_df[genotypes_variant_df[['genotype']] == 'A|G', 'participant'], ], protein_id = 'OID00602', timepoint_order = c('Baseline', 't24h', 't8w')) + ggtitle('IL6R protein expression over time for AG genotype')
+plot_over_time(olink_plottable[olink_plottable[['id']] %in% genotypes_variant_df[genotypes_variant_df[['genotype']] == 'G|G', 'participant'], ], protein_id = 'OID00602', timepoint_order = c('Baseline', 't24h', 't8w')) + ggtitle('IL6R protein expression over time for GG genotype')
+
+
+```
+
+```{r pattern, include=TRUE, fig.width=10, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get patterns
+ntpro_patterns <- get_protein_pattern(olink_plottable, 'OID00131', c('Baseline', 't24h', 't8w'))
+il6r_patterns <- get_protein_pattern(olink_plottable, 'OID00602', c('Baseline', 't24h', 't8w'))
+# rename columns
+colnames(ntpro_patterns) <- c('participant', 'ntpronb')
+colnames(il6r_patterns) <- c('participant', 'il6r')
+# and combine
+patterns <- merge(ntpro_patterns, il6r_patterns, by = 'participant')
+
+```

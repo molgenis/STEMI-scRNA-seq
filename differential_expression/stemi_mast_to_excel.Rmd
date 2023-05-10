@@ -1,0 +1,175 @@
+---
+title: "stemi_mast_to_excel"
+author: "Roy Oelen"
+date: "2023-03-28"
+output: html_document
+---
+
+```{r header, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Roy Oelen
+# Name: stemi_mast_to_excel.Rmd
+# Function:
+############################################################################################################################
+
+```
+
+```{r libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# libraries        #
+####################
+
+library(xlsx)
+
+```
+
+```{r functions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# Functions        #
+####################
+
+label_dict <- function(){
+  label_dict <- list()
+  # condition combinations
+  label_dict[['UTBaseline']] <- 'UT-Baseline'
+  label_dict[['UTt24h']] <- 'UT-t24h'
+  label_dict[['UTt8w']] <- 'UT-t8w'
+  label_dict[['Baselinet24h']] <- 'Baseline-t24h'
+  label_dict[['Baselinet8w']] <- 'Baseline-t8w'
+  label_dict[['t24ht8w']] <- 't24h-t8w'
+  label_dict[['UTBaseline']] <- 'HC-t0'
+  label_dict[['UTt24h']] <- 'HC-t24h'
+  label_dict[['UTt8w']] <- 'HC-t8w'
+  label_dict[['Baselinet24h']] <- 't0-t24h'
+  label_dict[['Baselinet8w']] <- 't0-t8w'
+  # conditions
+  label_dict[['UT']] <- 'HC'
+  label_dict[['Baseline']] <- 't0'
+  label_dict[['t24h']] <- 't24h'
+  label_dict[['t8w']] <- 't8w'
+  # major cell types
+  label_dict[["Bulk"]] <- "bulk-like"
+  label_dict[["bulk"]] <- "bulk-like"
+  label_dict[["CD4T"]] <- "CD4+ T"
+  label_dict[["CD8T"]] <- "CD8+ T"
+  label_dict[["monocyte"]] <- "monocyte"
+  label_dict[["NK"]] <- "NK"
+  label_dict[["B"]] <- "B"
+  label_dict[["DC"]] <- "DC"
+  label_dict[["HSPC"]] <- "HSPC"
+  label_dict[["plasmablast"]] <- "plasmablast"
+  label_dict[["platelet"]] <- "platelet"
+  label_dict[["T_other"]] <- "other T"
+  # minor cell types
+  label_dict[["CD4_TCM"]] <- "CD4 TCM"
+  label_dict[["Treg"]] <- "T regulatory"
+  label_dict[["CD4_Naive"]] <- "CD4 naive"
+  label_dict[["CD4_CTL"]] <- "CD4 CTL"
+  label_dict[["CD8_TEM"]] <- "CD8 TEM"
+  label_dict[["cMono"]] <- "cMono"
+  label_dict[["CD8_TCM"]] <- "CD8 TCM"
+  label_dict[["ncMono"]] <- "ncMono"
+  label_dict[["cDC2"]] <- "cDC2"
+  label_dict[["B_intermediate"]] <- "B intermediate"
+  label_dict[["NKdim"]] <- "NK dim"
+  label_dict[["pDC"]] <- "pDC"
+  label_dict[["ASDC"]] <- "ASDC"
+  label_dict[["CD8_Naive"]] <- "CD8 naive"
+  label_dict[["MAIT"]] <- "MAIT"
+  label_dict[["CD8_Proliferating"]] <- "CD8 proliferating"
+  label_dict[["CD4_TEM"]] <- "CD4 TEM"
+  label_dict[["B_memory"]] <- "B memory"
+  label_dict[["NKbright"]] <- "NK bright"
+  label_dict[["B_naive"]] <- "B naive"
+  label_dict[["gdT"]] <- "gamma delta T"
+  label_dict[["CD4_Proliferating"]] <- "CD4 proliferating"
+  label_dict[["NK_Proliferating"]] <- "NK proliferating"
+  label_dict[["cDC1"]] <- "cDC1"
+  label_dict[["ILC"]] <- "ILC"
+  label_dict[["dnT"]] <- "double negative T"
+  return(label_dict)
+}
+
+
+get_output_per_comparison <- function(output_loc, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), comparisons=c('UTBaseline', 'Baselinet24h', 't24ht8w')) {
+  # store the results per cell type
+  results_per_celltype <- list()
+  # check each cell type
+  for (cell_type in cell_types) {
+    # store per condition combination as well
+    result_per_comparison <- list()
+    # check each comparison
+    for (comparison in comparisons) {
+      # paste together the output location
+      output_loc_full <- paste(output_loc, cell_type, comparison, '.tsv', sep = '')
+      # read the table
+      output <- read.table(output_loc_full, header = T, sep = '\t', row.names = 1)
+      # add the cell type and comparison
+      output <- cbind(
+        data.frame(cell_type = rep(cell_type, times = nrow(output)), comparison = rep(comparison, times = nrow(output)), gene = rownames(output)),
+        output
+      )
+      # add to the comparison list
+      result_per_comparison[[comparison]] <- output
+    }
+    # merge the list of dataframes together
+    results_comparisons <- do.call("rbind", result_per_comparison)
+    # add to the list per cell type
+    results_per_celltype[[cell_type]] <- results_comparisons
+  }
+  return(results_per_celltype)
+}
+
+
+write_output_to_excel <- function(de_output_loc, excel_output_loc, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), comparisons=c('UTBaseline', 'Baselinet24h', 't24ht8w'), use_label_dict=T, remove_columns=c('gene_v2', 'gene_v3', 'idx')) {
+  # get the output
+  results_per_celltype <- get_output_per_comparison(de_output_loc, cell_types, comparisons)
+  # create a new workbook
+  wb = createWorkbook()
+  # check each cell type
+  for (celltype in names(results_per_celltype)) {
+    # create the name for the sheet
+    sheet_name <- celltype
+    # replace with a better label if requested
+    if (use_label_dict) {
+      sheet_name <- label_dict()[[celltype]]
+    }
+    # create the sheet
+    sheet = createSheet(wb, sheet_name)
+    # fetch the dataframe
+    celltype_result <- results_per_celltype[[celltype]]
+    # again, replace labels if requested
+    if (use_label_dict) {
+      celltype_result[['cell_type']] <- as.vector(unlist(label_dict()[celltype_result[['cell_type']]]))
+      celltype_result[['comparison']] <- as.vector(unlist(label_dict()[celltype_result[['comparison']]]))
+    }
+    if (!is.null(remove_columns)) {
+      celltype_result <- celltype_result[, setdiff(colnames(celltype_result), remove_columns)]
+    }
+    # add dataframe to sheet
+    addDataFrame(celltype_result, sheet = sheet, startColumn=1, row.names=FALSE)
+  }
+  # write the result
+  saveWorkbook(wb, excel_output_loc)
+}
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# Main Code        #
+####################
+
+# location of the DE
+de_output_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/rna/'
+# location of the Excel sheet
+excel_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301_summary.xlsx'
+# create the sheet
+write_output_to_excel(de_output_loc, excel_loc, cell_types = c('bulk', 'B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'))
+
+```
