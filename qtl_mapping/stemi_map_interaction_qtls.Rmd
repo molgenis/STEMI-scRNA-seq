@@ -1,0 +1,889 @@
+---
+title: "stemi_map_interaction_qtls"
+output: html_document
+date: "2023-01-19"
+---
+
+```{r header, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+#!usrbinenv Rscript
+############################################################################################################################
+# Authors: Roy Oelen
+# Name: stemi_map_interaction_qtls.Rmd
+# Function:
+############################################################################################################################
+```
+
+```{r libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# libraries        #
+####################
+# load genotype data
+library(vcfR)
+# to work in parallel
+library(doParallel)
+library(foreach)
+# faster than dataframes
+library(data.table)
+# for the single cell data
+library(Seurat)
+# for the regression
+library(lme4)
+library(lmerTest)
+library(nlme)
+# for plotting
+library(ggplot2)
+library(cowplot)
+# for UMAP
+library(uwot)
+
+```
+
+```{r objects, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# objects.         #
+####################
+# object to hold the genotype information
+Genotypes <- setRefClass('Genotypes',
+  fields = list(
+    # the snps
+    calls = 'data.table',
+    # the metadata
+    meta = 'data.table'
+  ),
+  methods = list(
+    get_genotypes = function(.self, snp_id=NULL, chrom_pos=NULL, snp_pos=NULL, convert_alleles=F, to_numeric=F) {
+      # we need the index of the SNP
+      snp_index <- NULL
+      if (!is.null(snp_id)) {
+        # extract snp index
+        snp_index <- grep(snp_id, .self$meta[['ID']])
+        
+      } else if (!is.null(chrom_pos) & !is.null(snp_pos)) {
+        # extract snp index
+        snp_index <- which(.self$meta[['CHROM']] == chrom_pos & .self$meta[['POS']] == snp_pos)
+        
+      } else {
+        stop("Need to supply the variant ID, or both the CHROM and SNP positions")
+      }
+      # grab the genotypes
+      genotypes_raw <- as.vector(unlist(.self$calls[snp_index, ]))
+      # convert from phased
+      #genotypes_raw <- gsub('', '|', genotypes_raw)
+      # convert to alleles if requested
+      if (convert_alleles) {
+        # get the ref
+        ref <- .self$meta[snp_index, 'REF'][['REF']][1]
+        # and alt
+        alt <- .self$meta[snp_index, 'ALT'][['ALT']][1]
+        # harmonize placement of slash
+        genotypes_raw <- gsub('1\\|0', '0\\|1', genotypes_raw)
+        #genotypes_raw <- gsub('10', '01', genotypes_raw)
+        # replace letters
+        genotypes_raw <- gsub('0', ref, genotypes_raw)
+        genotypes_raw <- gsub('1', alt, genotypes_raw)
+      }
+      if (to_numeric) {
+        genotypes_raw <- as.numeric(as.factor(genotypes_raw))
+      }
+      # turn into list
+      genotypes_raw <- as.list(genotypes_raw)
+      # add the participants as the keys
+      names(genotypes_raw) <- colnames(.self$calls)
+      return(genotypes_raw)
+    },
+    get_available_variants = function(.self){
+      return(.self$meta[['ID']])
+    }
+  )
+)
+
+```
+
+```{r functions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# Functions        #
+####################
+
+create_genotypes_object <- function(genotypes_vcf){
+  # get the donors in the genotype data
+  donors_vcf <- colnames(genotypes_vcf@gt)
+  # get the intersection
+  donors <- setdiff(donors_vcf, c('FORMAT'))
+  # and the genotype data itself
+  gt_calls <- data.table(extract.gt(genotypes_vcf)[, donors])
+  # grab the genotypes
+  gt_metadata <- data.table(genotypes_vcf@fix[, c('CHROM', 'POS', 'ID', 'REF', 'ALT')])
+  # create object
+  genos <- Genotypes$new(calls = gt_calls, meta = gt_metadata)
+  return(genos)
+}
+
+olink_to_plottable_table <- function(olink, split_char='\\.'){
+  id_and_timepoint_df <- NULL
+  # check the rownames
+  for(id_and_timepoint in rownames(olink)){
+    # split into id and timepoint
+    id_and_timepoint_split <- strsplit(id_and_timepoint, split_char)
+    id <- id_and_timepoint_split[[1]][[1]]
+    timepoint <- id_and_timepoint_split[[1]][[2]]
+    # turn into row
+    id_and_timepoint_row <- data.frame(id=c(id), timepoint=c(timepoint))
+    # add to dataframe
+    if(is.null(id_and_timepoint_df)){
+      id_and_timepoint_df <- id_and_timepoint_row
+    }
+    else{
+      id_and_timepoint_df <- rbind(id_and_timepoint_df, id_and_timepoint_row)
+    }
+  }
+  # add new columns to original data
+  olink <- cbind(id_and_timepoint_df, olink)
+  return(olink)
+}
+
+olink_to_vertical <- function(olink, metadata_tables=c('id', 'timepoint')) {
+  # put each olink in a list
+  data_per_protein <- list()
+  # get the columns that would be proteins
+  proteins <- setdiff(colnames(olink), metadata_tables)
+  # check each protein
+  for (protein in proteins) {
+    # get the metadata
+    data_protein <- olink[, c(metadata_tables)]
+    # add the protein as a column
+    data_protein[['protein']] <- protein
+    # add the actual values
+    data_protein[['expression']] <- olink[[protein]]
+    # add to the list
+    data_per_protein[[protein]] <- data_protein
+  }
+  data_proteins <- do.call("rbind", data_per_protein)
+  return(data_proteins)
+}
+
+
+# get the gene expression from from the assay and slot
+get_gene_expression = function(seurat_object, genes, assay='SCT', slot='data', metadata_columns=c('assignment.final', 'timepoint.final', 'cell_type')){
+  # init the expression matrix
+  expression_matrix <- NULL
+  if (assay == 'SCT' & slot == 'counts'){
+    expression_matrix <- as.data.frame(t(as.matrix(seurat_object@assays$SCT@counts[intersect(genes, rownames(seurat_object@assays$SCT@counts)), ])))
+  }
+  else if (assay == 'SCT' & slot == 'data'){
+    expression_matrix <- as.data.frame(t(as.matrix(seurat_object@assays$SCT@data[intersect(genes, rownames(seurat_object@assays$SCT@data)), ])))
+  }
+  else if (assay == 'SCT' & slot == 'scale.data'){
+    expression_matrix <- as.data.frame(t(as.matrix(seurat_object@assays$SCT@scale.data[intersect(genes, rownames(seurat_object@assays$SCT@scale.data)), ])))
+  }
+  else if (assay == 'RNA' & slot == 'counts'){
+    expression_matrix <- as.data.frame(t(as.matrix(seurat_object@assays$RNA@counts[intersect(genes, rownames(seurat_object@assays$RNA@counts)), ])))
+  }
+  else if (assay == 'RNA' & slot == 'data'){
+    expression_matrix <- as.data.frame(t(as.matrix(seurat_object@assays$RNA@data[intersect(genes, rownames(seurat_object@assays$RNA@data)), ])))
+  }
+  else if (assay == 'RNA' & slot == 'scale.data'){
+    expression_matrix <- as.data.frame(t(as.matrix(seurat_object@assays$RNA@scale.data[intersect(genes, rownames(seurat_object@assays$RNA@scale.data)), ])))
+  }
+  # add the metadata, should be in the same order as the expression data
+  expression_matrix <- cbind(seurat_object@meta.data[, metadata_columns], expression_matrix)
+  return(expression_matrix)
+}
+
+
+wide_to_long_table <- function(wide_table, metadata_columns=c('assignment.final', 'timepoint.final')) {
+  # we will create the table per gene
+  table_per_gene <- list()
+  # get the genes
+  genes <- setdiff(colnames(wide_table), metadata_columns)
+  # check each gene
+  for (gene in genes) {
+    # extract metadata
+    table_gene <- wide_table[, metadata_columns]
+    # set the gene
+    table_gene[['gene']] <- gene
+    # set the expression
+    table_gene[['expression']] <- wide_table[[gene]]
+    # add to list
+    table_per_gene[[gene]] <- table_gene
+  }
+  # merge all the table
+  table_all_genes <- do.call("rbind", table_per_gene)
+  return(table_all_genes)
+}
+
+get_mean_expression_matrices <- function(seurat_object, metadata_columns=c('cell_type', 'assignment.final', 'timepoint.final'), assay='SCT', slot='data') {
+  # check at the last metadata column
+  categories_to_check <- metadata_columns[length(metadata_columns)]
+  # set as the ident
+  Idents(seurat_object) <- categories_to_check
+  
+  # # SINGLETHREADED
+  # 
+  # # we will save for each category
+  # expression_per_category <- list()
+  # # and we will calculate per category
+  # for (category in unique(seurat_object@meta.data[[categories_to_check]])) {
+  #   # subset to that category
+  #   seurat_object_category <- seurat_object[, seurat_object@meta.data[[categories_to_check]] == category]
+  #   # we will get average expression for this category
+  #   expression_matrix_category <- NULL
+  #   # if this is the last category, we can just extract the average expression
+  #   if (length(metadata_columns) == 1) {
+  #     expression_matrix_category <- AverageExpression(seurat_object_category, assays = c(assay), slot = slot)[[assay]]
+  #     # turn into dataframe
+  #     expression_matrix_category <- data.frame(expression_matrix_category)
+  #     # set the genes
+  #     expression_matrix_category[['gene']] <- rownames(expression_matrix_category)
+  #   }
+  #   # if we still have more categories, we have to recursively call this function again, excluding this category
+  #   else {
+  #     expression_matrix_category <- get_mean_expression_matrices(seurat_object = seurat_object_category, metadata_columns = metadata_columns[1 : (length(metadata_columns) - 1)], assay = assay, slot = slot)
+  #   }
+  #   
+  #   # add the category to the expression matrix
+  #   expression_matrix_category[[categories_to_check]] <- category
+  #   # add to the list
+  #   expression_per_category[[category]] <- expression_matrix_category
+  # }
+  
+  # MULTITHREADED
+
+  expression_per_category <- foreach(category = unique(seurat_object@meta.data[[categories_to_check]])) %dopar% {
+    expression_matrix_category <- NULL
+  #   # if this is the last category, we can just extract the average expression
+    if (length(metadata_columns) == 1) {
+      # we do the subset in a separate function, Seurat sometimes has unpredictable behavior otherwise
+      expression_matrix_category <- subset_and_get_get_mean_expression(seurat_object, categories_to_check, category, assay, slot)
+    }
+    # if we still have more categories, we have to recursively call this function again, excluding this category
+    else {
+      expression_matrix_category <- subset_and_get_mean_expression_matrices(seurat_object, categories_to_check, category, metadata_columns[1 : (length(metadata_columns) - 1)], assay, slot)
+    }
+    # add the category to the expression matrix
+    expression_matrix_category[[categories_to_check]] <- category
+    return(expression_matrix_category)
+  }
+  
+  # now add the tables of these categories together
+  expression_all_categories <- do.call("rbind", expression_per_category)
+  # make the expression have a better column name
+  #expression_all_categories[['expression']] <- expression_all_categories[['all']]
+  # and remove the original
+  #expression_all_categories[['all']] <- NULL
+  return(expression_all_categories)
+}
+
+subset_and_get_mean_expression_matrices <- function(seurat_object, metadata_column_to_subset_by, metadata_column_value_to_subset_by, metadata_columns=c('cell_type', 'assignment.final', 'timepoint.final'), assay='SCT', slot='data'){
+  seurat_object_category <- seurat_object[, seurat_object@meta.data[[metadata_column_to_subset_by]] == metadata_column_value_to_subset_by]
+  expression_matrix_category <- get_mean_expression_matrices(seurat_object = seurat_object_category, metadata_columns = metadata_columns, assay = assay, slot = slot)
+  return(expression_matrix_category)
+}
+
+subset_and_get_get_mean_expression <- function(seurat_object, metadata_column_to_subset_by, metadata_column_value_to_subset_by, assay, slot) {
+  # subset
+  seurat_object_subset <- seurat_object[, seurat_object@meta.data[[metadata_column_to_subset_by]] == metadata_column_value_to_subset_by]
+  # calculate averaage expression
+  expression_matrix <- AverageExpression(seurat_object_subset, assays = c(assay), slot = slot)[[assay]]
+  # turn into dataframe
+  expression_matrix <- data.frame(expression_matrix)
+  # set gene names
+  expression_matrix[['gene']] <- rownames(expression_matrix)
+  return(expression_matrix)
+}
+
+add_genotypes <- function(expression_data, genotype_object, variant, participant_column='assignment.final', genotype_column=NULL, convert_alleles=T, to_numeric=T) {
+  # extract the genotypes
+  genotypes_dict <- genotype_object$get_genotypes(variant, convert_alleles = convert_alleles, to_numeric = to_numeric)
+  # turn into dataframe, that way it is easier to handle missing data
+  genotypes_table <- data.frame(participant = names(genotypes_dict), genotype = as.vector(unlist(genotypes_dict)))
+  # add to the table by matching the IDs
+  expression_data[[variant]] <- genotypes_table[match(expression_data[[participant_column]], genotypes_table[['participant']]), 'genotype']
+  # if we wanted a different name, we will do so
+  if (!is.null(genotype_column)) {
+    expression_data[[genotype_column]] <- expression_data[[variant]]
+    # remove the original name
+    #expression_data[[variant]] <- NULL
+  }
+  return(expression_data)
+}
+
+perform_regression <- function(data, string_formula, use_lme4=F) {
+  # perform the regression
+  regression_result <- NULL
+  # lme4 is faster, but does not compute P values
+  if (use_lme4) {
+    regression_result <- lmer(formula = as.formula(string_formula), data = data)
+  }
+  else{
+    regression_result <- lme(fixed = string_formula[['fixed']], random=string_formula[['random']], data = data)
+  }
+  return(regression_result)
+}
+
+do_regression_of_variant_probe <- function(probe_and_metadata, genotype_data, variant, probe, string_formula, probe_column='protein', id_column='id', use_lme4=F, na_omit=T){
+   # subset the probe and metadata to that probe
+    probe_metadata_probe <- probe_and_metadata[as.character(probe_and_metadata[[probe_column]]) == probe, ]
+    # add the genotype
+    probe_metadata_probe <- add_genotypes(probe_metadata_probe, genotype_data, variant, id_column, 'variant')
+    # remove the '|' from the genotypes to avoid confusion
+    #probe_metadata_probe[['variant']] <- gsub('\\|', '', probe_metadata_probe[['variant']])
+    # put result in the list
+    result_list <- list('variant' = variant, 'probe' = probe)
+    # we might have issues in cases where the genotypes are the same, missing
+    tryCatch(
+        {
+          if (na_omit) {
+            probe_metadata_probe <- na.omit(probe_metadata_probe)
+          }
+          # we can only progress if there is variance in the genotypes
+          if (length(unique(probe_metadata_probe[[variant]])) > 1) {
+            # perform the regression
+            regression_result <- perform_regression(probe_metadata_probe, string_formula, use_lme4 = use_lme4)
+            result_list[['result']] <- regression_result
+          }
+          else {
+            print('no variance in probe')
+          }
+        },
+        #error=function(e) NULL
+         error=function(cond) {
+           message(paste('error in variant-probe:', variant, '-', probe, '\n', sep = ''))
+           message(cond)
+         }
+    )
+    return(result_list)
+}
+
+
+do_regression_per_variant_probe <- function(probe_and_metadata, genotype_data, confinement_table, string_formula, probe_column='protein', id_column='id', confinement_variant_column='variant', confinement_probe_column='probe', genotype_column='genotype', use_lme4=F, force_single_thread=F) {
+  result_per_variant_probe <- NULL
+  # single thread approach
+  if (force_single_thread) {
+    result_per_variant_probe <- list()
+    # check each combination
+    for(row_i in 1:nrow(confinement_table)){
+      # extract the variant
+      variant <- as.character(confinement_table[row_i, confinement_variant_column])
+      # and the probe
+      probe <-  as.character(confinement_table[row_i, confinement_probe_column])
+      # get the result
+      regression_result <- do_regression_of_variant_probe(probe_and_metadata, genotype_data, variant, probe, string_formula, probe_column, id_column, use_lme4)
+      result_per_variant_probe[[paste(variant, probe, sep = '_')]] <- regression_result
+    }
+  } 
+  # multi-thread approach
+  else{
+    # check each combination
+    result_per_variant_probe <- foreach(row_i = 1:nrow(confinement_table)) %dopar% {
+      # extract the variant
+      variant <- as.character(confinement_table[row_i, confinement_variant_column])
+      # and the probe
+      probe <-  as.character(confinement_table[row_i, confinement_probe_column])
+      # get the result
+      regression_result <- do_regression_of_variant_probe(probe_and_metadata, genotype_data, variant, probe, string_formula, probe_column, id_column, use_lme4)
+      return(regression_result)
+    }
+    # add keys as variant-probe combinations
+    variant_probe_keys <- paste(confinement_table[['variant']], confinement_table[['probe']], sep = '_')
+    names(result_per_variant_probe) <- variant_probe_keys
+  }
+  return(result_per_variant_probe)
+}
+
+
+do_regression_per_celltype <- function(probe_and_metadata, genotype_data, confinement_table, string_formula, celltype_column='cell_type', probe_column='protein', id_column='id', confinement_variant_column='variant', confinement_probe_column='probe', genotype_column='genotype', use_lme4=F){
+  # get the celltypes
+  celltypes <- unique(as.character(probe_and_metadata[[celltype_column]]))
+  # do per celltype
+  regression_per_celltype <- foreach(celltype = celltypes) %dopar% {
+    # subset to that celltype
+    data_celltype <- probe_and_metadata[probe_and_metadata[[celltype_column]] == celltype, ]
+    # we can only regress if there is data
+    if (nrow(data_celltype) > 0) {
+      # perform regression
+      regression_celltype <- do_regression_per_variant_probe(probe_and_metadata = data_celltype, genotype_data = genotype_data, confinement_table = confinement_table, string_formula = string_formula, probe_column = probe_column, id_column = id_column, confinement_variant_column = confinement_variant_column, confinement_probe_column = confinement_probe_column, genotype_column = genotype_column, use_lme4 = use_lme4, force_single_thread=T)
+      # add the celltype
+      regression_celltype[['celltype']] <- celltype
+      # return the result
+      return(regression_celltype)
+    }
+    else {
+      return(list('celltype' = celltype))
+    }
+  }
+  # set the celltypes as keys
+  names(regression_per_celltype) <- celltypes
+  return(regression_per_celltype)
+}
+
+
+plot_eqtl <- function(probe_and_metadata, genotype_object, probe, variant, id_column='assignment', probe_column='gene', qtl_column='expression', paper_style=T, legendless=F, pointless=F, remove_phasing=T) {
+  # add the genotype data
+  probe_metadata_wvariant <- add_genotypes(probe_and_metadata, genotype_object, variant, id_column, genotype_column = 'variant', to_numeric = F, convert_alleles = T)
+  # harmonize the data
+  probe_metadata_wvariant[['expression']] <- probe_metadata_wvariant[[qtl_column]]
+  # remove empty entries
+  probe_metadata_wvariant <- probe_metadata_wvariant[!is.na(probe_metadata_wvariant[['variant']]), ]
+  # change the | that implies phasing
+  probe_metadata_wvariant[['variant']] <- gsub('\\|', '', probe_metadata_wvariant[['variant']])
+  # plot the qtl
+  p <- ggplot(data = probe_metadata_wvariant[probe_metadata_wvariant[[probe_column]] == probe, ], mapping = aes(x = variant, y = expression, fill = variant)) + 
+    geom_boxplot(outlier.shape = NA) +
+    geom_jitter(size = 0.5, alpha = 0.5, width=0.15)
+  if(pointless){
+    p <- p + theme(axis.text.x=element_blank(), 
+                   axis.ticks = element_blank(),
+                   axis.title.x = element_blank())
+  }
+  if(legendless){
+    p <- p + theme(legend.position = 'none')
+  }
+  if(paper_style){
+    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  p <- p + xlab(variant)
+  return(p)
+}
+
+plot_umap <- function(x, labels,
+                      main="souporcell cluster",
+                      pad=0.1, cex=0.6, pch=19, add=FALSE, legend.suffix="",
+                      cex.main=1, cex.legend=0.85) {
+  
+  qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
+  col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+  colors <- sample(col_vector, length(unique(labels)))
+  
+  #colors <- RColorBrewer::brewer.pal(length(unique(labels)), 'Set3')
+  names(colors) <- unique(labels)
+  #colors[['doublet']] <- 'gray'
+  
+  layout = x
+  if (is(x, "umap")) {
+    layout = x$layout
+  } 
+  
+  xylim = range(layout)
+  xylim = xylim + ((xylim[2]-xylim[1])*pad)*c(-0.5, 0.5)
+  if (!add) {
+    par(mar=c(0.2,0.7,1.2,0.7), ps=10)
+    plot(xylim, xylim, type="n", axes=F, frame=F)
+    rect(xylim[1], xylim[1], xylim[2], xylim[2], border="#aaaaaa", lwd=0.25)  
+  }
+  points(layout[,1], layout[,2], col=colors[labels],
+         cex=cex, pch=pch)
+  mtext(side=3, main, cex=cex.main)
+  
+  labels.u = unique(labels)
+  legend.pos = "topleft"
+  legend.text = as.character(labels.u)
+  if (add) {
+    legend.pos = "bottomleft"
+    legend.text = paste(as.character(labels.u), legend.suffix)
+  }
+  
+  legend(legend.pos, legend=legend.text, inset=0.03,
+         col=colors[labels.u],
+         bty="n", pch=pch, cex=cex.legend)
+}
+
+
+create_umap <- function(numeric_matrix, labels, main="souporcell cluster"){
+  # get the coordinates
+  umap.coordinates <- umap(t(numeric_matrix))
+  # create the plot
+  umap_plot <- plot_umap(umap.coordinates, labels, main)
+  return(umap_plot)
+}
+
+
+pqtl_output_to_table <- function(output_per_snp_probe, bonferroni=T) {
+  # first we'll put it all in a list
+  result_per_combination <- list()
+  # check each output
+  for (snp_probe in names(output_per_snp_probe)) {
+    # extract for snp probe
+    result_snp_probe <- output_per_snp_probe[[snp_probe]]
+    # check if there is a result
+    if ('result' %in% names(result_snp_probe)) {
+      # extract result
+      regression_result <- result_snp_probe[['result']]
+      # get the coefficients
+      coefficients_result <- data.frame(summary(regression_result)$coefficients)
+      # set the colnames
+      colnames(coefficients_result) <- c('estimate', 'se', 'df', 't', 'p')
+      # add the snp and probe
+      coefficients_result <- cbind(
+        data.frame(variant = rep(result_snp_probe[['variant']], times = nrow(coefficients_result)),
+                                              probe = rep(result_snp_probe[['probe']], times = nrow(coefficients_result)),
+                                              coefficient = rownames(coefficients_result)), 
+        coefficients_result
+      )
+      # put in list
+      result_per_combination[[snp_probe]] <- coefficients_result
+    }
+  }
+  # merge it all together
+  results_combinations <- do.call("rbind", result_per_combination)
+  # do bonferroni correction if requested
+  if (bonferroni) {
+    # get the number of unique snp-probe combinations
+    nr_snp_probe_combinations <- length(unique(paste(results_combinations[['variant']], results_combinations[['probe']], sep = '_')))
+    # do correction
+    results_combinations[['p_bonferroni']] <- results_combinations[['p']] * nr_snp_probe_combinations
+    # fix number larger than 1
+    results_combinations[results_combinations[['p_bonferroni']] > 1, 'p_bonferroni'] <- 1
+  }
+  return(results_combinations)
+}
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# Main Code        #
+####################
+# location of various files
+olinkid_to_uid_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/olink/olinkid_to_uniprotid.tsv'
+uniprotid_to_gs_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/olink/uniprot_to_genesymbol.tsv'
+gs_to_ens_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/features_v3.tsv'
+olink_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/protein_data/olink/20200442_Groot_NPX-QC_format_fixed.tsv'
+inclusion_list_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata/included_participants.txt'
+metadata_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata/cardio.integrated.20210301.metadata.tsv'
+age_sex_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata/stemi_age_gender_match_wtestid.tsv'
+# load mapping files
+gs_to_ens <- read.table(gs_to_ens_loc, sep = '\t', header = F)
+uniprotid_to_gs <- read.table(uniprotid_to_gs_loc, sep = '\t', header = T)
+olinkid_to_uid <- read.table(olinkid_to_uid_loc, sep = '\t', header = T)
+
+# location of the Seurat object
+cardio_integrated_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/seurat/cardio.integrated.20210301.rds'
+
+# location of the genotype data
+genotypes_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/genotype/nc2022_stemi_aragam2022.vcf.gz'
+
+```
+
+```{r read_protein_data, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# read protein data
+olink <- read.table(olink_loc, sep = '\t', header = T, row.names = 1)
+# covert so that the timepoint is split as a separate column
+olink_plottable <- olink_to_plottable_table(olink)
+# get the participants to include
+inclusion_list <- read.table(inclusion_list_loc, header = F)$V1
+# subset to the ones we want to include
+olink_plottable <- olink_plottable[!is.na(olink_plottable[['id']]) & olink_plottable[['id']] %in% inclusion_list, ]
+# and make vertical
+olink_vertical <- olink_to_vertical(olink_plottable)
+```
+
+```{r read_seurat, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# read seurat object
+cardio_integrated <- readRDS(cardio_integrated_loc)
+
+```
+
+```{r mean_expression_chems, include=FALSE, fig.width=20, fig.height=20}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get mean expression of all V2
+mean_expression_v2 <- get_mean_expression_matrices(cardio_integrated[, cardio_integrated@meta.data$orig.ident == 'stemi_v2' | cardio_integrated@meta.data$orig.ident == 'hc_v2'], metadata_columns=c('cell_type_lowerres', 'timepoint.final', 'assignment.final'))
+mean_expression_v3 <- get_mean_expression_matrices(cardio_integrated[, cardio_integrated@meta.data$orig.ident == 'stemi_v3' | cardio_integrated@meta.data$orig.ident == 'hc_v3'], metadata_columns=c('cell_type_lowerres', 'timepoint.final', 'assignment.final'))
+# add the chemistry as a variable
+mean_expression_v2[['chem']] <- 'V2'
+mean_expression_v3[['chem']] <- 'V3'
+# combine them
+mean_expression <- rbind(mean_expression_v2, mean_expression_v3)
+# make the column names nicer
+colnames(mean_expression) <- c('expression', 'gene', 'celltype', 'timepoint', 'assignment', 'chem')
+```
+
+```{r read_genotypes, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get genotype data
+genotypes <- read.vcfR(genotypes_loc)
+# turn into object
+genotype_object <- create_genotypes_object(genotypes)
+
+```
+
+```{r add_sex_age, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# read the agesex file
+age_sex <- read.table(age_sex_loc, header = T, sep = '\t')
+# add the reverse as well, so we have the ID, gender, age for the matched LL individuals
+age_sex <- rbind(age_sex, data.frame(
+  ID = age_sex[['ll_match_id']], 
+  gender = age_sex[['ll_match_gender']],
+  age = age_sex[['ll_match_age']],
+  ll_match_id = age_sex[['ID']],
+  ll_match_age = age_sex[['age']],
+  ll_match_gender = age_sex[['gender']]
+))
+# add to the mean expression
+mean_expression[, c('age', 'sex')] <- age_sex[match(mean_expression[['assignment']], age_sex[['ID']]), c('age', 'gender')]
+# and to the proteins
+olink_vertical[, c('age', 'sex')] <- age_sex[match(olink_vertical[['id']], age_sex[['ID']]), c('age', 'gender')]
+```
+
+```{r pqtl_mapping, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# combine all the SNPs with the proteins
+pqtl_confinement <- expand.grid(genotype_object$get_available_variants(), unique(olink_vertical[['protein']]))
+# set correct column names
+colnames(pqtl_confinement) <- c('variant', 'probe')
+# create the formula
+formula_protein <- 'expression ~ age + sex + timepoint + variant + variant*timepoint + (1|id)'
+# perform the regression
+pqtl_output <- do_regression_per_variant_probe(olink_vertical, genotype_object, 
+                                               #confinement_table = data.frame(variant=c('rs6686750', 'rs8124182', 'rs10422256'), probe=c('OID00602', 'OID00568', 'OID00564')), 
+                                               confinement_table = pqtl_confinement,
+                                               string_formula = formula_protein, use_lme4 = T, force_single_thread = T)
+pqtl_output_preidentified <- do_regression_per_variant_probe(olink_vertical, genotype_object, 
+                                               confinement_table = data.frame(variant=c('rs6686750', 'rs8124182', 'rs10422256'), probe=c('OID00602', 'OID00568', 'OID00564')), 
+                                               #confinement_table = pqtl_confinement,
+                                               string_formula = formula_protein, use_lme4 = T, force_single_thread = T)
+```
+
+```{r pqtl_table, include=TRUE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+pqtl_output_preidentified_table <- pqtl_output_to_table(pqtl_output_preidentified)
+pqtl_output_preidentified_table[pqtl_output_preidentified_table[['p_bonferroni']] < 0.05, ]
+
+pqtl_output_table <- pqtl_output_to_table(pqtl_output)
+pqtl_output_table[pqtl_output_table[['p_bonferroni']] < 0.05 & pqtl_output_table[['coefficient']] %in% c('variant', 'timepointt8w:variant', 'timepointt24h:variant', 'timepointBaseline:variant'), ]
+
+```
+
+```{r eqtl_mapping, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+# make a mapping
+uniprot_proteins <- olinkid_to_uid[match(unique(unique(olink_vertical[['protein']])), olinkid_to_uid[['OlinkID']]), 'Uniprot.ID']
+# remove NA
+uniprot_proteins <- uniprot_proteins[!is.na(uniprot_proteins)]
+# to gene symbol
+gs_proteins <- uniprotid_to_gs[match(uniprot_proteins, uniprotid_to_gs[['From']]), 'To']
+# create confinement
+eqtl_confinement <- expand.grid(genotype_object$get_available_variants(), gs_proteins)
+colnames(eqtl_confinement) <- c('variant', 'probe')
+# make a formula
+formula_rna <- 'expression ~ chem + age + sex + timepoint + variant + variant*timepoint + (1|assignment)'
+# do regression per celltype
+eqtl_confinement_il6r <- eqtl_confinement[(eqtl_confinement$probe == 'IL6R' & eqtl_confinement$variant == 'rs6686750') |
+                                            (eqtl_confinement$probe == 'MMP9' & eqtl_confinement$variant == 'rs8124182') |
+                                            (eqtl_confinement$probe == 'LDLR' & eqtl_confinement$variant == 'rs10422256'), ]
+eqtl_output_per_celltype_il6r <- do_regression_per_celltype(mean_expression[mean_expression[['celltype']] %in% c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), ], genotype_object, celltype_column = 'celltype', confinement_table = eqtl_confinement_il6r, string_formula = formula_rna, use_lme4 = T, id_column = 'assignment', probe_column = 'gene')
+saveRDS(eqtl_confinement_il6r, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1qtl_mappingaragam_confined_interaction_qtl_mapping_wut_confined.rds')
+```
+
+```{r eqtl_mapping, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get the LL genotype data
+genotype_vcf_ll_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/genotype/lld_genotypes_aragam_2022_primary_gws_gwas_snps.vcf.gz'
+genotype_vcf_ll <- read.vcfR(genotype_vcf_ll_loc)
+# turn into object
+genotype_ll_object <- create_genotypes_object(genotype_vcf_ll)
+# read the olink expression data
+ll_olink_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/pqtl/expression_matrices/olink/lld/bulk_expression.tsv'
+ll_olink_vertical <- data.frame(t(read.table(ll_olink_loc, header = T, row.names = 1, sep = '\t')))
+# make the rownames the same as in the genotypes
+rownames(ll_olink_vertical) <- gsub('^X', '0_', rownames(ll_olink_vertical))
+# add timepoint and donors as columns
+ll_olink_vertical <- cbind(data.frame(id = rownames(ll_olink_vertical), timepoint = 'C'), ll_olink_vertical)
+# and make vertical
+ll_olink_vertical <- olink_to_vertical(ll_olink_vertical)
+
+```
+
+```{r eqtl_mapping, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# create the formula
+formula_protein_ll <- 'expression ~ timepoint + variant + (1|id)'
+# perform the regression
+pqtl_output_ll <- do_regression_per_variant_probe(ll_olink_vertical, genotype_ll_object, 
+                                               confinement_table = data.frame(variant=c('rs6686750', 'rs8124182', 'rs10422256'), probe=c('ENSG00000160712', 'ENSG00000100985', 'ENSG00000130164')), 
+                                               #confinement_table = pqtl_confinement,
+                                               string_formula = formula_protein_ll, use_lme4 = T, force_single_thread = T)
+```
+
+```{r eqtl_mapping, include=TRUE, fig.width=10, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+plot_grid(
+  ggdraw() + draw_label('rs6686750 affecting IL6R protein expression', fontface='bold'), 
+  plot_grid(
+  plot_eqtl(probe_and_metadata = olink_vertical[olink_vertical[['timepoint']] == 'Baseline', ], genotype_object = genotype_object, probe = 'OID00602', variant = 'rs6686750', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(10,13.5)) + ggtitle('t0') + ylab('IL6R protein expression') + scale_fill_manual(values = list('A|A' = '#218e89', 'A|G' = '#ff7101', 'G|G' = '#e12a62')) + annotate("text", x = 'A|G', y = 10, label = expression('p = ' ~ '2.84'^'e-5' ~ ', r = -0.65'), size = 3) + annotate('text', x = 'G|G', y = 13.5, label = '*', size = 9),
+  plot_eqtl(probe_and_metadata = olink_vertical[olink_vertical[['timepoint']] == 't24h', ], genotype_object = genotype_object, probe = 'OID00602', variant = 'rs6686750', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(10,13.5)) + ggtitle('t24h') + ylab('') + scale_fill_manual(values = list('A|A' = '#218e89', 'A|G' = '#ff7101', 'G|G' = '#e12a62')) + annotate("text", x = 'A|G', y = 10, label = expression('p = ' ~ '0.0023' ~ ', r = -0.51'), size = 3) + annotate('text', x = 'G|G', y = 13.5, label = '*', size = 9),
+  plot_eqtl(probe_and_metadata = olink_vertical[olink_vertical[['timepoint']] == 't8w', ], genotype_object = genotype_object, probe = 'OID00602', variant = 'rs6686750', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(10,13.5)) + ggtitle('t6-8w') + ylab('') + scale_fill_manual(values = list('A|A' = '#218e89', 'A|G' = '#ff7101', 'G|G' = '#e12a62')) + annotate("text", x = 'A|G', y = 10, label = expression('p = ' ~ '0.0024' ~ ', r = -0.51'), size = 3) + annotate('text', x = 'G|G', y = 13.5, label = '*', size = 9),
+  plot_eqtl(probe_and_metadata = ll_olink_vertical, genotype_object = genotype_ll_object, probe = 'ENSG00000160712', variant = 'rs6686750', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(3,7)) + ggtitle('LifeLines') + ylab('IL6R protein expression') + scale_fill_manual(values = list('A|A' = '#218e89', 'G|A' = '#ff7101', 'G|G' = '#e12a62')) + annotate("text", x = 'G|A', y = 3, label = expression('p = ' ~ '2.83'^'e-104' ~ ', r = -0.57'), size = 3) + annotate('text', x = 'G|G', y = 7, label = '*', size = 9),
+  nrow = 1),
+  ncol=1, rel_heights=c(0.1, 1)
+)
+
+plot_grid(
+  ggdraw() + draw_label('rs8124182 affecting MMP9 protein expression', fontface='bold'), 
+  plot_grid(plot_eqtl(probe_and_metadata = olink_vertical[olink_vertical[['timepoint']] == 'Baseline', ], genotype_object = genotype_object, probe = 'OID00568', variant = 'rs8124182', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(3,8)) + ggtitle('t0') + ylab('MMP9 protein expression') + scale_fill_manual(values = list('A|A' = '#218e89', 'G|A' = '#ff7101', 'G|G' = '#e12a62')) + annotate("text", x = 'G|A', y = 3, label = expression('p = ' ~ '0.01' ~ ', r = 0.43'), size = 3) + annotate('text', x = 'G|G', y = 8, label = '*', size = 9) + annotate('text', x = 'A|A', y = 3, label = ''),
+  plot_eqtl(probe_and_metadata = olink_vertical[olink_vertical[['timepoint']] == 't24h', ], genotype_object = genotype_object, probe = 'OID00568', variant = 'rs8124182', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(3,8)) + ggtitle('t24h') + ylab('') + scale_fill_manual(values = list('A|A' = '#218e89', 'G|A' = '#ff7101', 'G|G' = '#e12a62')) + annotate("text", x = 'G|A', y = 3, label = expression('p = ' ~ '0.20' ~ ', r = 0.23'), size = 3) + annotate('text', x = 'A|A', y = 3, label = ''),
+  plot_eqtl(probe_and_metadata = olink_vertical[olink_vertical[['timepoint']] == 't8w', ], genotype_object = genotype_object, probe = 'OID00568', variant = 'rs8124182', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(3,8)) + ggtitle('t6-8w') + ylab('') + scale_fill_manual(values = list('A|A' = '#218e89', 'G|A' = '#ff7101', 'G|G' = '#e12a62')) + annotate("text", x = 'G|A', y = 3, label = expression('p = ' ~ '0.16' ~ ', r = 0.25'), size = 3) + annotate('text', x = 'A|A', y = 3, label = ''),
+  plot_eqtl(probe_and_metadata = ll_olink_vertical, genotype_object = genotype_ll_object, probe = 'ENSG00000100985', variant = 'rs8124182', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(3,8)) + ggtitle('LifeLines') + ylab('MMP9 protein expression') + scale_fill_manual(values = list('A|A' = '#218e89', 'G|A' = '#ff7101', 'G|G' = '#e12a62')) + annotate("text", x = 'G|A', y = 3, label = expression('p = ' ~ '0.86' ~ ', r = -0.005'), size = 3),
+  nrow = 1),
+  ncol=1, rel_heights=c(0.1, 1)
+)
+
+plot_grid(
+  ggdraw() + draw_label('rs10422256 affecting LDLR protein expression', fontface='bold'), 
+  plot_grid(
+  plot_eqtl(probe_and_metadata = olink_vertical[olink_vertical[['timepoint']] == 'Baseline', ], genotype_object = genotype_object, probe = 'OID00564', variant = 'rs10422256', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(3,7)) + ggtitle('t0') + ylab('LDLR protein expression') + scale_fill_manual(values = list('A|A' = '#218e89', 'G|A' = '#ff7101', 'G|G' = '#e12a62')) + annotate("text", x = 'G|A', y = 3, label = expression('p = ' ~ '0.5814' ~ ', r = -0.10'), size = 3),
+  plot_eqtl(probe_and_metadata = olink_vertical[olink_vertical[['timepoint']] == 't24h', ], genotype_object = genotype_object, probe = 'OID00564', variant = 'rs10422256', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(3,7)) + ggtitle('t24h') + ylab('') + scale_fill_manual(values = list('A|A' = '#218e89', 'G|A' = '#ff7101', 'G|G' = '#e12a62')) + annotate("text", x = 'G|A', y = 3, label = expression('p = ' ~ '0.01' ~ ', r = -0.42'), size = 3) + annotate('text', x = 'G|G', y = 7, label = '*', size = 9),
+  plot_eqtl(probe_and_metadata = olink_vertical[olink_vertical[['timepoint']] == 't8w', ], genotype_object = genotype_object, probe = 'OID00564', variant = 'rs10422256', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(3,7)) + ggtitle('t6-8w') + ylab('') + scale_fill_manual(values = list('A|A' = '#218e89', 'G|A' = '#ff7101', 'G|G' = '#e12a62')) + annotate("text", x = 'G|A', y = 3, label = expression('p = ' ~ '0.92' ~ ', r = -0.02'), size = 3),
+  plot_eqtl(probe_and_metadata = ll_olink_vertical, genotype_object = genotype_ll_object, probe = 'ENSG00000130164', variant = 'rs10422256', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(2,8)) + ggtitle('LifeLines') + ylab('LDLR protein expression') + scale_fill_manual(values = list('A|A' = '#218e89', 'A|G' = '#ff7101', 'G|G' = '#e12a62')) + annotate("text", x = 'A|G', y = 2, label = expression('p = ' ~ '0.61' ~ ', r = -0.02'), size = 3),
+  nrow = 1),
+  ncol=1, rel_heights=c(0.1, 1)
+)
+
+```
+
+```{r eqtl_mapping, include=TRUE, fig.width=6, fig.height=6}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+plot_grid(
+plot_grid(
+  plot_grid(
+        ggdraw() + draw_label('a', fontface = 'bold', x = 0, hjust = 0, size = 20),
+        ggdraw() + draw_label('rs6686750 affecting IL6R protein expression', fontface = 'bold', x = 0, hjust = 0),
+        nrow = 1,
+        rel_widths = c(0.1, 1)
+      ),
+  plot_grid(
+  plot_eqtl(probe_and_metadata = olink_vertical[olink_vertical[['timepoint']] == 'Baseline', ], genotype_object = genotype_object, probe = 'OID00602', variant = 'rs6686750', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(10,13.5)) + ggtitle('t0') + ylab('IL6R protein expression') + scale_fill_manual(values = list('AA' = '#218e89', 'AG' = '#fdb638', 'GG' = '#e12a62')) + annotate("text", x = 'AG', y = 10, label = expression('p = ' ~ '2.84'^'e-5' ~ ', r = -0.65'), size = 3) + annotate('text', x = 'GG', y = 13.5, label = '*', size = 9),
+  plot_eqtl(probe_and_metadata = olink_vertical[olink_vertical[['timepoint']] == 't24h', ], genotype_object = genotype_object, probe = 'OID00602', variant = 'rs6686750', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(10,13.5)) + ggtitle('t24h') + ylab('') + scale_fill_manual(values = list('AA' = '#218e89', 'AG' = '#fdb638', 'GG' = '#e12a62')) + annotate("text", x = 'AG', y = 10, label = expression('p = ' ~ '0.0023' ~ ', r = -0.51'), size = 3) + annotate('text', x = 'GG', y = 13.5, label = '*', size = 9),
+  plot_eqtl(probe_and_metadata = olink_vertical[olink_vertical[['timepoint']] == 't8w', ], genotype_object = genotype_object, probe = 'OID00602', variant = 'rs6686750', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(10,13.5)) + ggtitle('t6-8w') + ylab('') + scale_fill_manual(values = list('AA' = '#218e89', 'AG' = '#fdb638', 'GG' = '#e12a62')) + annotate("text", x = 'AG', y = 10, label = expression('p = ' ~ '0.0024' ~ ', r = -0.51'), size = 3) + annotate('text', x = 'GG', y = 13.5, label = '*', size = 9),
+  plot_eqtl(probe_and_metadata = ll_olink_vertical, genotype_object = genotype_ll_object, probe = 'ENSG00000160712', variant = 'rs6686750', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(3,7)) + ggtitle('LifeLines') + ylab('IL6R protein expression') + scale_fill_manual(values = list('AA' = '#218e89', 'GA' = '#fdb638', 'GG' = '#e12a62')) + annotate("text", x = 'GA', y = 3, label = expression('p = ' ~ '2.83'^'e-104' ~ ', r = -0.57'), size = 3) + annotate('text', x = 'GG', y = 7, label = '*', size = 9),
+  nrow = 1),
+  ncol=1, rel_heights=c(0.1, 1)
+),
+
+plot_grid(
+  plot_grid(
+        ggdraw() + draw_label('b', fontface = 'bold', x = 0, hjust = 0, size = 20),
+        ggdraw() + draw_label('rs8124182 affecting MMP9 protein expression', fontface = 'bold', x = 0, hjust = 0),
+        nrow = 1,
+        rel_widths = c(0.1, 1)
+      ),
+  plot_grid(plot_eqtl(probe_and_metadata = olink_vertical[olink_vertical[['timepoint']] == 'Baseline', ], genotype_object = genotype_object, probe = 'OID00568', variant = 'rs8124182', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(3,8)) + ggtitle('t0') + ylab('MMP9 protein expression') + scale_fill_manual(values = list('AA' = '#218e89', 'GA' = '#fdb638', 'GG' = '#e12a62')) + annotate("text", x = 'GA', y = 3, label = expression('p = ' ~ '0.01' ~ ', r = 0.43'), size = 3) + annotate('text', x = 'GG', y = 8, label = '*', size = 9) + annotate('text', x = 'AA', y = 3, label = ''),
+  plot_eqtl(probe_and_metadata = olink_vertical[olink_vertical[['timepoint']] == 't24h', ], genotype_object = genotype_object, probe = 'OID00568', variant = 'rs8124182', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(3,8)) + ggtitle('t24h') + ylab('') + scale_fill_manual(values = list('AA' = '#218e89', 'GA' = '#fdb638', 'GG' = '#e12a62')) + annotate("text", x = 'GA', y = 3, label = expression('p = ' ~ '0.20' ~ ', r = 0.23'), size = 3) + annotate('text', x = 'AA', y = 3, label = ''),
+  plot_eqtl(probe_and_metadata = olink_vertical[olink_vertical[['timepoint']] == 't8w', ], genotype_object = genotype_object, probe = 'OID00568', variant = 'rs8124182', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(3,8)) + ggtitle('t6-8w') + ylab('') + scale_fill_manual(values = list('AA' = '#218e89', 'GA' = '#fdb638', 'GG' = '#e12a62')) + annotate("text", x = 'GA', y = 3, label = expression('p = ' ~ '0.16' ~ ', r = 0.25'), size = 3) + annotate('text', x = 'AA', y = 3, label = ''),
+  plot_eqtl(probe_and_metadata = ll_olink_vertical, genotype_object = genotype_ll_object, probe = 'ENSG00000100985', variant = 'rs8124182', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(3,8)) + ggtitle('LifeLines') + ylab('MMP9 protein expression') + scale_fill_manual(values = list('AA' = '#218e89', 'GA' = '#fdb638', 'GG' = '#e12a62')) + annotate("text", x = 'GA', y = 3, label = expression('p = ' ~ '0.86' ~ ', r = -0.005'), size = 3),
+  nrow = 1),
+  ncol=1, rel_heights=c(0.1, 1)
+),
+
+plot_grid(
+  plot_grid(
+        ggdraw() + draw_label('c', fontface = 'bold', x = 0, hjust = 0, size = 20),
+        ggdraw() + draw_label('rs10422256 affecting LDLR protein expression', fontface = 'bold', x = 0, hjust = 0),
+        nrow = 1,
+        rel_widths = c(0.1, 1)
+      ),
+  plot_grid(
+  plot_eqtl(probe_and_metadata = olink_vertical[olink_vertical[['timepoint']] == 'Baseline', ], genotype_object = genotype_object, probe = 'OID00564', variant = 'rs10422256', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(3,7)) + ggtitle('t0') + ylab('LDLR protein expression') + scale_fill_manual(values = list('AA' = '#218e89', 'GA' = '#fdb638', 'GG' = '#e12a62')) + annotate("text", x = 'GA', y = 3, label = expression('p = ' ~ '0.5814' ~ ', r = -0.10'), size = 3),
+  plot_eqtl(probe_and_metadata = olink_vertical[olink_vertical[['timepoint']] == 't24h', ], genotype_object = genotype_object, probe = 'OID00564', variant = 'rs10422256', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(3,7)) + ggtitle('t24h') + ylab('') + scale_fill_manual(values = list('AA' = '#218e89', 'GA' = '#fdb638', 'GG' = '#e12a62')) + annotate("text", x = 'GA', y = 3, label = expression('p = ' ~ '0.01' ~ ', r = -0.42'), size = 3) + annotate('text', x = 'GG', y = 7, label = '*', size = 9),
+  plot_eqtl(probe_and_metadata = olink_vertical[olink_vertical[['timepoint']] == 't8w', ], genotype_object = genotype_object, probe = 'OID00564', variant = 'rs10422256', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(3,7)) + ggtitle('t6-8w') + ylab('') + scale_fill_manual(values = list('AA' = '#218e89', 'GA' = '#fdb638', 'GG' = '#e12a62')) + annotate("text", x = 'GA', y = 3, label = expression('p = ' ~ '0.92' ~ ', r = -0.02'), size = 3),
+  plot_eqtl(probe_and_metadata = ll_olink_vertical, genotype_object = genotype_ll_object, probe = 'ENSG00000130164', variant = 'rs10422256', id_column = 'id', probe_column = 'protein', paper_style=T, legendless = T) + coord_cartesian(ylim=c(2,8)) + ggtitle('LifeLines') + ylab('LDLR protein expression') + scale_fill_manual(values = list('AA' = '#218e89', 'AG' = '#fdb638', 'GG' = '#e12a62')) + annotate("text", x = 'AG', y = 2, label = expression('p = ' ~ '0.61' ~ ', r = -0.02'), size = 3),
+  nrow = 1),
+  ncol=1, rel_heights=c(0.1, 1)
+),
+nrow = 3,
+ncol = 1
+)
+```
+
+```{r bulk_mean_expression_chems, include=FALSE, fig.width=20, fig.height=20}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+cardio_integrated@meta.data[['bulk']] <- 'bulk'
+# get mean expression of all V2
+bulk_mean_expression_v2 <- get_mean_expression_matrices(cardio_integrated[, cardio_integrated@meta.data$orig.ident == 'stemi_v2' | cardio_integrated@meta.data$orig.ident == 'hc_v2'], metadata_columns=c('bulk', 'timepoint.final', 'assignment.final'))
+bulk_mean_expression_v3 <- get_mean_expression_matrices(cardio_integrated[, cardio_integrated@meta.data$orig.ident == 'stemi_v3' | cardio_integrated@meta.data$orig.ident == 'hc_v3'], metadata_columns=c('bulk', 'timepoint.final', 'assignment.final'))
+# add the chemistry as a variable
+bulk_mean_expression_v2[['chem']] <- 'V2'
+bulk_mean_expression_v3[['chem']] <- 'V3'
+# combine them
+bulk_mean_expression <- rbind(bulk_mean_expression_v2, bulk_mean_expression_v3)
+# make the column names nicer
+colnames(bulk_mean_expression) <- c('expression', 'gene', 'celltype', 'timepoint', 'assignment', 'chem')
+
+```
+
+```{r bulk_mean_expression_chems, include=FALSE, fig.width=20, fig.height=20}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# make a formula
+formula_rna <- 'expression ~ chem + age + sex + timepoint + variant + variant*timepoint + (1|assignment)'
+# do regression per celltype
+eqtl_confinement_rs6686750 <- data.frame(variant = rep('rs6686750', times = 5), probe = c('IL6R', 'TMEM205', 'DOCK6', 'CCDC159', 'PLPR2'))
+eqtl_output_per_celltype_rs6686750 <- do_regression_per_celltype(bulk_mean_expression[bulk_mean_expression[['celltype']] %in% c('bulk'), ], genotype_object, celltype_column = 'celltype', confinement_table = eqtl_confinement_rs6686750, string_formula = formula_rna, use_lme4 = T, id_column = 'assignment', probe_column = 'gene')
+
+```
+
+```{r eqtl_mapping, include=TRUE, fig.width=5, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+plot_grid(
+  plot_eqtl(probe_and_metadata = bulk_mean_expression[bulk_mean_expression[['timepoint']] == 'Baseline' & bulk_mean_expression[['chem']] == 'V2', ], genotype_object = genotype_object, probe = 'TMEM205', variant = 'rs6686750', id_column = 'assignment', probe_column = 'gene', paper_style=T, legendless = T) + ggtitle('TMEM205 t0 V2'),
+  plot_eqtl(probe_and_metadata = bulk_mean_expression[bulk_mean_expression[['timepoint']] == 't24h' & bulk_mean_expression[['chem']] == 'V2', ], genotype_object = genotype_object, probe = 'TMEM205', variant = 'rs6686750', id_column = 'assignment', probe_column = 'gene', paper_style=T, legendless = T) + ggtitle('TMEM205 t24h V2'),
+  plot_eqtl(probe_and_metadata = bulk_mean_expression[bulk_mean_expression[['timepoint']] == 't8w' & bulk_mean_expression[['chem']] == 'V2', ], genotype_object = genotype_object, probe = 'TMEM205', variant = 'rs6686750', id_column = 'assignment', probe_column = 'gene', paper_style=T, legendless = T) + ggtitle('TMEM205 t6-8w V2'),
+  plot_eqtl(probe_and_metadata = bulk_mean_expression[bulk_mean_expression[['timepoint']] == 'Baseline' & bulk_mean_expression[['chem']] == 'V3', ], genotype_object = genotype_object, probe = 'TMEM205', variant = 'rs6686750', id_column = 'assignment', probe_column = 'gene', paper_style=T, legendless = T) + ggtitle('TMEM205 t0 V3'),
+  plot_eqtl(probe_and_metadata = bulk_mean_expression[bulk_mean_expression[['timepoint']] == 't24h' & bulk_mean_expression[['chem']] == 'V3', ], genotype_object = genotype_object, probe = 'TMEM205', variant = 'rs6686750', id_column = 'assignment', probe_column = 'gene', paper_style=T, legendless = T) + ggtitle('TMEM205 t24h V2'),
+  plot_eqtl(probe_and_metadata = bulk_mean_expression[bulk_mean_expression[['timepoint']] == 't8w' & bulk_mean_expression[['chem']] == 'V3', ], genotype_object = genotype_object, probe = 'TMEM205', variant = 'rs6686750', id_column = 'assignment', probe_column = 'gene', paper_style=T, legendless = T) + ggtitle('TMEM205 t6-8w V2'),
+  nrow = 2, ncol = 3
+)
+
+plot_grid(
+  plot_eqtl(probe_and_metadata = bulk_mean_expression[bulk_mean_expression[['timepoint']] == 'Baseline' & bulk_mean_expression[['chem']] == 'V2', ], genotype_object = genotype_object, probe = 'DOCK6', variant = 'rs6686750', id_column = 'assignment', probe_column = 'gene', paper_style=T, legendless = T) + ggtitle('DOCK6 t0 V2'),
+  plot_eqtl(probe_and_metadata = bulk_mean_expression[bulk_mean_expression[['timepoint']] == 't24h' & bulk_mean_expression[['chem']] == 'V2', ], genotype_object = genotype_object, probe = 'DOCK6', variant = 'rs6686750', id_column = 'assignment', probe_column = 'gene', paper_style=T, legendless = T) + ggtitle('DOCK6 t24h V2'),
+  plot_eqtl(probe_and_metadata = bulk_mean_expression[bulk_mean_expression[['timepoint']] == 't8w' & bulk_mean_expression[['chem']] == 'V2', ], genotype_object = genotype_object, probe = 'DOCK6', variant = 'rs6686750', id_column = 'assignment', probe_column = 'gene', paper_style=T, legendless = T) + ggtitle('DOCK6 t6-8w V2'),
+  plot_eqtl(probe_and_metadata = bulk_mean_expression[bulk_mean_expression[['timepoint']] == 'Baseline' & bulk_mean_expression[['chem']] == 'V3', ], genotype_object = genotype_object, probe = 'DOCK6', variant = 'rs6686750', id_column = 'assignment', probe_column = 'gene', paper_style=T, legendless = T) + ggtitle('DOCK6 t0 V3'),
+  plot_eqtl(probe_and_metadata = bulk_mean_expression[bulk_mean_expression[['timepoint']] == 't24h' & bulk_mean_expression[['chem']] == 'V3', ], genotype_object = genotype_object, probe = 'DOCK6', variant = 'rs6686750', id_column = 'assignment', probe_column = 'gene', paper_style=T, legendless = T) + ggtitle('DOCK6 t24h V2'),
+  plot_eqtl(probe_and_metadata = bulk_mean_expression[bulk_mean_expression[['timepoint']] == 't8w' & bulk_mean_expression[['chem']] == 'V3', ], genotype_object = genotype_object, probe = 'DOCK6', variant = 'rs6686750', id_column = 'assignment', probe_column = 'gene', paper_style=T, legendless = T) + ggtitle('DOCK6 t6-8w V2'),
+  nrow = 2, ncol = 3
+)
+
+plot_grid(
+  plot_eqtl(probe_and_metadata = bulk_mean_expression[bulk_mean_expression[['timepoint']] == 'Baseline' & bulk_mean_expression[['chem']] == 'V2', ], genotype_object = genotype_object, probe = 'CCDC159', variant = 'rs6686750', id_column = 'assignment', probe_column = 'gene', paper_style=T, legendless = T) + ggtitle('CCDC159 t0 V2'),
+  plot_eqtl(probe_and_metadata = bulk_mean_expression[bulk_mean_expression[['timepoint']] == 't24h' & bulk_mean_expression[['chem']] == 'V2', ], genotype_object = genotype_object, probe = 'CCDC159', variant = 'rs6686750', id_column = 'assignment', probe_column = 'gene', paper_style=T, legendless = T) + ggtitle('CCDC159 t24h V2'),
+  plot_eqtl(probe_and_metadata = bulk_mean_expression[bulk_mean_expression[['timepoint']] == 't8w' & bulk_mean_expression[['chem']] == 'V2', ], genotype_object = genotype_object, probe = 'CCDC159', variant = 'rs6686750', id_column = 'assignment', probe_column = 'gene', paper_style=T, legendless = T) + ggtitle('CCDC159 t6-8w V2'),
+  plot_eqtl(probe_and_metadata = bulk_mean_expression[bulk_mean_expression[['timepoint']] == 'Baseline' & bulk_mean_expression[['chem']] == 'V3', ], genotype_object = genotype_object, probe = 'CCDC159', variant = 'rs6686750', id_column = 'assignment', probe_column = 'gene', paper_style=T, legendless = T) + ggtitle('CCDC159 t0 V3'),
+  plot_eqtl(probe_and_metadata = bulk_mean_expression[bulk_mean_expression[['timepoint']] == 't24h' & bulk_mean_expression[['chem']] == 'V3', ], genotype_object = genotype_object, probe = 'CCDC159', variant = 'rs6686750', id_column = 'assignment', probe_column = 'gene', paper_style=T, legendless = T) + ggtitle('CCDC159 t24h V2'),
+  plot_eqtl(probe_and_metadata = bulk_mean_expression[bulk_mean_expression[['timepoint']] == 't8w' & bulk_mean_expression[['chem']] == 'V3', ], genotype_object = genotype_object, probe = 'CCDC159', variant = 'rs6686750', id_column = 'assignment', probe_column = 'gene', paper_style=T, legendless = T) + ggtitle('CCDC159 t6-8w V2'),
+  nrow = 2, ncol = 3
+)
+
+```
+
+```{r eqtl_mapping, include=TRUE, fig.width=5, fig.height=5}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+set.seed(1337)
+
+create_umap(olink_plottable[, c(setdiff(colnames(olink_plottable), c('id', 'timepoint')))], labels = olink_plottable[['timepoint']], main = 'protein expression (timepoint)')
+create_umap(olink_plottable[, c(setdiff(colnames(olink_plottable), c('id', 'timepoint')))], labels = olink_plottable[['id']], main = 'protein expression (individual)')
+table(cardio_integrated@meta.data[, c('assignment.final', 'timepoint.final', 'cell_type_lowerres')])
+
+
+```
