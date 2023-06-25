@@ -3,7 +3,18 @@ This repository contains the code that was used for the scRNA-seq study of PBMCs
 
 If want to rerun any of these analysis steps in R, consider using the Singularity image used for most of the analyses: https://github.com/royoelen/single-cell-container-server
 
+Relevant software versions:
+Seurat v4 (https://github.com/satijalab/seurat)
+Eagle v2.x (https://github.com/poruloh/Eagle)
+Souporcell v1.x (https://github.com/wheaton5/souporcell)
+in-house eQTL pipeline2 v1.4.0 (https://github.com/molgenis/systemsgenetics/tree/master/eqtl-mapping-pipeline)
+R v4.x (https://svn.r-project.org/R/)
+
 Below we will outline the computational steps taken
+
+## cell viability
+
+'*experiment_qc/stemi_plot_viabilities.Rmd*' show the cell viabilities, to check if there is a difference between the controls and STEMI, as well as between timepoints for the STEMI samples
 
 ## alignment to reference genome
 
@@ -53,6 +64,8 @@ Below we will outline the computational steps taken
 '*differential_expression/stemi_mast.R*' perform differential gene expression analysis using the Seurat implementation of MAST
 
 '*differential_expression/stemi_mast_output_analysis*' perform meta-analysis over the DE results of 10x v2 and 10x v3
+
+'*differential_expression/*temi_plot_de_genes.Rmd' plot the top DE genes for monocytes and NKs cells, and visualize these
 
 '*differential_expression/stemi_gse_enrichr.Rmd*' perform gene set enrichment analysis on the differentially expressed gene
 
