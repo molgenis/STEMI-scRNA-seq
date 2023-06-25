@@ -1,0 +1,64 @@
+---
+title: "stemi_plot_viabilities"
+author: "Roy Oelen"
+date: "2023-06-23"
+output: html_document
+---
+
+```{r header, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Roy Oelen
+# Name: stemi_plot_viabilities.Rmd
+# Function:
+############################################################################################################################
+```
+```{r libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# libraries        #
+####################
+
+library(ggplot2)
+library(cowplot)
+
+```
+
+```{r functions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# Functions        #
+####################
+
+
+```
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# Main Code        #
+####################
+
+metadata_loc <- '/groups/umcg-franke-scrna/tmp02/releases/blokland-2020/v1/metadata/'
+viability_c_loc <- paste(metadata_loc, 'viability_c.tsv', sep = '')
+viability_stemi_loc <- paste(metadata_loc, 'viability_stemi.tsv', sep = '')
+
+# read the tables
+viability_c <- read.table(viability_c_loc,  row.names = NULL, header = T)
+viability_stemi <- read.table(viability_stemi_loc, sep = '\t', row.names = NULL, header = T, dec = ',')
+
+# turn into joint table without IDs
+viability <- rbind(data.frame(population = 'Controls', timepoint = 'Controls',  viability = viability_c[['Viability']]),
+                    data.frame(population = 'STEMI', timepoint = 't0', viability = viability_stemi[viability_stemi[['Timepoint']] == 'baseline', 'Viability']),
+                    data.frame(population = 'STEMI', timepoint = 't24h', viability = viability_stemi[viability_stemi[['Timepoint']] == '24 uur', 'Viability']),
+                    data.frame(population = 'STEMI', timepoint = 't6-8w', viability = viability_stemi[viability_stemi[['Timepoint']] == '6-8 weken','Viability'])
+)
+
+ggplot(viability, aes(viability, fill = population)) + geom_density(alpha = 0.2) + scale_fill_manual(name = 'Population', values = list('Controls' = 'gray', 'STEMI' = 'red')) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white")) + xlab('Viability') + ylab('Density')
+
+ggplot(viability, aes(viability, fill = timepoint)) + geom_density(alpha = 0.2) + scale_fill_manual(name = 'Timepoint', values = list('Controls' = 'gray', 'STEMI' = 'red', 't0' = '#ff7101', 't24h' = '#e12a62', 't6-8w' = '#3B0550')) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white")) + xlab('Viability') + ylab('Density')
+
+
+```
+
