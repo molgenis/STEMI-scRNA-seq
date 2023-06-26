@@ -1,0 +1,366 @@
+---
+title: "stemi_plot_celltype_markers"
+author: "Roy Oelen"
+date: "2023-06-23"
+output: html_document
+---
+
+
+```{r header, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Roy Oelen
+# Name: stemi_plot_celltype_markers.Rmd
+# Function: plot markers of integrated Seurat object, to verify the assignments made by Azimuth
+############################################################################################################################
+```
+
+```{r libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# libraries        #
+####################
+
+library(ggplot2)
+library(cowplot)
+library(Seurat)
+
+```
+
+```{r functions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# Functions        #
+####################
+
+
+get_color_coding_dict <- function(){
+  # set the condition colors
+  color_coding <- list()
+  color_coding[["UTBaseline"]] <- "khaki2"
+  color_coding[["UTt24h"]] <- "khaki4"
+  color_coding[["UTt8w"]] <- "paleturquoise1"
+  color_coding[["Baselinet24h"]] <- "paleturquoise3"
+  color_coding[["Baselinet8w"]] <- "rosybrown1"
+  color_coding[["t24ht8w"]] <- "rosybrown3"
+  color_coding[["UT\nBaseline"]] <- "khaki2"
+  color_coding[["UT\nt24h"]] <- "khaki4"
+  color_coding[["UT\nt8w"]] <- "paleturquoise1"
+  color_coding[["Baseline\nt24h"]] <- "paleturquoise3"
+  color_coding[["Baseline\nt8w"]] <- "rosybrown1"
+  color_coding[["t24h\nt8w"]] <- "rosybrown3"
+  color_coding[["UT-Baseline"]] <- "khaki2"
+  color_coding[["UT-t24h"]] <- "khaki4"
+  color_coding[["UT-t8w"]] <- "paleturquoise1"
+  color_coding[["Baseline-t24h"]] <- "paleturquoise3"
+  color_coding[["Baseline-t8w"]] <- "rosybrown1"
+  color_coding[["t24h-t8w"]] <- "rosybrown3"
+  color_coding[["UT-t0"]] <- "khaki2"
+  color_coding[["UT-t24h"]] <- "khaki4"
+  color_coding[["UT-t8w"]] <- "paleturquoise1"
+  color_coding[["HC-t0"]] <- "khaki2"
+  color_coding[["HC-t24h"]] <- "khaki4"
+  color_coding[["HC-t8w"]] <- "paleturquoise1"
+  color_coding[["t0-t24h"]] <- "paleturquoise3"
+  color_coding[["t0-t8w"]] <- "rosybrown1"
+  color_coding[["t24h-t8w"]] <- "rosybrown3"
+  # set condition colors
+  color_coding[["HC"]] <- "grey"
+  color_coding[["Control"]] <- "grey"
+  color_coding[["C"]] <- "grey"
+  color_coding[["t0"]] <- "#ff7101"
+  color_coding[["t24h"]] <- "#e12a62"
+  color_coding[["t8w"]] <- "#3B0550"
+  color_coding[["t6-8w"]] <- "#3B0550"
+  # set the cell type colors
+  color_coding[["Bulk"]] <- "black"
+  color_coding[["CD4T"]] <- "#153057"
+  color_coding[["CD8T"]] <- "#009DDB"
+  color_coding[["monocyte"]] <- "#EDBA1B"
+  color_coding[["NK"]] <- "#E64B50"
+  color_coding[["B"]] <- "#71BC4B"
+  color_coding[["DC"]] <- "#965EC8"
+  color_coding[["CD4+ T"]] <- "#153057"
+  color_coding[["CD8+ T"]] <- "#009DDB"
+  # other cell type colors
+  color_coding[["HSPC"]] <- "#009E94"
+  color_coding[["platelet"]] <- "#9E1C00"
+  color_coding[["plasmablast"]] <- "#DB8E00"
+  color_coding[["other T"]] <- "#FF63B6"
+  color_coding[["other_T"]] <- "#FF63B6"
+  color_coding[["T_other"]] <- "#FF63B6"
+  return(color_coding)
+}
+
+label_dict <- function(){
+  label_dict <- list()
+  # condition combinations
+  label_dict[['UTBaseline']] <- 'UT-Baseline'
+  label_dict[['UTt24h']] <- 'UT-t24h'
+  label_dict[['UTt8w']] <- 'UT-t8w'
+  label_dict[['Baselinet24h']] <- 'Baseline-t24h'
+  label_dict[['Baselinet8w']] <- 'Baseline-t8w'
+  label_dict[['t24ht8w']] <- 't24h-t8w'
+  label_dict[['UTBaseline']] <- 'HC-t0'
+  label_dict[['UTt24h']] <- 'HC-t24h'
+  label_dict[['UTt8w']] <- 'HC-t8w'
+  label_dict[['Baselinet24h']] <- 't0-t24h'
+  label_dict[['Baselinet8w']] <- 't0-t8w'
+  # conditions
+  label_dict[['UT']] <- 'Control'
+  label_dict[['Baseline']] <- 't0'
+  label_dict[['t24h']] <- 't24h'
+  label_dict[['t8w']] <- 't6-8w'
+  label_dict[['C']] <- 'C'
+  label_dict[['Control']] <- 'Control'
+  label_dict[['t0']] <- 't0'
+  label_dict[['t24h']] <- 't24h'
+  label_dict[['t6w']] <- 't6-8w'
+  label_dict[['t8w']] <- 't6-8w'
+  # major cell types
+  label_dict[["Bulk"]] <- "bulk-like"
+  label_dict[["CD4T"]] <- "CD4+ T"
+  label_dict[["CD8T"]] <- "CD8+ T"
+  label_dict[["monocyte"]] <- "monocyte"
+  label_dict[["NK"]] <- "NK"
+  label_dict[["B"]] <- "B"
+  label_dict[["DC"]] <- "DC"
+  label_dict[["HSPC"]] <- "HSPC"
+  label_dict[["plasmablast"]] <- "plasmablast"
+  label_dict[["platelet"]] <- "platelet"
+  label_dict[["T_other"]] <- "other T"
+  # minor cell types
+  label_dict[["CD4_TCM"]] <- "CD4 TCM"
+  label_dict[["Treg"]] <- "T regulatory"
+  label_dict[["CD4_Naive"]] <- "CD4 naive"
+  label_dict[["CD4_CTL"]] <- "CD4 CTL"
+  label_dict[["CD8_TEM"]] <- "CD8 TEM"
+  label_dict[["cMono"]] <- "cMono"
+  label_dict[["CD8_TCM"]] <- "CD8 TCM"
+  label_dict[["ncMono"]] <- "ncMono"
+  label_dict[["cDC2"]] <- "cDC2"
+  label_dict[["B_intermediate"]] <- "B intermediate"
+  label_dict[["NKdim"]] <- "NK dim"
+  label_dict[["pDC"]] <- "pDC"
+  label_dict[["ASDC"]] <- "ASDC"
+  label_dict[["CD8_Naive"]] <- "CD8 naive"
+  label_dict[["MAIT"]] <- "MAIT"
+  label_dict[["CD8_Proliferating"]] <- "CD8 proliferating"
+  label_dict[["CD4_TEM"]] <- "CD4 TEM"
+  label_dict[["B_memory"]] <- "B memory"
+  label_dict[["NKbright"]] <- "NK bright"
+  label_dict[["B_naive"]] <- "B naive"
+  label_dict[["gdT"]] <- "gamma delta T"
+  label_dict[["CD4_Proliferating"]] <- "CD4 proliferating"
+  label_dict[["NK_Proliferating"]] <- "NK proliferating"
+  label_dict[["cDC1"]] <- "cDC1"
+  label_dict[["ILC"]] <- "ILC"
+  label_dict[["dnT"]] <- "double negative T"
+  return(label_dict)
+}
+
+
+wide_to_long_table <- function(wide_table, column_name='seurat_clusters') {
+  # the genes are the rownames
+  genes <- rownames(wide_table)
+  # the colnames we will make into a new column
+  colname_values <- colnames(wide_table)
+  # create a new dataframe
+  long_table <- data.frame(ident = rep(NA, times = length(genes) * length(colname_values)), gene = rep(NA, times = length(genes) * length(colname_values)), expression = rep(NA, times = length(genes) * length(colname_values)))
+  # we will fill the new table row by row, so we need to keep an index
+  long_table_row_i <- 1
+  # now we'll check each column in the original
+  for (colvalue in colname_values) {
+    # check each gene
+    for (gene in genes) {
+      # get the actual value from the table
+      value_combination <- wide_table[gene, colvalue]
+      # add to the long table
+      long_table[long_table_row_i, 'ident'] <- colvalue
+      long_table[long_table_row_i, 'gene'] <- gene
+      long_table[long_table_row_i, 'expression'] <- value_combination
+      # increase the index
+      long_table_row_i <- long_table_row_i + 1
+    }
+  }
+  # reset column names
+  colnames(long_table) <- c(column_name, 'gene', 'expression')
+  return(long_table)
+}
+
+
+plot_expression_and_pct <- function(expression_pct_table, ident_column='seurat_clusters', gene_column='gene', expression_column='expression', percentage_column='percentage_expressed', colour_ticks=T, colour_mapping=NULL,ident_order=NULL, gene_order=NULL, paper_style=T, align_right=T, legendless=F) {
+  # order the idents if the order was supplied
+  if (!is.null(ident_order)) {
+    expression_pct_table[[ident_column]] <- factor(expression_pct_table[[ident_column]], levels = rev(ident_order))
+  }
+  # and the genes
+  if(!is.null(gene_order)) {
+    expression_pct_table[[gene_column]] <- factor(expression_pct_table[[gene_column]], levels = gene_order)
+  }
+  # make the plot
+  p <- ggplot(data=NULL, mapping = aes(x = expression_pct_table[[gene_column]], y = expression_pct_table[[ident_column]], size = expression_pct_table[[percentage_column]], color = expression_pct_table[[expression_column]])) + geom_point() + scale_colour_gradient(name = 'Average expression', low = 'lightblue', high = 'darkblue') + labs(size = percentage_column)
+  # align to the right side
+  if (align_right) {
+    p <- p + scale_y_discrete(position = 'right')
+  }
+  # and labels
+  p <- p + xlab(gene_column) + ylab(ident_column)
+  # paper style if requested
+  if (paper_style) {
+    p <- p + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  # remove legend if requested
+  if(legendless){
+    p <- p + theme(legend.position = 'none')
+  }
+  # rotate labels
+  p <- p + theme(axis.text.x = element_text(angle = 90))
+  # colour the ticks if requested
+  if (colour_ticks) {
+    # get the labels
+    y_labels <- levels(expression_pct_table[[ident_column]])
+    # get the appropriate colours
+    y_colours <- as.vector(unlist(colour_mapping[as.character(y_labels)]))
+    p <- p + theme(axis.ticks = element_line(),      # Change ticks line fo all axes
+      axis.ticks.y = element_line(linewidth = 5, colour = y_colours),    # Change x axis ticks only
+    )
+  }
+  return(p)
+}
+
+
+# add metadata that is based on existing incomplete metadata in the seurat object
+add_imputed_meta_data <- function(seurat_object, column_to_transform, column_to_reference, column_to_create){
+  # add the column
+  seurat_object@meta.data[column_to_create] <- NA
+  # go through the grouping we have for the entire object
+  for(group in unique(seurat_object@meta.data[[column_to_transform]])){
+    # subset to get only this group
+    seurat_group <- seurat_object[,seurat_object@meta.data[[column_to_transform]] == group]
+    best_group <- 'unknown'
+    best_number <- 0
+    # check against the reference column
+    for(reference in unique(seurat_group@meta.data[[column_to_reference]])){
+      # we don't care for the NA reference, if we had all data, we wouldn't need to do this anyway
+      if(is.na(reference) == F){
+        # grab the number of cells in this group, with this reference
+        number_of_reference_in_group <- nrow(seurat_group@meta.data[seurat_group@meta.data[[column_to_reference]] == reference & is.na(seurat_group@meta.data[[column_to_reference]]) == F,])
+        correctpercent <- number_of_reference_in_group/ncol(seurat_group)
+        print(paste(group,"matches",reference,correctpercent,sep=" "))
+        # update numbers if better match
+        if(number_of_reference_in_group > best_number){
+          best_number <- number_of_reference_in_group
+          best_group <- reference
+        }
+      }
+    }
+    print(paste("setting ident:",best_group,"for group", group, sep=" "))
+    # set this best identity
+    seurat_object@meta.data[seurat_object@meta.data[[column_to_transform]] == group,][column_to_create] <- best_group
+    # force cleanup
+    rm(seurat_group)
+  }
+  return(seurat_object)
+}
+
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# Main Code        #
+####################
+
+# location of object
+objects_loc <- '/groups/umcg-franke-scrna/tmp02/releases/blokland-2020/v1/seurat/'
+cardio_integrated_loc <- paste(objects_loc, 'cardio.integrated.20210301.rds', sep = '')
+
+# read the object
+cardio_integrated <- readRDS(cardio_integrated_loc)
+# update object to newer version
+cardio_integrated <- UpdateSeuratObject(cardio_integrated)
+```
+
+```{r setup, include=TRUE, fig.width=12, fig.heigth=12}
+knitr::opts_chunk$set(echo = FALSE)
+
+# the list of features to plot
+ng2018_marker_genes <- c(
+  'CD3D',
+  'CD8A',
+  'GZMB',
+  'KLRC1',
+  'FCGR3A',
+  'MS4A1',
+  'CD79A',
+  'CD14',
+  'ITGAX',
+  'PPBP'
+)
+
+cell_type_order <- c(
+  'CD4T',
+  'CD8T',
+  'NK',
+  'B',
+  'plasmablast',
+  'monocyte',
+  'DC',
+  'megakaryocyte',
+  'HPSC'
+)
+
+
+# add imputed celltypes at the lower resolution as well
+cardio_integrated <- add_imputed_meta_data(cardio_integrated, 'seurat_clusters', 'cell_type_lowerres', 'cell_type_lowerres_prop')
+
+
+# plot them
+cardio_integrated_dp <- DotPlot(cardio_integrated, features = ng2018_marker_genes) + theme(axis.text.x = element_text(angle = 90)) + xlab('gene') + ylab('Seurat cluster')
+cardio_integrated_dp
+```
+
+
+```{r setup, include=TRUE, fig.width=12, fig.heigth=12}
+knitr::opts_chunk$set(echo = FALSE)
+
+# calculate the average expression
+cardio_integrated_avgexp <- AverageExpression(cardio_integrated, group.by = 'integrated_snn_res.1.5')
+# extract which ones we care about
+cardio_integrated_avg_exp_rna_genes <- data.frame(cardio_integrated_avgexp[['RNA']][ng2018_marker_genes, ])
+cardio_integrated_avg_exp_sct_genes <- data.frame(cardio_integrated_avgexp[['SCT']][ng2018_marker_genes, ])
+# turn into a long table
+cardio_integrated_avg_exp_sct_genes_long <- wide_to_long_table(cardio_integrated_avg_exp_sct_genes)
+# fix the X in seurat clusters
+cardio_integrated_avg_exp_sct_genes_long[['seurat_clusters']] <- gsub('X', '', cardio_integrated_avg_exp_sct_genes_long[['seurat_clusters']])
+# extract the pct.exp from the dotplot
+feature_and_ident_dotplot <- paste(as.character(cardio_integrated_dp$data$id), as.character(cardio_integrated_dp$data$features.plot), sep = '_')
+feature_and_ident_avgexp <- paste(as.character(cardio_integrated_avg_exp_sct_genes_long[['seurat_clusters']]), as.character(cardio_integrated_avg_exp_sct_genes_long[['gene']]), sep = '_')
+# now add the pct to the table
+cardio_integrated_avg_exp_sct_genes_long[['percentage_expressed']] <- cardio_integrated_dp$data[match(feature_and_ident_avgexp, feature_and_ident_dotplot), 'pct.exp']
+
+# extract the clusters and the cell type assignments from the metadata
+clusters_celltypes <- unique(cardio_integrated@meta.data[, c('seurat_clusters', 'ct_clus_prop', 'cell_type_lowerres_prop')])
+# create an order from the vector that we have
+celltype_order_df <- data.frame(ct = cell_type_order, rank = 1:length(cell_type_order))
+# add the order to the cluster celltypes
+clusters_celltypes[['lowres_ct_rank']] <- celltype_order_df[match(clusters_celltypes[['cell_type_lowerres_prop']], celltype_order_df[['ct']]), 'rank']
+# order that cell type
+clusters_celltypes <- clusters_celltypes[order(clusters_celltypes[['cell_type_lowerres_prop']], clusters_celltypes[['ct_clus_prop']], clusters_celltypes[['seurat_clusters']]), ]
+# and extract the order we would like from the ordered celltype and cluster table we made
+clusters_celltypes <- unique(clusters_celltypes[, c('seurat_clusters', 'cell_type_lowerres_prop', 'lowres_ct_rank')])
+clusters_celltypes <- clusters_celltypes[order(clusters_celltypes[['lowres_ct_rank']]), ]
+cluster_order <- clusters_celltypes[['seurat_clusters']]
+# get the colors
+clusters_celltypes[['color']] <- as.vector(unlist(get_color_coding_dict()[as.character(clusters_celltypes[['cell_type_lowerres_prop']])]))
+# turn into a list
+cluster_color <- as.list(unique(clusters_celltypes[,c('seurat_clusters', 'cell_type_lowerres_prop', 'color')])[['color']])
+names(cluster_color) <- unique(clusters_celltypes[,c('seurat_clusters', 'cell_type_lowerres_prop', 'color')])[['seurat_clusters']]
+
+
+plot_expression_and_pct(cardio_integrated_avg_exp_sct_genes_long, ident_order = cluster_order, gene_order = ng2018_marker_genes, colour_ticks = T, colour_mapping = cluster_color, align_right = F) + ylab('Cluster') + labs(size = 'Percentage cells expressing', colour = 'Average expression') + xlab('Gene')
+```
+
