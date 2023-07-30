@@ -5,12 +5,19 @@
 #Description	  : create Snakemake input files
 #Args           : 
 #Author       	: Roy Oelen
-#example        : ./stemi_limix_input_files.sh \
-#/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/genotype/stemi_all_nc2022 \
-#/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/input/cell_type_lowerres/v3/smf.txt \
-#/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/input/cell_type_lowerres/v3/ \
-#/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/output/cell_type_lowerres/v3/unconfined \
-#/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/snakemake/cell_type_lowerres/v3/unconfined
+# example        : ./stemi_limix_input_files.sh \
+# /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/genotype/stemi_all_nc2022 \
+# /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/input/cell_type_lowerres/v2/smf.txt \
+# /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/input/cell_type_lowerres/v2/ \
+# /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/output/cell_type_lowerres/v2/unconfined \
+# /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/snakemake/cell_type_lowerres/v2/unconfined
+#
+# ./stemi_limix_input_files.sh \
+# /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/genotype/stemi_all_nc2022_aragam2022 \
+# /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/input/cell_type_lowerres/v3/smf.txt \
+# /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/input/cell_type_lowerres/v3/ \
+# /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/output/cell_type_lowerres/v3/aragam2022 \
+# /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/snakemake/cell_type_lowerres/v3/aragam2022
 #
 ###################################################################
 
@@ -18,7 +25,7 @@
 SNAKEMAKE_TEMPLATE_LOC='/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/templates/Snakemake.smk.py.template'
 JSON_TEMPLATE_LOC='/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/templates/cluster.json.template'
 # the covariate file name
-COVAR_FILENAME='covariates_simplified'
+COVAR_FILENAME='covariates_status'
 
 # the command parameters
 GENO_LOC=$1
@@ -62,3 +69,12 @@ for exp_file in ${REGEX_EXP_FILES}
     sed -i 's,\[\[slurm_out_dir\]\],'"${output_dir}"',' ${json_loc}
     sed -i 's,\[\[slurm_err_dir\]\],'"${output_dir}"',' ${json_loc}
 done
+
+# the snakemake pipeline is started like this:
+# conda activate limix_qtl
+# snakemake \
+# -j 99 \
+# -d /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/snakemake/cell_type_lowerres/v3/aragam2022/monocyte/ \
+# -s /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/snakemake/cell_type_lowerres/v3/aragam2022/monocyte/Snakemake.py.smk \
+# --cluster-config /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/snakemake/cell_type_lowerres/v3/aragam2022/monocyte/monocyte.cluster.json \
+# --cluster "sbatch -n {cluster.n} -t {cluster.time} -o {cluster.output} -e {cluster.error} --mem {cluster.memory}"
