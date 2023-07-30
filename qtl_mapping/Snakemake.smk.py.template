@@ -36,7 +36,7 @@ def extendChunk(chunk):
 chunkFile = '/groups/umcg-franke-scrna/tmp01/projects/sc-eqtlgen-consortium-pipeline/ongoing/wg3/wg3_wijst2018/input/ChunkingFile.txt' ##Not provided in the repo, instructions can be found on the repo wiki.
 genotypeFile = '[[genotype_template_placeholder]]'  ##Genotype without file extension. Please update flag in the runner to reflect --plink or --bgen 
 # kinshipFile = '/limix_qtl/Limix_QTL/test_data/Genotypes/Geuvadis_chr1_kinship'
-annotationFile = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl/eqtl/sc-eqtlgen/annotations/feature_annotation.tsv'
+annotationFile = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/annotations/feature_annotation_hg19.tsv'
 phenotypeFile = '[[phenotype_template_placeholder]]'
 covariateFile = '[[covariate_template_placeholder]]'
 randomEffFile = '' #no second random effect in this example

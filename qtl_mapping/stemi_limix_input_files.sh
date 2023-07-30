@@ -6,11 +6,11 @@
 #Args           : 
 #Author       	: Roy Oelen
 # example        : ./stemi_limix_input_files.sh \
-# /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/genotype/stemi_all_nc2022 \
-# /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/input/cell_type_lowerres/v2/smf.txt \
-# /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/input/cell_type_lowerres/v2/ \
-# /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/output/cell_type_lowerres/v2/unconfined \
-# /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/snakemake/cell_type_lowerres/v2/unconfined
+# /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/genotype/stemi_all_nc2022_biallelic \
+# /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/input/cell_type_lowerres/v3/smf.txt \
+# /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/input/cell_type_lowerres/v3/ \
+# /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/output/cell_type_lowerres/v3/unconfined \
+# /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/snakemake/cell_type_lowerres/v3/unconfined
 #
 # ./stemi_limix_input_files.sh \
 # /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/genotype/stemi_all_nc2022_aragam2022 \
@@ -74,7 +74,8 @@ done
 # conda activate limix_qtl
 # snakemake \
 # -j 99 \
-# -d /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/snakemake/cell_type_lowerres/v3/aragam2022/monocyte/ \
-# -s /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/snakemake/cell_type_lowerres/v3/aragam2022/monocyte/Snakemake.py.smk \
-# --cluster-config /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/snakemake/cell_type_lowerres/v3/aragam2022/monocyte/monocyte.cluster.json \
+# -d /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/snakemake/cell_type_lowerres/v2/unconfined/monocyte/ \
+# -s /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/snakemake/cell_type_lowerres/v2/unconfined/monocyte/Snakemake.py.smk \
+# --cluster-config /groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/snakemake/cell_type_lowerres/v2/unconfined/monocyte/monocyte.cluster.json \
+# --latency-wait 120 \
 # --cluster "sbatch -n {cluster.n} -t {cluster.time} -o {cluster.output} -e {cluster.error} --mem {cluster.memory}"
