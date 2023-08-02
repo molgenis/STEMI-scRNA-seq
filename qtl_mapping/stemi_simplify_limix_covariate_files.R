@@ -23,7 +23,7 @@
 #' @param name_replacement for the name of the new file, what to replace with
 #' @returns 0 if succesfull
 #' filter_covariates_files(qtl_input_low_loc, columns_to_keep, id_column)
-filter_covariates_files <- function(covariate_files_folder, columns_to_keep, id_column, regex_pattern='*covariates*', name_pattern='covariates', name_replacement='covariates_simplified', make_categorical_values_binary=T, categorial_exceptions=c('Donor_Pool')) {
+filter_covariates_files <- function(covariate_files_folder, columns_to_keep, id_column, regex_pattern='*covariates*', name_pattern='covariates', name_replacement='covariates_simplified', make_categorical_values_binary=T, categorial_exceptions=c('Donor_Pool'), unknown_name='unknown') {
   # get the current covariate files
   covariate_file_locs <- list.files(covariate_files_folder, pattern = regex_pattern, full.names = F)
   # check each file
@@ -46,13 +46,15 @@ filter_covariates_files <- function(covariate_files_folder, columns_to_keep, id_
         if (!(column %in% categorial_exceptions)) {
           # get the type of the column
           if (typeof(covariates[[column]]) == 'character') {
+            # turn NA into 'unknown'
+            covariates[is.na(covariates[[column]]), column] <- unknown_name
             # add to the categorical list
             categoricals <- c(categoricals, column)
             # get the unique combinations in the column
             categories <- unique(covariates[[column]])
             # if there is only one category, we cannot do anything
             if (length(categories) == 1) {
-              message(paste('only one category for', column, 'and will be dropped in', covariate_file_loc))
+              message(paste('only one category for', column, 'will be dropped'))
             }
             else{
               # we need all the categories minus one, as it if is not one of the others, it automatically is the one we didn't include
@@ -78,22 +80,32 @@ filter_covariates_files <- function(covariate_files_folder, columns_to_keep, id_
   return(0)
 }
 
-
 ####################
 # Main Code        #
 ####################
 
+# the columns we want to keep
+columns_to_keep <- c('Donor_Pool', 'sample_condition', paste('PC', 1:10, sep = ''))
 # the column to have as the first column, that will be the sample designation
 id_column <- 'Donor_Pool'
 
 # location of the inputs
-qtl_input_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/qtl_mapping/eqtl/sc-eqtlgen/input/cell_type_lowerres/'
-qtl_input_v2_loc <- paste(qtl_input_loc, 'v2/', sep = '')
-qtl_input_v3_loc <- paste(qtl_input_loc, 'v3/', sep = '')
+qtl_input_loc <- '/scratch/p287578/projects/venema-2022/ongoing/qtl/eqtl/sc-eqtlgen/input/elmentaite_adult_martin_immune/'
+qtl_input_low_loc <- paste(qtl_input_loc, 'cell_type_low_inflammationsplit/', sep = '')
+qtl_input_med_loc <- paste(qtl_input_loc, 'cell_type_med_inflammationsplit/', sep = '')
+qtl_input_medhigh_loc <- paste(qtl_input_loc, 'cell_type_medhigh_inflammationsplit/', sep = '')
+qtl_input_high_loc <- paste(qtl_input_loc, 'cell_type_safe_inflammationsplit/', sep = '')
+
+# filter covariates
+filter_covariates_files(qtl_input_low_loc, columns_to_keep, id_column, regex_pattern='.covariates.txt')
+filter_covariates_files(qtl_input_med_loc, columns_to_keep, id_column, regex_pattern='.covariates.txt')
+filter_covariates_files(qtl_input_medhigh_loc, columns_to_keep, id_column, regex_pattern='.covariates.txt')
+filter_covariates_files(qtl_input_high_loc, columns_to_keep, id_column, regex_pattern='.covariates.txt')
 
 # the columns we want to keep
-columns_to_keep <- c('Donor_Pool', 'sample_condition', 'age', 'SEX')
+columns_to_keep <- c('Donor_Pool', 'sample_condition')
 # filter covariates
-filter_covariates_files(qtl_input_v2_loc, columns_to_keep, id_column, name_replacement='covariates_status', regex_pattern='.covariates.txt')
-filter_covariates_files(qtl_input_v3_loc, columns_to_keep, id_column, name_replacement='covariates_status', regex_pattern='.covariates.txt')
-
+filter_covariates_files(qtl_input_low_loc, columns_to_keep, id_column, name_replacement='covariates_status', regex_pattern='.covariates.txt')
+filter_covariates_files(qtl_input_med_loc, columns_to_keep, id_column, name_replacement='covariates_status', regex_pattern='.covariates.txt')
+filter_covariates_files(qtl_input_medhigh_loc, columns_to_keep, id_column, name_replacement='covariates_status', regex_pattern='.covariates.txt')
+filter_covariates_files(qtl_input_high_loc, columns_to_keep, id_column, name_replacement='covariates_status', regex_pattern='.covariates.txt')

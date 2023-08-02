@@ -84,6 +84,8 @@ rule run_qtl_mapping:
         smf = sampleMappingFile
     output:
         outputFolder + '{chunk}.finished'
+    resources:
+        mem_mb=8000
     params:
         gen=genotypeFile,
         od = outputFolder,
