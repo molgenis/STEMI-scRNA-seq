@@ -1,10 +1,10 @@
 #!/bin/bash
 CELLRANGER_LOC='/groups/umcg-franke-scrna/tmp04/cellranger-3.1.0/cellranger'
-REFDATA_LOC='/groups/umcg-franke-scrna/tmp04/refdata-cellranger-GRCh38-3.0.0/'
+REFDATA_LOC='/groups/umcg-franke-scrna/tmp04/refdata-cellranger-hg19-3.0.0/'
 SEQUENCE_LANES_LOC='/groups/umcg-franke-scrna/tmp04/releases/blokland-2020/v1/sequence_data/'
-OUTPUT_LOC='/groups/umcg-franke-scrna/tmp04/releases/blokland-2020/v1/alignment/b38/cellranger_output/'
-OUTPUT_LOC_TMP='${TMPDIR}/releases/blokland-2020/v1/alignment/b38/cellranger_output/'
-JOB_DIR='/groups/umcg-franke-scrna/tmp04/releases/blokland-2020/v1/alignment/b38/jobs/'
+OUTPUT_LOC='/groups/umcg-franke-scrna/tmp04/releases/blokland-2020/v1/alignment/hg19/cellranger_output/'
+OUTPUT_LOC_TMP='${TMPDIR}/releases/blokland-2020/v1/alignment/hg19/cellranger_output/'
+JOB_DIR='/groups/umcg-franke-scrna/tmp04/releases/blokland-2020/v1/alignment/hg19/jobs/'
 # these are the lanes to run through cellranger
 LANES=('191125_lane1' '191125_lane2' '191126_lane1' '191126_lane2' '191209_lane1' '191209_lane2')
 
