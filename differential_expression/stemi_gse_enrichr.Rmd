@@ -35,6 +35,13 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 ####################
 
 
+#' get each gene and their LFC from a MAST output file created using the Seurat version of MAST
+#' 
+#' @param mast.output.loc the location of the output file
+#' @param p.val.column the column to use for filtering the significant genes
+#' @param p.val.cutoff the cutoff value to use for filtering the significant genes
+#' @returns a table with the DE genes filtered by the given significance level
+#' 
 get_gene_and_lfc_seurat_mast <- function(mast.output.loc, p.val.column='p_val_adj', p.val.cutoff=0.05){
   # read the output
   de.output <- read.table(mast.output.loc, header = T, row.names = 1, sep = '\t', stringsAsFactors = F)
@@ -44,6 +51,13 @@ get_gene_and_lfc_seurat_mast <- function(mast.output.loc, p.val.column='p_val_ad
 }
 
 
+#' get each gene and their LFC from a limma output file
+#' 
+#' @param limma.output.loc the location of the output file
+#' @param p.val.column the column to use for filtering the significant genes
+#' @param p.val.cutoff the cutoff value to use for filtering the significant genes
+#' @returns a table with the DE genes filtered by the given significance level
+#' 
 get_gene_and_lfc_limma <- function(limma.output.loc, p.val.column='adj.P.Val', p.val.cutoff=0.05){
   # read the output
   de.output <- read.table(limma.output.loc, header = T, row.names = 1, sep = '\t', stringsAsFactors = F)
@@ -53,6 +67,14 @@ get_gene_and_lfc_limma <- function(limma.output.loc, p.val.column='adj.P.Val', p
 }
 
 
+#' get each gene and their LFC from a MAST output file created using the standalone version of MAST
+#' 
+#' @param mast.output.loc the location of the output file
+#' @param p.val.column the column to use for filtering the significant genes
+#' @param p.val.cutoff the cutoff value to use for filtering the significant genes
+#' @param contrast the value in the model that we are interested in
+#' @returns a table with the DE genes filtered by the given significance level
+#' 
 get_gene_and_lfc_standalone_mast <- function(mast.output.loc, p.val.column='bonferroni', p.val.cutoff=0.05, contrast='inflammation_statusNI'){
   # read the output
   de.output <- read.table(mast.output.loc, header = T, sep = '\t', stringsAsFactors = F)
@@ -60,21 +82,30 @@ get_gene_and_lfc_standalone_mast <- function(mast.output.loc, p.val.column='bonf
   de.output.contrast <- de.output[de.output[['contrast']] == contrast &
                                     de.output[['component']] == 'H', ]
   # subset to just what is significant
-  de.output.contrast.significant <- de.output.contrast[de.output.contrast[[p.val.column]] < p.val.cutoff, ]
+  de.output.contrast.significant <- de.output.contrast[!is.na(de.output.contrast[[p.val.column]]) & de.output.contrast[[p.val.column]] < p.val.cutoff, ]
   # we can now safely set the rownames to be the genes, as with one contrast, there is only one entry per gene
   rownames(de.output.contrast.significant) <- de.output.contrast.significant[['primerid']]
   return(de.output.contrast.significant)
 }
 
 
+#' get each gene and their LFC from a DE output file
+#' 
+#' @param de.output.loc the location of the output file
+#' @param de_method the methods used to generate the output file (mast_standalone, mast_seurat, limma)
+#' @param p.val.column the column to use for filtering the significant genes
+#' @param p.val.cutoff the cutoff value to use for filtering the significant genes
+#' @param contrast the value in the model that we are interested in (only necessary for mast_standalone)
+#' @returns a table with the DE genes filtered by the given significance level
+#' 
 get_de_output <- function(de.output.loc, de_method, p.val.column='bonferroni', p.val.cutoff=0.05, contrast='inflammation_statusNI'){
   # use the correct method
   de.output <- NULL
   if (de_method == 'mast_standalone') {
-    de.output <- get_gene_and_lfc_standalone_mast(de.output.loc, p.val.column = p.val.column, p.val.cutoff = p.val.cutoff, contrast = contrast)
+    de.output <- get_gene_and_lfc_standalone_mast(de.output.loc, p.val.column = p.val.column, p.val.cutoff = p.val.cutoff)
   }
   else if (de_method == 'mast_seurat') {
-    de.output <- get_gene_and_lfc_seurat_mast(de.output.loc, p.val.column = p.val.column, p.val.cutoff = p.val.cutoff)
+    de.output <- get_gene_and_lfc_seurat_mast(de.output.loc, p.val.column = p.val.column, p.val.cutoff = p.val.cutoff, contrast = contrast)
   }
   else if (de_method == 'limma'){
     de.output <- get_gene_and_lfc_limma(de.output.loc, p.val.column = p.val.column, p.val.cutoff = p.val.cutoff)
@@ -86,8 +117,22 @@ get_de_output <- function(de.output.loc, de_method, p.val.column='bonferroni', p
 }
 
 
-
-do_enrichr <- function(mast.output.loc, pathway.output.loc, de_method='mast_seurat', log.fc.column='avg_log2FC', p.val.column='p_val_adj', p.val.cutoff=0.05, contrast.var = NULL, list.regex = NULL){
+#' use enrichr to do gene set enrichment on each DE output file in a directory
+#' 
+#' @param mast.output.loc the folder containing the DE output files
+#' @param pathway.output.loc the folder to place the GSE results
+#' @param de_method the methods used to generate the output file (mast_standalone, mast_seurat, limma)
+#' @param p.val.column the column to use for filtering the significant genes
+#' @param p.val.cutoff the cutoff value to use for filtering the significant genes
+#' @param log.fc.column the column containing the log fold change of the gene
+#' @param contrast.var the value in the model that we are interested in (only necessary for mast_standalone)
+#' @param list.regex regular expression pattern to use when lising the DE output files
+#' @param do_positive test just the positive LFC genes
+#' @param do_negative test just the negative LFC genes
+#' @param do_joint test genes regardless of LFC direction
+#' @returns 0 if succesfull
+#' do_enrichr(limma_lowm20_output_path, gse_enrichr_limma_lowm20_output_path, de_method = 'limma', log.fc.column = 'logFC', p.val.column = 'p.bonferroni')
+do_enrichr <- function(mast.output.loc, pathway.output.loc, de_method='mast_seurat', log.fc.column='avg_log2FC', p.val.column='p_val_adj', p.val.cutoff=0.05, contrast.var = NULL, list.regex = NULL, do_positive=T, do_negative=T, do_joint=T){
   # check if the output folder exists
   if(!dir.exists(pathway.output.loc)){
     dir.create(pathway.output.loc, recursive = T)
@@ -95,12 +140,19 @@ do_enrichr <- function(mast.output.loc, pathway.output.loc, de_method='mast_seur
   # get the DE output files
   mast.output.files <- list.files(mast.output.loc, full.names = T, pattern = list.regex)
   # check each cell type
-  #for(mast.output.file in mast.output.files){
-  foreach(mast.output.file=mast.output.files) %do% {
+  for(mast.output.file in mast.output.files){
+    #foreach(mast.output.file=mast.output.files) %do% {
     # get the basename
     mast.output.file.basename <- basename(mast.output.file)
-    # get the comparison from that
-    comparison <- sub(pattern = "(.*?)\\..*$", replacement = "\\1", x = mast.output.file.basename)
+    # I was not consistent naming
+    comparison <- NULL
+    if (de_method == 'limma') {
+      comparison <- sub(pattern = "(.*)\\..*$", replacement = "\\1",x = mast.output.file.basename)
+    }
+    else{
+      # get the comparison from that
+      comparison <- sub(pattern = "(.*?)\\..*$", replacement = "\\1", x = mast.output.file.basename)
+    }
     # get the full path to the DE file
     de.output.loc <- mast.output.file
     # read the output
@@ -110,41 +162,25 @@ do_enrichr <- function(mast.output.loc, pathway.output.loc, de_method='mast_seur
     de.output <- get_de_output(de.output.loc = de.output.loc, de_method = de_method, p.val.column = p.val.column, p.val.cutoff = p.val.cutoff, contrast = contrast.var)
     # check if there are any results
     if(nrow(de.output) > 0){
-      # grab the genes
-      gene.symbols.sig <- rownames(de.output)
-      # do the enrichment analysis
-      enriched <- enrichr(genes = gene.symbols.sig, databases = c('Reactome_2016'))
-      # grab the reactome result
-      enriched.reactome <- enriched[['Reactome_2016']]
-      # write a result if there is one
-      if(nrow(enriched.reactome) > 0){
-        # paste the output path together
-        enriched.reactome.loc <- paste(pathway.output.loc, comparison, '.tsv', sep = '')
-        # write the result
-        write.table(enriched.reactome, enriched.reactome.loc, sep = '\t', quote = T, row.names = F, col.names = T)
-      }
-      # now check for the positive genes
-      de.output.positive <- de.output[de.output[[log.fc.column]] > 0, ]
-      # check if there are any genes left
-      if(nrow(de.output.positive) > 0){
+      if (do_joint==T) {
         # grab the genes
-        gene.symbols.sig.positive <- rownames(de.output.positive)
+        gene.symbols.sig <- rownames(de.output)
         # do the enrichment analysis
-        enriched.positive <- enrichr(genes = gene.symbols.sig.positive, databases = c('Reactome_2016'))
+        enriched <- enrichr(genes = gene.symbols.sig, databases = c('Reactome_2016'))
         # grab the reactome result
-        enriched.reactome.positive <- enriched.positive[['Reactome_2016']]
+        enriched.reactome <- enriched[['Reactome_2016']]
         # write a result if there is one
-        if(nrow(enriched.reactome.positive) > 0){
+        if(nrow(enriched.reactome) > 0){
           # paste the output path together
-          enriched.reactome.positive.loc <- paste(pathway.output.loc, comparison, '_positive', '.tsv', sep = '')
+          enriched.reactome.loc <- paste(pathway.output.loc, comparison, '.tsv', sep = '')
           # write the result
-          write.table(enriched.reactome.positive, enriched.reactome.positive.loc, sep = '\t', quote = T, row.names = F, col.names = T)
+          write.table(enriched.reactome, enriched.reactome.loc, sep = '\t', quote = T, row.names = F, col.names = T)
         }
       }
       # now check for the negative genes
       de.output.negative <- de.output[de.output[[log.fc.column]] < 0, ]
       # check if there are any genes left
-      if(nrow(de.output.negative) > 0){
+      if(nrow(de.output.negative) > 0 & do_negative==T){
         # grab the genes
         gene.symbols.sig.negative <- rownames(de.output.negative)
         # do the enrichment analysis
@@ -159,8 +195,30 @@ do_enrichr <- function(mast.output.loc, pathway.output.loc, de_method='mast_seur
           write.table(enriched.reactome.negative, enriched.reactome.negative.loc, sep = '\t', quote = T, row.names = F, col.names = T)
         }
       }
+      # now check for the positive genes
+      de.output.positive <- de.output[de.output[[log.fc.column]] > 0, ]
+      # check if there are any genes left
+      if(nrow(de.output.positive) > 0 & do_positive==T){
+        # grab the genes
+        gene.symbols.sig.positive <- rownames(de.output.positive)
+        # do the enrichment analysis
+        enriched.positive <- enrichr(genes = gene.symbols.sig.positive, databases = c('Reactome_2016'))
+        # grab the reactome result
+        enriched.reactome.positive <- enriched.positive[['Reactome_2016']]
+        # write a result if there is one
+        if(nrow(enriched.reactome.positive) > 0){
+          # paste the output path together
+          enriched.reactome.positive.loc <- paste(pathway.output.loc, comparison, '_positive', '.tsv', sep = '')
+          # write the result
+          write.table(enriched.reactome.positive, enriched.reactome.positive.loc, sep = '\t', quote = T, row.names = F, col.names = T)
+        }
+      }
+    }
+    else{
+      print(paste('no genes significant for', mast.output.file))
     }
   }
+  return(0)
 }
 
 
@@ -191,6 +249,16 @@ do_enrichr(mast.output.v2.loc, gse.output.v2.loc)
 mast.output.v3.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20210301/rna/'
 gse.output.v3.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20210301/rna/'
 do_enrichr(mast.output.v3.loc, gse.output.v3.loc)
+
+# location of limma output
+limma.output.loc <-  '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/'
+# location of limma gse output
+gse.output.limma.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/assignment_chem/'
+# do gse
+do_enrichr(limma.output.loc, gse.output.limma.loc, p.val.column = 'p.bonferroni', log.fc.column = 'logFC', de_method = 'limma', do_positive = T, do_negative = F, do_joint = F, list.regex = '*.tsv')
+do_enrichr(limma.output.loc, gse.output.limma.loc, p.val.column = 'p.bonferroni', log.fc.column = 'logFC', de_method = 'limma', do_positive = F, do_negative = T, do_joint = F, list.regex = '*.tsv')
+do_enrichr(limma.output.loc, gse.output.limma.loc, p.val.column = 'p.bonferroni', log.fc.column = 'logFC', de_method = 'limma', do_positive = F, do_negative = F, do_joint = T, list.regex = '*.tsv')
+
 
 
 ```

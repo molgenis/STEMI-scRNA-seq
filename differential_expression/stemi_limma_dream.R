@@ -391,7 +391,7 @@ set.seed(7777)
 cardio_integrated_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/seurat/cardio.integrated.20210301.rds'
 
 # output location
-limma_output_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/'
+limma_output_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
 
 # read cardio integrated file
 cardio_integrated <- readRDS(cardio_integrated_loc)
@@ -401,35 +401,35 @@ do_limma_dream_pairwise_per_celltype(cardio_integrated[, cardio_integrated@meta.
                                      output_loc = limma_output_loc, 
                                      celltype_column = 'cell_type_lowerres', 
                                      aggregates = c('timepoint.final', 'chem', 'assignment.final'), 
-                                     fixed_effects = c('timepoint.final', 'chem'), 
+                                     fixed_effects = c('timepoint.final', 'chem', 'age', 'gender'), 
                                      random_effects = c('assignment.final'),
                                      condition_combinations = list('timepoint.final' = c('t24h', 'Baseline')),
-                                     cell_types_to_use = c('monocyte')
+                                     cell_types_to_use = c('monocyte', 'NK')
 )
 do_limma_dream_pairwise_per_celltype(cardio_integrated[, cardio_integrated@meta.data[['timepoint.final']] %in% c('t8w', 'Baseline')], 
                                      output_loc = limma_output_loc, 
                                      celltype_column = 'cell_type_lowerres', 
                                      aggregates = c('timepoint.final', 'chem', 'assignment.final'), 
-                                     fixed_effects = c('timepoint.final', 'chem'), 
+                                     fixed_effects = c('timepoint.final', 'chem', 'age', 'gender'), 
                                      random_effects = c('assignment.final'),
-                                     condition_combinations = list('timepoint.final' = c('t24h', 'Baseline')),
-                                     cell_types_to_use = c('monocyte')
+                                     condition_combinations = list('timepoint.final' = c('t8w', 'Baseline')),
+                                     cell_types_to_use = c('monocyte', 'NK')
 )
 do_limma_dream_pairwise_per_celltype(cardio_integrated[, cardio_integrated@meta.data[['timepoint.final']] %in% c('t8w', 't24h')], 
                                      output_loc = limma_output_loc, 
                                      celltype_column = 'cell_type_lowerres', 
                                      aggregates = c('timepoint.final', 'chem', 'assignment.final'), 
-                                     fixed_effects = c('timepoint.final', 'chem'), 
+                                     fixed_effects = c('timepoint.final', 'chem', 'age', 'gender'), 
                                      random_effects = c('assignment.final'),
-                                     condition_combinations = list('timepoint.final' = c('t24h', 'Baseline')),
-                                     cell_types_to_use = c('monocyte')
+                                     condition_combinations = list('timepoint.final' = c('t8w', 't24h')),
+                                     cell_types_to_use = c('monocyte', 'NK')
 )
 do_limma_dream_pairwise_per_celltype(cardio_integrated[, cardio_integrated@meta.data[['timepoint.final']] %in% c('Baseline', 'UT')], 
                                      output_loc = limma_output_loc, 
                                      celltype_column = 'cell_type_lowerres', 
                                      aggregates = c('timepoint.final', 'chem', 'assignment.final'), 
-                                     fixed_effects = c('timepoint.final', 'chem'), 
+                                     fixed_effects = c('timepoint.final', 'chem', 'age', 'gender'), 
                                      random_effects = c(),
                                      condition_combinations = list('timepoint.final' = c('Baseline', 'UT')),
-                                     cell_types_to_use = c('monocyte')
+                                     cell_types_to_use = c('monocyte', 'NK')
 )
