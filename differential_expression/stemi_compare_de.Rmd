@@ -248,7 +248,7 @@ get_gene_overlaps <- function(gene_table_1, gene_table_2, gene_column_1, gene_co
 }
 
 
-write_gene_overlaps <- function(overlap_list, output_loc, gene_column='gene', output_directionally=F, lfc_column_per_set=NULL, sign_flip_sets=NULL) {
+write_gene_overlaps <- function(overlap_list, output_loc, gene_column='gene', output_directionally=F, lfc_column_per_set=NULL) {
   # check each combination
   for (combination in names(overlap_list)) {
     # check each cell type
@@ -259,6 +259,28 @@ write_gene_overlaps <- function(overlap_list, output_loc, gene_column='gene', ou
       overlap_out <- paste(output_loc, '/', cell_type, '_', combination, '_', 'shared.txt', sep = '')
       # write the result
       write.table(data.frame(x = overlapping), overlap_out, row.names = F, col.names = F, quote = F)
+      
+      # now check the direction as well
+      if (output_directionally) {
+        # get the overlapping set
+        overlapping_df <- overlap_list[[combination]][[cell_type]][['shared']]
+        # check each set
+        for (set in names(lfc_column_per_set)) {
+          # get the lfc column
+          lfc_column <- lfc_column_per_set[[set]]
+          # get the positive for that set
+          overlapping_df_set_positive <- overlapping_df[overlapping_df[[lfc_column]] > 0, gene_column]
+          # set output directory
+          overlap_set_positive_out <- paste(output_loc, '/', cell_type, '_', combination, '_', 'shared', '_',  set, '_positive.txt', sep = '')
+          # write result
+          write.table(data.frame(x = overlapping_df_set_positive), overlap_set_positive_out, row.names = F, col.names = F, quote = F)
+          # and the negative one
+          overlapping_df_set_negative <- overlapping_df[overlapping_df[[lfc_column]] < 0, gene_column]
+          overlap_set_negative_out <- paste(output_loc, '/', cell_type, '_', combination, '_', 'shared', '_', set, '_negative.txt', sep = '')
+          write.table(data.frame(x = overlapping_df_set_negative), overlap_set_negative_out, row.names = F, col.names = F, quote = F)
+        }
+      }
+      
       # check the non-overlapping
       non_overlapping_conditions <- setdiff(names(overlap_list[[combination]][[cell_type]]), 'shared')
       for (non_overlap_set in non_overlapping_conditions) {
@@ -272,11 +294,6 @@ write_gene_overlaps <- function(overlap_list, output_loc, gene_column='gene', ou
           no_overlap_table <- overlap_list[[combination]][[cell_type]][[non_overlap_set]]
           # get the LFC column
           lfc_column <- lfc_column_per_set[[non_overlap_set]]
-          # flip direction if requested
-          if (!is.null(sign_flip_sets) & non_overlap_set %in% sign_flip_sets) {
-            # perform the flip
-            no_overlap_table[[lfc_column]] <- 1 * no_overlap_table[[lfc_column]]
-          }
           # get the positive set
           no_overlap_positive <- no_overlap_table[no_overlap_table[[lfc_column]] > 0, gene_column]
           no_overlap_positive_out <- paste(output_loc, '/', cell_type, '_', 'only_', combination, '_', non_overlap_set, '_positive.txt', sep = '')
@@ -343,6 +360,55 @@ do_gse_gene_overlaps_enrichr <- function(overlap_list, output_loc, sets_to_consi
   }
   return(0)
 }
+
+
+get_de_overlaps <- function(gene_table_1, gene_table_2, gene_column_1, gene_column_2, lfc_column_1, lfc_column_2, comparison_column_1='combination', comparison_column_2='combination', cell_type_column_1='cell_type', cell_type_column_2='cell_type', name_1='table_1', name_2='table_2', sign_flip_combinations_1=c(), sign_flip_combinations_2=c()) {
+  # we will store the genes per for each combination, per comparison
+  genes_per_combination_per_set <- list()
+  # we will check each combination
+  combinations_both <- intersect(unique(gene_table_1[[comparison_column_1]]), unique(gene_table_2[[comparison_column_2]]))
+  for (combination in combinations_both) {
+    # we will store the result for this combination
+    genes_per_combination_per_set[[combination]] <- list()
+    # subset both tables
+    gene_table_1_combination <- gene_table_1[gene_table_1[[comparison_column_1]] == combination, ]
+    gene_table_2_combination <- gene_table_2[gene_table_2[[comparison_column_2]] == combination, ]
+    # get the cell type
+    cell_types_both <- intersect(unique(gene_table_1_combination[[cell_type_column_1]]), unique(gene_table_2_combination[[cell_type_column_2]]))
+    # check each cell type
+    for (cell_type in cell_types_both) {
+      # get the genes in the first
+      genes_1 <- gene_table_1_combination[gene_table_1_combination[[cell_type_column_1]] == cell_type, ]
+      genes_2 <- gene_table_2_combination[gene_table_2_combination[[cell_type_column_2]] == cell_type, ]
+      # check if we need to flip anything
+      if (!is.null(sign_flip_combinations_1) & combination %in% sign_flip_combinations_1) {
+        genes_1[[lfc_column_1]] <- -1 * genes_1[[lfc_column_1]]
+      }
+      if (!is.null(sign_flip_combinations_2) & combination %in% sign_flip_combinations_2) {
+        genes_2[[lfc_column_2]] <- -1 * genes_2[[lfc_column_2]]
+      }
+      # get the positive ones
+      genes_1_pos <- genes_1[genes_1[[lfc_column_1]] > 0, gene_column_1]
+      # for the other set as well
+      genes_2_pos <- genes_2[genes_2[[lfc_column_2]] > 0, gene_column_2]
+      # into list
+      positive_genes <- list(genes_1_pos, genes_2_pos)
+      # with names we wanted
+      names(positive_genes) <- c(name_1, name_2)
+      
+      # and negative ones
+      genes_1_neg <- genes_1[genes_1[[lfc_column_1]] < 0, gene_column_1]
+      genes_2_neg <- genes_2[genes_2[[lfc_column_2]] < 0, gene_column_2]
+      negative_genes <- list(genes_1_neg, genes_2_neg)
+      names(negative_genes) <- c(name_1, name_2)
+      
+      # put into the list for the cell type
+      genes_per_combination_per_set[[combination]][[cell_type]] <- list('positive' = positive_genes, 'negative' = negative_genes)
+    }
+  }
+  return(genes_per_combination_per_set)
+}
+
 
 ```
 
@@ -421,9 +487,74 @@ write_gene_overlaps(unsigned_mast_vs_limma_meta, '/groups/umcg-franke-scrna/tmp0
 write_gene_overlaps(limma_meta_vs_limma_both, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/method_comparison/limma_meta_vs_limma_both/', output_directionally = T, 
                     lfc_column_per_set = list('limma_meta_signed' = 'meta_fc', 'limma_both' = 'logFC'))
 
+```
 
-do_gse_gene_overlaps_enrichr(unsigned_mast_vs_signed_mast, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_signed_mast/')
-do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_meta, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_limma_meta/')
+```{r plot_overlaps, include=TRUE, fig.width=20, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get overlap of old MAST and limma both
+unsigned_mast_vs_limma_both_overlaps <- get_de_overlaps(stemi_mast_meta_unsigned_output, stemi_limma_both_output, gene_column_1 = 'gene', gene_column_2 = 'gene', name_1 = 'mast_meta_unsigned', name_2 = 'limma_both', lfc_column_1 = 'metafc', lfc_column_2 = 'logFC', sign_flip_combinations_1 = c('t24h-Baseline', 't8w-Baseline', 't8w-t24h'), sign_flip_combinations_2 = c('Baseline-UT'))
+# and old MAST with MAST filtered by direction
+unsigned_mast_vs_signed_mast_overlaps <- get_de_overlaps(stemi_mast_meta_unsigned_output, stemi_mast_meta_signed_output, gene_column_1 = 'gene', gene_column_2 = 'gene', name_1 = 'mast_meta_unsigned', name_2 = 'mast_meta_signed', lfc_column_1 = 'metafc', lfc_column_2 = 'meta_fc', sign_flip_combinations_1 = c('t24h-Baseline', 't8w-Baseline', 't8w-t24h'), sign_flip_combinations_2 = c('t24h-Baseline', 't8w-Baseline', 't8w-t24h'))
+# and old MAST with MAST meta analysis
+unsigned_mast_vs_limma_meta_overlaps <- get_de_overlaps(stemi_mast_meta_unsigned_output, stemi_limma_meta_signed_output, gene_column_1 = 'gene', gene_column_2 = 'gene', name_1 = 'mast_meta_unsigned', name_2 = 'limma_meta_signed', lfc_column_1 = 'metafc', lfc_column_2 = 'meta_fc', sign_flip_combinations_1 = c('t24h-Baseline', 't8w-Baseline', 't8w-t24h'), sign_flip_combinations_2 = c('Baseline-UT'))
+# get overlap of old MAST and limma both
+limma_meta_vs_limma_both_overlaps <- get_de_overlaps(stemi_limma_meta_signed_output, stemi_limma_both_output, gene_column_1 = 'gene', gene_column_2 = 'gene', name_1 = 'limma_meta_signed', name_2 = 'limma_both', lfc_column_1 = 'meta_fc', lfc_column_2 = 'logFC', sign_flip_combinations_1 = c('Baseline-UT'), sign_flip_combinations_2 = c('Baseline-UT'))
+
+plot_grid(
+  ggvenn(unsigned_mast_vs_limma_both_overlaps[['Baseline-UT']][['monocyte']][['positive']]) + ggtitle('monocyte C vs t0'),
+  ggvenn(unsigned_mast_vs_limma_both_overlaps[['t24h-Baseline']][['monocyte']][['positive']]) + ggtitle('monocyte t0 vs t24h'),
+  ggvenn(unsigned_mast_vs_limma_both_overlaps[['t8w-t24h']][['monocyte']][['positive']]) + ggtitle('monocyte t24h vs t8w'),
+  ggvenn(unsigned_mast_vs_limma_both_overlaps[['t8w-Baseline']][['monocyte']][['positive']]) + ggtitle('monocyte t0 vs t8w'),
+  ggvenn(unsigned_mast_vs_limma_both_overlaps[['Baseline-UT']][['NK']][['positive']]) + ggtitle('NK C vs t0'),
+  ggvenn(unsigned_mast_vs_limma_both_overlaps[['t24h-Baseline']][['NK']][['positive']]) + ggtitle('NK t0 vs t24h'),
+  ggvenn(unsigned_mast_vs_limma_both_overlaps[['t8w-t24h']][['NK']][['positive']]) + ggtitle('NK t24h vs t8w'),
+  ggvenn(unsigned_mast_vs_limma_both_overlaps[['t8w-Baseline']][['NK']][['positive']]) + ggtitle('NK t0 vs t8w'),
+  nrow = 2,
+  ncol = 4
+)
+
+
+plot_grid(
+  ggvenn(unsigned_mast_vs_signed_mast_overlaps[['Baseline-UT']][['monocyte']][['positive']]) + ggtitle('monocyte C vs t0'),
+  ggvenn(unsigned_mast_vs_signed_mast_overlaps[['t24h-Baseline']][['monocyte']][['positive']]) + ggtitle('monocyte t0 vs t24h'),
+  ggvenn(unsigned_mast_vs_signed_mast_overlaps[['t8w-t24h']][['monocyte']][['positive']]) + ggtitle('monocyte t24h vs t8w'),
+  ggvenn(unsigned_mast_vs_signed_mast_overlaps[['t8w-Baseline']][['monocyte']][['positive']]) + ggtitle('monocyte t0 vs t8w'),
+  ggvenn(unsigned_mast_vs_signed_mast_overlaps[['Baseline-UT']][['NK']][['positive']]) + ggtitle('NK C vs t0'),
+  ggvenn(unsigned_mast_vs_signed_mast_overlaps[['t24h-Baseline']][['NK']][['positive']]) + ggtitle('NK t0 vs t24h'),
+  ggvenn(unsigned_mast_vs_signed_mast_overlaps[['t8w-t24h']][['NK']][['positive']]) + ggtitle('NK t24h vs t8w'),
+  ggvenn(unsigned_mast_vs_signed_mast_overlaps[['t8w-Baseline']][['NK']][['positive']]) + ggtitle('NK t0 vs t8w'),
+  nrow = 2,
+  ncol = 4
+)
+
+
+plot_grid(
+  ggvenn(unsigned_mast_vs_limma_meta_overlaps[['Baseline-UT']][['monocyte']][['positive']]) + ggtitle('monocyte C vs t0'),
+  ggvenn(unsigned_mast_vs_limma_meta_overlaps[['t24h-Baseline']][['monocyte']][['positive']]) + ggtitle('monocyte t0 vs t24h'),
+  ggvenn(unsigned_mast_vs_limma_meta_overlaps[['t8w-t24h']][['monocyte']][['positive']]) + ggtitle('monocyte t24h vs t8w'),
+  ggvenn(unsigned_mast_vs_limma_meta_overlaps[['t8w-Baseline']][['monocyte']][['positive']]) + ggtitle('monocyte t0 vs t8w'),
+  ggvenn(unsigned_mast_vs_limma_meta_overlaps[['Baseline-UT']][['NK']][['positive']]) + ggtitle('NK C vs t0'),
+  ggvenn(unsigned_mast_vs_limma_meta_overlaps[['t24h-Baseline']][['NK']][['positive']]) + ggtitle('NK t0 vs t24h'),
+  # ggvenn(unsigned_mast_vs_limma_meta_overlaps[['t8w-t24h']][['NK']][['positive']]) + ggtitle('NK t24h vs t8w'),
+  ggvenn(unsigned_mast_vs_limma_meta_overlaps[['t8w-Baseline']][['NK']][['positive']]) + ggtitle('NK t0 vs t8w'),
+  nrow = 2,
+  ncol = 4
+)
+
+
+plot_grid(
+  ggvenn(limma_meta_vs_limma_both_overlaps[['Baseline-UT']][['monocyte']][['positive']]) + ggtitle('monocyte C vs t0'),
+  ggvenn(limma_meta_vs_limma_both_overlaps[['t24h-Baseline']][['monocyte']][['positive']]) + ggtitle('monocyte t0 vs t24h'),
+  ggvenn(limma_meta_vs_limma_both_overlaps[['t8w-t24h']][['monocyte']][['positive']]) + ggtitle('monocyte t24h vs t8w'),
+  ggvenn(limma_meta_vs_limma_both_overlaps[['t8w-Baseline']][['monocyte']][['positive']]) + ggtitle('monocyte t0 vs t8w'),
+  ggvenn(limma_meta_vs_limma_both_overlaps[['Baseline-UT']][['NK']][['positive']]) + ggtitle('NK C vs t0'),
+  ggvenn(limma_meta_vs_limma_both_overlaps[['t24h-Baseline']][['NK']][['positive']]) + ggtitle('NK t0 vs t24h'),
+  # ggvenn(limma_meta_vs_limma_both_overlaps[['t8w-t24h']][['NK']][['positive']]) + ggtitle('NK t24h vs t8w'),
+  ggvenn(limma_meta_vs_limma_both_overlaps[['t8w-Baseline']][['NK']][['positive']]) + ggtitle('NK t0 vs t8w'),
+  nrow = 2,
+  ncol = 4
+)
 
 ```
 
