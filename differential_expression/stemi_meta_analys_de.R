@@ -16,9 +16,13 @@ library(metaRNASeq)
 ####################
 
 
-add_ncell_ndonor <- function(mast_output_loc, mast_added_output_loc, metadata_loc='/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata/cardio.integrated.20210301.metadata.tsv', cell_type_column='cell_type_lowerres', timepoint_column='timepoint.final', participant_column='assignment.final', cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), timepoints=c('UT', 'Baseline', 't24h', 't8w')) {
+add_ncell_ndonor <- function(mast_output_loc, mast_added_output_loc, subset_column=NULL, subset_value=NULL, metadata_loc='/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata/cardio.integrated.20210301.metadata.tsv', cell_type_column='cell_type_lowerres', timepoint_column='timepoint.final', participant_column='assignment.final', cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), timepoints=c('UT', 'Baseline', 't24h', 't8w')) {
   # read the metadata file
   metadata <- read.table(metadata_loc, header = T, sep = '\t')
+  if (!is.null(subset_column) & !is.null(subset_value)) {
+    # subset to the chemistry we need
+    metadata <- metadata[!is.na(metadata[[subset_column]]) & metadata[[subset_column]] == subset_value, ]
+  }
   # create a table with cell numbers
   cell_numbers <- data.frame(table(metadata[, c(cell_type_column, timepoint_column, participant_column)]))
   # remove empty entries
@@ -119,10 +123,10 @@ write_meta_de <- function(de_output_loc_prepend, de_output_loc_append, de_meta_o
       de_v3 <- de_v3[genes_both, ]
       # morph P val to minimum
       if(nrow(de_v2[de_v2[[pval_column]] == 0, ]) > 0){
-        de_v2[de_v2[[pval_column]] == 0, 'pval_column'] <- .Machine$double.xmin
+        de_v2[de_v2[[pval_column]] == 0, pval_column] <- .Machine$double.xmin
       }
       if(nrow(de_v3[de_v3[[pval_column]] == 0, ]) > 0){
-        de_v3[de_v3[[pval_column]] == 0, 'pval_column'] <- .Machine$double.xmin
+        de_v3[de_v3[[pval_column]] == 0, pval_column] <- .Machine$double.xmin
       }
       # add the gene name also in a column
       de_v2$gene <- rownames(de_v2)
@@ -159,19 +163,36 @@ write_meta_de <- function(de_output_loc_prepend, de_output_loc_append, de_meta_o
         }
       )
       # add a final p
-      de_meta[['invnorm.TestStatistic.signed']] <- de_meta[['invnorm.TestStatistic']]
-      de_meta[de_meta[['same_sign']] == F, 'invnorm.TestStatistic.signed'] <- NA
+      de_meta[['invnorm.pval.signed']] <- de_meta[['invnorm.pval']]
+      de_meta[de_meta[['same_sign']] == F, 'invnorm.pval.signed'] <- NA
       # add meta fc
       de_meta[['meta_fc']] <- apply(de_meta, 1, function(x) {
         mean(as.numeric(x[paste('v2', fc_column, sep = '.')]), as.numeric(x[paste('v3', fc_column, sep = '.')]))
         }
       )
+      # add MTC
+      p_invnorm_bonferroni <- p.adjust(de_meta[['invnorm.pval']], method = 'bonferroni')
+      de_meta[['invnorm.pval.bonferroni']] <- p_invnorm_bonferroni
+      de_meta[de_meta[['same_sign']] == F, 'invnorm.pval.bonferroni'] <- NA
+      
       # write the result
       output_loc <- paste(de_meta_output_loc_prepend, file, sep = '')
       write.table(de_meta, output_loc, sep = '\t')
     }, error = function(e) {
       print(paste('error in', file, 'due to', e))
     })
+  }
+}
+
+
+add_z <- function(de_output_in, de_output_out, p_column, sign_column, file_regex='*.tsv') {
+  # go through the conditions
+  files <- list.files(de_output_in, pattern = file_regex)
+  for(file in files){
+    # paste the location together
+    file_loc_full <- paste(de_output_in, file, sep = '')
+    # read the output
+    
   }
 }
 
@@ -190,8 +211,8 @@ write_meta_de(de_output_prepend, de_output_append, de_meta_loc)
 
 
 # add some info to the MAST output
-add_ncell_ndonor('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v2_paired_lores_lfc01minpct01ncountrna_20210301/rna/', '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v2_paired_lores_lfc01minpct01ncountrna_20210301_wstats/rna/')
-add_ncell_ndonor('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20210301/rna/', '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20210301_wstats/rna/')
+add_ncell_ndonor('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v2_paired_lores_lfc01minpct01ncountrna_20210301/rna/', '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v2_paired_lores_lfc01minpct01ncountrna_20210301_wstats/rna/', subset_column = 'chem', subset_value = 'V2')
+add_ncell_ndonor('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20210301/rna/', '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v3_paired_lores_lfc01minpct01ncountrna_20210301_wstats/rna/', subset_column = 'chem', subset_value = 'V3')
 # now do the same for the MAST output
 de_mast_output_prepend <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_v'
 de_mast_output_append <- '_paired_lores_lfc01minpct01ncountrna_20210301_wstats/rna/'

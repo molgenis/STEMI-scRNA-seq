@@ -1,0 +1,485 @@
+---
+title: "stemi_compare_de"
+output: html_document
+date: "2023-10-16"
+---
+```{r header, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Roy Oelen
+# Name: stemi_compare_de.Rmd
+# Function: perform gene set enrichment with REACTOME and enrichr
+############################################################################################################################
+```
+
+```{r libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# libraries        #
+####################
+
+# for the plots
+library(ggplot2)
+library(cowplot)
+
+# for doing the enrichment
+library(enrichR)
+
+```
+
+```{r functions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# Functions        #
+####################
+
+#' get each gene and their LFC from a MAST output file created using the Seurat version of MAST
+#' 
+#' @param mast.output.loc the location of the output file
+#' @param p.val.column the column to use for filtering the significant genes
+#' @param p.val.cutoff the cutoff value to use for filtering the significant genes
+#' @returns a table with the DE genes filtered by the given significance level
+#' 
+get_gene_and_lfc_seurat_mast <- function(mast.output.loc, p.val.column='p_val_adj', p.val.cutoff=0.05){
+  # read the output
+  de.output <- read.table(mast.output.loc, header = T, row.names = 1, sep = '\t', stringsAsFactors = F)
+  # subset to what is significant
+  de.output.significant <- de.output[!is.na(de.output[[p.val.column]]) & de.output[[p.val.column]] < p.val.cutoff, ]
+  return(de.output.significant)
+}
+
+
+#' get each gene and their LFC from a limma output file
+#' 
+#' @param limma.output.loc the location of the output file
+#' @param p.val.column the column to use for filtering the significant genes
+#' @param p.val.cutoff the cutoff value to use for filtering the significant genes
+#' @returns a table with the DE genes filtered by the given significance level
+#' 
+get_gene_and_lfc_limma <- function(limma.output.loc, p.val.column='adj.P.Val', p.val.cutoff=0.05){
+  # read the output
+  de.output <- read.table(limma.output.loc, header = T, row.names = 1, sep = '\t', stringsAsFactors = F)
+  # subset to what is significant
+  de.output.significant <- de.output[!is.na(de.output[[p.val.column]]) & de.output[[p.val.column]] < p.val.cutoff, ]
+  return(de.output.significant)
+}
+
+
+#' get each gene and their LFC from a MAST output file created using the standalone version of MAST
+#' 
+#' @param mast.output.loc the location of the output file
+#' @param p.val.column the column to use for filtering the significant genes
+#' @param p.val.cutoff the cutoff value to use for filtering the significant genes
+#' @param contrast the value in the model that we are interested in
+#' @returns a table with the DE genes filtered by the given significance level
+#' 
+get_gene_and_lfc_standalone_mast <- function(mast.output.loc, p.val.column='bonferroni', p.val.cutoff=0.05, contrast='inflammation_statusNI'){
+  # read the output
+  de.output <- read.table(mast.output.loc, header = T, sep = '\t', stringsAsFactors = F)
+  # subset to just the contrast we care about
+  de.output.contrast <- de.output[de.output[['contrast']] == contrast &
+                                    de.output[['component']] == 'H', ]
+  # subset to just what is significant
+  de.output.contrast.significant <- de.output.contrast[!is.na(de.output.contrast[[p.val.column]]) & de.output.contrast[[p.val.column]] < p.val.cutoff, ]
+  # we can now safely set the rownames to be the genes, as with one contrast, there is only one entry per gene
+  rownames(de.output.contrast.significant) <- de.output.contrast.significant[['primerid']]
+  return(de.output.contrast.significant)
+}
+
+
+#' get each gene and their LFC from a DE output file
+#' 
+#' @param de.output.loc the location of the output file
+#' @param de_method the methods used to generate the output file (mast_standalone, mast_seurat, limma)
+#' @param p.val.column the column to use for filtering the significant genes
+#' @param p.val.cutoff the cutoff value to use for filtering the significant genes
+#' @param contrast the value in the model that we are interested in (only necessary for mast_standalone)
+#' @returns a table with the DE genes filtered by the given significance level
+#' 
+get_de_output <- function(de.output.loc, de_method, p.val.column='bonferroni', p.val.cutoff=0.05, contrast='inflammation_statusNI'){
+  # use the correct method
+  de.output <- NULL
+  if (de_method == 'mast_standalone') {
+    de.output <- get_gene_and_lfc_standalone_mast(de.output.loc, p.val.column = p.val.column, p.val.cutoff = p.val.cutoff, contrast = contrast)
+  }
+  else if (de_method == 'mast_seurat') {
+    de.output <- get_gene_and_lfc_seurat_mast(de.output.loc, p.val.column = p.val.column, p.val.cutoff = p.val.cutoff)
+  }
+  else if (de_method == 'limma'){
+    de.output <- get_gene_and_lfc_limma(de.output.loc, p.val.column = p.val.column, p.val.cutoff = p.val.cutoff)
+  }
+  else{
+    print('de_method not valid, valid options are: mast_standalone, mast_seurat, limma')
+  }
+  return(de.output)
+}
+
+
+get_de_genes_per_condition_and_celltype <- function(de_output_loc, de_method='mast_seurat', cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), conditions=c('Baseline', 't24h', 't8w', 'UT'), p_val_column='p_val_adj', p_val_cutoff=0.05, contrast_var = NULL) {
+  # first store each table separately
+  df_per_combination <- list()
+  # we need to have all columns present to be able to merge later on
+  cols_present <- c()
+  # check each condition combination
+  for (condition1 in conditions) {
+    for(condition2 in conditions) {
+      # check each cell type
+      for (cell_type in cell_types) {
+        # paste together the path
+        full_de_path <- NULL
+        # paste is different depending on the method
+        if ('mast_seurat' == de_method) {
+          full_de_path <- paste(de_output_loc, '/', cell_type, condition1, condition2, '.tsv', sep = '')
+        }
+        else if('limma' == de_method) {
+          full_de_path <- paste(de_output_loc, '/', cell_type, '_timepoint.final.', condition2, '_', condition1, '.tsv', sep = '')
+        }
+        # check if this file exists
+        if (file.exists(full_de_path)) {
+          # read the file
+          full_de <- get_de_output(de.output.loc = full_de_path, de_method = de_method, p.val.column = p_val_column, p.val.cutoff = p_val_cutoff, contrast = contrast_var)
+          if (nrow(full_de) > 0) {
+            # add the combination and cell type
+            full_de <- cbind(data.frame(gene = rownames(full_de), combination = rep(paste(condition2, condition1, sep = '-'), times = nrow(full_de)), cell_type = rep(cell_type, times = nrow(full_de))), full_de)
+            # add to the list
+            df_per_combination[[paste(cell_type, condition2, condition1, sep = '_')]] <- full_de
+            # add the column names
+            cols_present <- unique(c(cols_present, colnames(full_de)))
+          }
+        }
+      }
+    }
+  }
+  # add missing columns where present
+  for (comb in names(df_per_combination)) {
+    df_comb <- df_per_combination[[comb]]
+    # check which columns are missing, and set those to NA
+    df_comb[, setdiff(cols_present, colnames(df_comb))] <- NA
+    # add back
+    df_per_combination[[comb]] <- df_comb
+  }
+  # merge all of them
+  df_all <- do.call('rbind', df_per_combination)
+  return(df_all)
+}
+
+
+plot_concordance <- function(de_table, set_1_column, set_2_column, pointless=F, legendless=F, ylim=NULL, xlim=NULL, paper_style=T) {
+  
+  # add the signs
+  de_table[['sign_1']] <- sign(de_table[[set_1_column]])
+  de_table[['sign_2']] <- sign(de_table[[set_2_column]])
+  # then check if they are the same
+  de_table[['concordant']] <- NA
+  de_table[!is.na(de_table[['sign_1']]) & !is.na(de_table[['sign_2']]) & de_table[['sign_1']] == de_table[['sign_2']], 'concordant'] <- 'concordant'
+  de_table[!is.na(de_table[['sign_1']]) & !is.na(de_table[['sign_2']]) &de_table[['sign_1']] != de_table[['sign_2']], 'concordant'] <- 'disconcordant'
+  # calculate concordance
+  concordance <- sum(!is.na(de_table[['concordant']]) & de_table[['concordant']] == 'concordant') / sum(!is.na(de_table[['concordant']]))
+  
+  # create the plot
+  p <- ggplot(data = NULL, mapping = aes(x = de_table[[set_1_column]], y = de_table[[set_2_column]], color = de_table[['concordant']])) +
+    geom_point() +
+    xlab(set_1_column) +
+    ylab(set_2_column) +
+    guides(color=guide_legend(title='concordance')) +
+    geom_text(x=0, y=0, label = round(concordance, digits = 2))
+  
+  # add xlimit if requested
+  if(!is.null(ylim)){
+    p <- p + ylim(ylim)
+  }
+  if(!is.null(xlim)){
+    p <- p + xlim(xlim)
+  }
+  if(pointless){
+    p <- p + theme(axis.text.x=element_blank(), 
+                   axis.ticks = element_blank())
+  }
+  if(legendless){
+    p <- p + theme(legend.position = 'none')
+  }
+  if (paper_style) {
+    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  return(p)
+}
+
+
+get_gene_overlaps <- function(gene_table_1, gene_table_2, gene_column_1, gene_column_2, comparison_column_1='combination', comparison_column_2='combination', cell_type_column_1='cell_type', cell_type_column_2='cell_type', name_1='table_1', name_2='table_2') {
+  # we will save this per combination
+  overlap_per_combination <- list()
+  # we will check each combination
+  combinations_both <- intersect(unique(gene_table_1[[comparison_column_1]]), unique(gene_table_2[[comparison_column_2]]))
+  for (combination in combinations_both) {
+    # we will store the result for this combination
+    overlap_per_combination[[combination]] <- list()
+    # subset both tables
+    gene_table_1_combination <- gene_table_1[gene_table_1[[comparison_column_1]] == combination, ]
+    gene_table_2_combination <- gene_table_2[gene_table_2[[comparison_column_2]] == combination, ]
+    # get the cell type
+    cell_types_both <- intersect(unique(gene_table_1_combination[[cell_type_column_1]]), unique(gene_table_2_combination[[cell_type_column_2]]))
+    # check each cell type
+    for (cell_type in cell_types_both) {
+      # get the genes in the first
+      genes_1 <- gene_table_1_combination[gene_table_1_combination[[cell_type_column_1]] == cell_type, ]
+      genes_2 <- gene_table_2_combination[gene_table_2_combination[[cell_type_column_2]] == cell_type, ]
+      # now get overlap and differences
+      genes_shared <- intersect(genes_1[[gene_column_1]], genes_2[[gene_column_2]])
+      genes_only_1 <- setdiff(genes_1[[gene_column_1]], genes_2[[gene_column_2]])
+      genes_only_2 <- setdiff(genes_2[[gene_column_2]], genes_1[[gene_column_1]])
+      # for the ones in both, we need to merge them
+      gene_df_both <- cbind(data.frame(gene = genes_shared),
+                            genes_1[match(genes_shared, genes_1[[gene_column_1]]), ],
+                            genes_2[match(genes_shared, genes_2[[gene_column_2]]), ])
+      # put that in a list
+      overlap_list <- list(
+        'shared' = gene_df_both,
+        # also set gene as explicit column
+        'set_1' = cbind(data.frame(gene = genes_only_1), genes_1[match(genes_only_1, genes_1[[gene_column_1]]), ]),
+        'set_2' = cbind(data.frame(gene = genes_only_2), genes_2[match(genes_only_2, genes_2[[gene_column_2]]), ])
+      )
+      names(overlap_list) <- c('shared', name_1, name_2)
+      # put in the list for this cell type
+      overlap_per_combination[[combination]][[cell_type]] <- overlap_list
+    }
+  }
+  return(overlap_per_combination)
+}
+
+
+write_gene_overlaps <- function(overlap_list, output_loc, gene_column='gene', output_directionally=F, lfc_column_per_set=NULL, sign_flip_sets=NULL) {
+  # check each combination
+  for (combination in names(overlap_list)) {
+    # check each cell type
+    for (cell_type in names(overlap_list[[combination]])) {
+      # get the overlap lists
+      overlapping <- overlap_list[[combination]][[cell_type]][['shared']][[gene_column]]
+      # set output directory
+      overlap_out <- paste(output_loc, '/', cell_type, '_', combination, '_', 'shared.txt', sep = '')
+      # write the result
+      write.table(data.frame(x = overlapping), overlap_out, row.names = F, col.names = F, quote = F)
+      # check the non-overlapping
+      non_overlapping_conditions <- setdiff(names(overlap_list[[combination]][[cell_type]]), 'shared')
+      for (non_overlap_set in non_overlapping_conditions) {
+        # do the same as with the overlapping one
+        no_overlap <- overlap_list[[combination]][[cell_type]][[non_overlap_set]][[gene_column]]
+        no_overlap_out <- paste(output_loc, '/', cell_type, '_', 'only_', combination, '_', non_overlap_set, '.txt', sep = '')
+        write.table(data.frame(x = no_overlap), no_overlap_out, row.names = F, col.names = F, quote = F)
+        # do directionally if requested
+        if (output_directionally) {
+          # we need the full table for this
+          no_overlap_table <- overlap_list[[combination]][[cell_type]][[non_overlap_set]]
+          # get the LFC column
+          lfc_column <- lfc_column_per_set[[non_overlap_set]]
+          # flip direction if requested
+          if (!is.null(sign_flip_sets) & non_overlap_set %in% sign_flip_sets) {
+            # perform the flip
+            no_overlap_table[[lfc_column]] <- 1 * no_overlap_table[[lfc_column]]
+          }
+          # get the positive set
+          no_overlap_positive <- no_overlap_table[no_overlap_table[[lfc_column]] > 0, gene_column]
+          no_overlap_positive_out <- paste(output_loc, '/', cell_type, '_', 'only_', combination, '_', non_overlap_set, '_positive.txt', sep = '')
+          write.table(data.frame(x = no_overlap_positive), no_overlap_positive_out, row.names = F, col.names = F, quote = F)
+          # and negative set
+          no_overlap_negative <- no_overlap_table[no_overlap_table[[lfc_column]] < 0, gene_column]
+          no_overlap_negative_out <- paste(output_loc, '/', cell_type, '_', 'only_', combination, '_', non_overlap_set, '_negative.txt', sep = '')
+          write.table(data.frame(x = no_overlap_negative), no_overlap_negative_out, row.names = F, col.names = F, quote = F)
+        }
+      }
+    }
+  }
+  return(0)
+}
+
+
+do_gse_gene_overlaps_enrichr <- function(overlap_list, output_loc, sets_to_consider=NULL, gene_column='gene') {
+  # check each combination
+  for (combination in names(overlap_list)) {
+    # check each cell type
+    for (cell_type in names(overlap_list[[combination]])) {
+      if (is.null(sets_to_consider) | 'shared' %in% sets_to_consider) {
+        # get the overlap lists
+        overlapping <- overlap_list[[combination]][[cell_type]][['shared']][[gene_column]]
+        # set output directory
+        overlap_out <- paste(output_loc, '/', cell_type, '_', 'overlap_', combination, '.txt', sep = '')
+        try(
+          {
+            # do the enrichment analysis
+            enriched <- enrichr(genes = overlapping, databases = c('Reactome_2016'))
+            # grab the reactome result
+            enriched.reactome <- enriched[['Reactome_2016']]
+            # write a result if there is one
+            if(!(is.null(enriched.reactome)) & nrow(enriched.reactome) > 0){
+              # write the result
+              write.table(enriched.reactome, overlap_out, sep = '\t', quote = T, row.names = F, col.names = T)
+            }
+          }
+        )
+      }
+      # check the non-overlapping
+      non_overlapping_conditions <- setdiff(names(overlap_list[[combination]][[cell_type]]), 'shared')
+      for (non_overlap_set in non_overlapping_conditions) {
+        if (is.null(sets_to_consider) | non_overlap_set %in% sets_to_consider) {
+           # do the same as with the overlapping one
+          no_overlap <- overlap_list[[combination]][[cell_type]][[non_overlap_set]][[gene_column]]
+          no_overlap_out <- paste(output_loc, '/', cell_type, '_','only_', combination, '_', non_overlap_set, '.txt', sep = '')
+          try(
+            {
+              # do the enrichment analysis
+              enriched <- enrichr(genes = no_overlap, databases = c('Reactome_2016'))
+              # grab the reactome result
+              enriched.reactome <- enriched[['Reactome_2016']]
+              # write a result if there is one
+              if(!(is.null(enriched.reactome)) & nrow(enriched.reactome) > 0){
+                # write the result
+                write.table(enriched.reactome, no_overlap_out, sep = '\t', quote = T, row.names = F, col.names = T)
+              }
+            }
+          )
+        }
+      }
+    }
+  }
+  return(0)
+}
+
+```
+
+```{r settings, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# Settings.        #
+####################
+setEnrichrSite("Enrichr") # Human genes
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# Main Code        #
+####################
+
+# paths to files
+stemi_mast_meta_unsigned_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/rna/'
+stemi_mast_meta_signed_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_metasamesign_paired_lores_lfc01minpct01ncountrna_20210301_wstats_byncell/rna/'
+stemi_limma_meta_signed_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/limma_dream/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+stemi_limma_both_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+
+```
+
+```{r output, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get the outputs
+stemi_mast_meta_unsigned_output <- get_de_genes_per_condition_and_celltype(stemi_mast_meta_unsigned_loc, p_val_column = 'metap_bonferroni')
+stemi_mast_meta_signed_output <- get_de_genes_per_condition_and_celltype(stemi_mast_meta_signed_loc, p_val_column = 'invnorm.pval.bonferroni')
+stemi_limma_meta_signed_output <- get_de_genes_per_condition_and_celltype(stemi_limma_meta_signed_loc, de_method = 'limma', p_val_column = 'invnorm.pval.bonferroni')
+stemi_limma_both_output <- get_de_genes_per_condition_and_celltype(stemi_limma_both_loc, de_method = 'limma', p_val_column = 'p.bonferroni')
+
+```
+
+```{r concordance, include=TRUE, fig.width=20, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# plot the concordance
+plot_grid(
+  plot_concordance(stemi_mast_meta_unsigned_output[stemi_mast_meta_unsigned_output$combination == 't24h-Baseline' & stemi_mast_meta_unsigned_output$cell_type == 'monocyte', ], set_1_column = 'avg_logFC_v2', set_2_column = 'avg_logFC_v3', legendless = T) + ggtitle('monocytes t0 vs t24h'),
+  plot_concordance(stemi_mast_meta_unsigned_output[stemi_mast_meta_unsigned_output$combination == 't8w-Baseline' & stemi_mast_meta_unsigned_output$cell_type == 'monocyte', ], set_1_column = 'avg_logFC_v2', set_2_column = 'avg_logFC_v3', legendless = T) + ggtitle('monocytes t0 vs t8w'),
+  plot_concordance(stemi_mast_meta_unsigned_output[stemi_mast_meta_unsigned_output$combination == 't8w-t24h' & stemi_mast_meta_unsigned_output$cell_type == 'monocyte', ], set_1_column = 'avg_logFC_v2', set_2_column = 'avg_logFC_v3', legendless = T) + ggtitle('monocytes t24h vs t8w'),
+  plot_concordance(stemi_mast_meta_unsigned_output[stemi_mast_meta_unsigned_output$combination == 'Baseline-UT' & stemi_mast_meta_unsigned_output$cell_type == 'monocyte', ], set_1_column = 'avg_logFC_v2', set_2_column = 'avg_logFC_v3', legendless = T) + ggtitle('monocytes C vs t0'),
+  plot_concordance(stemi_mast_meta_unsigned_output[stemi_mast_meta_unsigned_output$combination == 't24h-Baseline' & stemi_mast_meta_unsigned_output$cell_type == 'NK', ], set_1_column = 'avg_logFC_v2', set_2_column = 'avg_logFC_v3', legendless = T) + ggtitle('NKs t0 vs t24h'),
+  plot_concordance(stemi_mast_meta_unsigned_output[stemi_mast_meta_unsigned_output$combination == 't8w-Baseline' & stemi_mast_meta_unsigned_output$cell_type == 'NK', ], set_1_column = 'avg_logFC_v2', set_2_column = 'avg_logFC_v3', legendless = T) + ggtitle('NKs t0 vs t8w'),
+  plot_concordance(stemi_mast_meta_unsigned_output[stemi_mast_meta_unsigned_output$combination == 't8w-t24h' & stemi_mast_meta_unsigned_output$cell_type == 'NK', ], set_1_column = 'avg_logFC_v2', set_2_column = 'avg_logFC_v3', legendless = T) + ggtitle('NKs t24h vs t8w'),
+  plot_concordance(stemi_mast_meta_unsigned_output[stemi_mast_meta_unsigned_output$combination == 'Baseline-UT' & stemi_mast_meta_unsigned_output$cell_type == 'NK', ], set_1_column = 'avg_logFC_v2', set_2_column = 'avg_logFC_v3', legendless = T) + ggtitle('NKs C vs t0'),
+  nrow = 2,
+  ncol = 4
+)
+
+```
+
+```{r overlaps, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get overlap of old MAST and limma both
+unsigned_mast_vs_limma_both <- get_gene_overlaps(stemi_mast_meta_unsigned_output, stemi_limma_both_output, gene_column_1 = 'gene', gene_column_2 = 'gene', name_1 = 'mast_meta_unsigned', name_2 = 'limma_both')
+# and old MAST with MAST filtered by direction
+unsigned_mast_vs_signed_mast <- get_gene_overlaps(stemi_mast_meta_unsigned_output, stemi_mast_meta_signed_output, gene_column_1 = 'gene', gene_column_2 = 'gene', name_1 = 'mast_meta_unsigned', name_2 = 'mast_meta_signed')
+# and old MAST with MAST meta analysis
+unsigned_mast_vs_limma_meta <- get_gene_overlaps(stemi_mast_meta_unsigned_output, stemi_limma_meta_signed_output, gene_column_1 = 'gene', gene_column_2 = 'gene', name_1 = 'mast_meta_unsigned', name_2 = 'limma_meta_signed')
+# get overlap of old MAST and limma both
+limma_meta_vs_limma_both <- get_gene_overlaps(stemi_limma_meta_signed_output, stemi_limma_both_output, gene_column_1 = 'gene', gene_column_2 = 'gene', name_1 = 'limma_meta_signed', name_2 = 'limma_both')
+
+# write the sets
+write_gene_overlaps(unsigned_mast_vs_limma_both, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/method_comparison/unsigned_mast_vs_limma_both/', output_directionally = T, 
+                    lfc_column_per_set = list('limma_both' = 'logFC', 'mast_meta_unsigned' = 'metafc'))
+write_gene_overlaps(unsigned_mast_vs_signed_mast, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/method_comparison/unsigned_mast_vs_signed_mast/', output_directionally = T,
+                    lfc_column_per_set = list('mast_meta_signed' = 'meta_fc', 'mast_meta_unsigned' = 'metafc'))
+write_gene_overlaps(unsigned_mast_vs_limma_meta, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/method_comparison/unsigned_mast_vs_limma_meta/', output_directionally = T, 
+                    lfc_column_per_set = list('mast_meta_unsigned' = 'metafc', 'limma_meta_signed' = 'meta_fc'))
+write_gene_overlaps(limma_meta_vs_limma_both, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/method_comparison/limma_meta_vs_limma_both/', output_directionally = T, 
+                    lfc_column_per_set = list('limma_meta_signed' = 'meta_fc', 'limma_both' = 'logFC'))
+
+
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_signed_mast, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_signed_mast/')
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_meta, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_limma_meta/')
+
+```
+
+```{r gse1, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# and the GSEs
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_both['t24h-Baseline'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_limma_both/', sets_to_consider = c('shared'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_both['t24h-Baseline'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_limma_both/', sets_to_consider = c('mast_meta_unsigned'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_both['t24h-Baseline'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_limma_both/', sets_to_consider = c('limma_both'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_both['t8w-Baseline'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_limma_both/', sets_to_consider = c('shared'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_both['t8w-Baseline'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_limma_both/', sets_to_consider = c('mast_meta_unsigned'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_both['t8w-Baseline'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_limma_both/', sets_to_consider = c('limma_both'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_both['t8w-t24h'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_limma_both/', sets_to_consider = c('shared'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_both['t8w-t24h'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_limma_both/', sets_to_consider = c('mast_meta_unsigned'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_both['t8w-t24h'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_limma_both/', sets_to_consider = c('limma_both'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_both['Baseline-UT'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_limma_both/', sets_to_consider = c('shared'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_both['Baseline-UT'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_limma_both/', sets_to_consider = c('mast_meta_unsigned'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_both['Baseline-UT'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_limma_both/', sets_to_consider = c('limma_both'))
+
+```
+
+```{r gse2, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# and the GSEs
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_signed_mast['t24h-Baseline'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_signed_mast/', sets_to_consider = c('shared'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_signed_mast['t24h-Baseline'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_signed_mast/', sets_to_consider = c('mast_meta_unsigned'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_signed_mast['t24h-Baseline'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_signed_mast/', sets_to_consider = c('mast_meta_signed'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_signed_mast['t8w-Baseline'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_signed_mast/', sets_to_consider = c('shared'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_signed_mast['t8w-Baseline'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_signed_mast/', sets_to_consider = c('mast_meta_unsigned'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_signed_mast['t8w-Baseline'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_signed_mast/', sets_to_consider = c('mast_meta_signed'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_signed_mast['t8w-t24h'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_signed_mast/', sets_to_consider = c('shared'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_signed_mast['t8w-t24h'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_signed_mast/', sets_to_consider = c('mast_meta_unsigned'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_signed_mast['t8w-t24h'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_signed_mast/', sets_to_consider = c('mast_meta_signed'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_signed_mast['Baseline-UT'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_signed_mast/', sets_to_consider = c('shared'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_signed_mast['Baseline-UT'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_signed_mast/', sets_to_consider = c('mast_meta_unsigned'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_signed_mast['Baseline-UT'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_signed_mast/', sets_to_consider = c('mast_meta_signed'))
+
+```
+
+```{r gse2, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# and the GSEs
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_meta['t24h-Baseline'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_signed_mast/', sets_to_consider = c('shared'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_meta['t24h-Baseline'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_signed_mast/', sets_to_consider = c('mast_meta_unsigned'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_meta['t24h-Baseline'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_signed_mast/', sets_to_consider = c('limma_meta_signed'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_meta['t8w-Baseline'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_signed_mast/', sets_to_consider = c('shared'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_meta['t8w-Baseline'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_signed_mast/', sets_to_consider = c('mast_meta_unsigned'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_meta['t8w-Baseline'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_limma_meta/', sets_to_consider = c('limma_meta_signed'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_meta['t8w-t24h'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_limma_meta/', sets_to_consider = c('shared'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_meta['t8w-t24h'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_limma_meta/', sets_to_consider = c('mast_meta_unsigned'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_meta['t8w-t24h'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_limma_meta/', sets_to_consider = c('limma_meta_signed'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_meta['Baseline-UT'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_limma_meta/', sets_to_consider = c('shared'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_meta['Baseline-UT'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_limma_meta/', sets_to_consider = c('mast_meta_unsigned'))
+do_gse_gene_overlaps_enrichr(unsigned_mast_vs_limma_meta['Baseline-UT'], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/de_method_comparison/unsigned_mast_vs_limma_meta/', sets_to_consider = c('limma_meta_signed'))
+
+```
