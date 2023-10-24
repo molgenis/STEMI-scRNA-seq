@@ -864,7 +864,7 @@ knitr::opts_chunk$set(echo = FALSE)
 limma_output_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
 
 # get a table of the number of DE genes
-de_numbers_table_limma <- de_genes_number_to_table(limma_output_loc, de_method = 'limma', pval_column = 'p.bonferroni', lfc_column = 'logFC', lfc_cutoff = 0.1)
+de_numbers_table_limma <- de_genes_number_to_table(limma_output_loc, de_method = 'limma', pval_column = 'p.bonferroni', lfc_column = 'logFC', lfc_cutoff = 1)
 de_numbers_table_limma[is.na(de_numbers_table_limma)] <- 0
 
 ```
@@ -890,9 +890,9 @@ p_de_nrs_controls_limma
 knitr::opts_chunk$set(echo = FALSE)
 
 # show overlap of controls
-p_de_overlap_controls_limma <- plot_loose_overlap_cell_types(limma_output_loc, condition_combinations = c('UT_Baseline'), de_method = 'limma', pval_column = 'p.bonferroni', pval_column_other = 'p.bonferroni', lfc_column = 'logFC', lfc_cutoff = 0.1)
+p_de_overlap_controls_limma <- plot_loose_overlap_cell_types(limma_output_loc, condition_combinations = c('UT_Baseline'), de_method = 'limma', pval_column = 'p.bonferroni', pval_column_other = 'p.bonferroni', lfc_column = 'logFC', lfc_cutoff = 1)
 # show overlap of STEMI timepoints
-p_de_overlap_stemi_limma <- plot_loose_overlap_cell_types(limma_output_loc, condition_combinations = c('t24h_Baseline', 't8w_Baseline'), de_method = 'limma', pval_column = 'p.bonferroni', pval_column_other = 'p.bonferroni', lfc_column = 'logFC', lfc_cutoff = 0.1)
+p_de_overlap_stemi_limma <- plot_loose_overlap_cell_types(limma_output_loc, condition_combinations = c('t24h_Baseline', 't8w_Baseline'), de_method = 'limma', pval_column = 'p.bonferroni', pval_column_other = 'p.bonferroni', lfc_column = 'logFC', lfc_cutoff = 1)
 
 # show the plots
 p_de_overlap_controls_limma
