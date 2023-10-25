@@ -62,7 +62,7 @@ get_gene_and_lfc_limma <- function(limma.output.loc, p.val.column='adj.P.Val', p
   # read the output
   de.output <- read.table(limma.output.loc, header = T, row.names = 1, sep = '\t', stringsAsFactors = F)
   # subset to what is significant
-  de.output.significant <- de.output[de.output[[p.val.column]] < p.val.cutoff, ]
+  de.output.significant <- de.output[!is.na(de.output[[p.val.column]]) & de.output[[p.val.column]] < p.val.cutoff, ]
   return(de.output.significant)
 }
 
@@ -102,10 +102,10 @@ get_de_output <- function(de.output.loc, de_method, p.val.column='bonferroni', p
   # use the correct method
   de.output <- NULL
   if (de_method == 'mast_standalone') {
-    de.output <- get_gene_and_lfc_standalone_mast(de.output.loc, p.val.column = p.val.column, p.val.cutoff = p.val.cutoff)
+    de.output <- get_gene_and_lfc_standalone_mast(de.output.loc, p.val.column = p.val.column, p.val.cutoff = p.val.cutoff, contrast = contrast)
   }
   else if (de_method == 'mast_seurat') {
-    de.output <- get_gene_and_lfc_seurat_mast(de.output.loc, p.val.column = p.val.column, p.val.cutoff = p.val.cutoff, contrast = contrast)
+    de.output <- get_gene_and_lfc_seurat_mast(de.output.loc, p.val.column = p.val.column, p.val.cutoff = p.val.cutoff)
   }
   else if (de_method == 'limma'){
     de.output <- get_gene_and_lfc_limma(de.output.loc, p.val.column = p.val.column, p.val.cutoff = p.val.cutoff)
@@ -132,7 +132,7 @@ get_de_output <- function(de.output.loc, de_method, p.val.column='bonferroni', p
 #' @param do_joint test genes regardless of LFC direction
 #' @returns 0 if succesfull
 #' do_enrichr(limma_lowm20_output_path, gse_enrichr_limma_lowm20_output_path, de_method = 'limma', log.fc.column = 'logFC', p.val.column = 'p.bonferroni')
-do_enrichr <- function(mast.output.loc, pathway.output.loc, de_method='mast_seurat', log.fc.column='avg_log2FC', p.val.column='p_val_adj', p.val.cutoff=0.05, contrast.var = NULL, list.regex = NULL, do_positive=T, do_negative=T, do_joint=T){
+do_enrichr <- function(mast.output.loc, pathway.output.loc, de_method='mast_seurat', log.fc.column='avg_log2FC', p.val.column='p_val_adj', p.val.cutoff=0.05, contrast.var = NULL, list.regex = NULL, do_positive=T, do_negative=T, do_joint=T, database='Reactome_2016'){
   # check if the output folder exists
   if(!dir.exists(pathway.output.loc)){
     dir.create(pathway.output.loc, recursive = T)
@@ -165,53 +165,59 @@ do_enrichr <- function(mast.output.loc, pathway.output.loc, de_method='mast_seur
       if (do_joint==T) {
         # grab the genes
         gene.symbols.sig <- rownames(de.output)
-        # do the enrichment analysis
-        enriched <- enrichr(genes = gene.symbols.sig, databases = c('Reactome_2016'))
-        # grab the reactome result
-        enriched.reactome <- enriched[['Reactome_2016']]
-        # write a result if there is one
-        if(nrow(enriched.reactome) > 0){
-          # paste the output path together
-          enriched.reactome.loc <- paste(pathway.output.loc, comparison, '.tsv', sep = '')
-          # write the result
-          write.table(enriched.reactome, enriched.reactome.loc, sep = '\t', quote = T, row.names = F, col.names = T)
-        }
+        try({
+          # do the enrichment analysis
+          enriched <- enrichr(genes = gene.symbols.sig, databases = c(database))
+          # grab the reactome result
+          enriched.reactome <- enriched[[database]]
+          # write a result if there is one
+          if(nrow(enriched.reactome) > 0){
+            # paste the output path together
+            enriched.reactome.loc <- paste(pathway.output.loc, comparison, '.tsv', sep = '')
+            # write the result
+            write.table(enriched.reactome, enriched.reactome.loc, sep = '\t', quote = T, row.names = F, col.names = T)
+          }
+        })
       }
       # now check for the negative genes
       de.output.negative <- de.output[de.output[[log.fc.column]] < 0, ]
       # check if there are any genes left
       if(nrow(de.output.negative) > 0 & do_negative==T){
-        # grab the genes
-        gene.symbols.sig.negative <- rownames(de.output.negative)
-        # do the enrichment analysis
-        enriched.negative <- enrichr(genes = gene.symbols.sig.negative, databases = c('Reactome_2016'))
-        # grab the reactome result
-        enriched.reactome.negative <- enriched.negative[['Reactome_2016']]
-        # write a result if there is one
-        if(nrow(enriched.reactome.negative) > 0){
-          # paste the output path together
-          enriched.reactome.negative.loc <- paste(pathway.output.loc, comparison, '_negative', '.tsv', sep = '')
-          # write the result
-          write.table(enriched.reactome.negative, enriched.reactome.negative.loc, sep = '\t', quote = T, row.names = F, col.names = T)
-        }
+        try({
+          # grab the genes
+          gene.symbols.sig.negative <- rownames(de.output.negative)
+          # do the enrichment analysis
+          enriched.negative <- enrichr(genes = gene.symbols.sig.negative, databases = c(database))
+          # grab the reactome result
+          enriched.reactome.negative <- enriched.negative[[database]]
+          # write a result if there is one
+          if(nrow(enriched.reactome.negative) > 0){
+            # paste the output path together
+            enriched.reactome.negative.loc <- paste(pathway.output.loc, comparison, '_negative', '.tsv', sep = '')
+            # write the result
+            write.table(enriched.reactome.negative, enriched.reactome.negative.loc, sep = '\t', quote = T, row.names = F, col.names = T)
+          }
+        })
       }
       # now check for the positive genes
       de.output.positive <- de.output[de.output[[log.fc.column]] > 0, ]
       # check if there are any genes left
       if(nrow(de.output.positive) > 0 & do_positive==T){
-        # grab the genes
-        gene.symbols.sig.positive <- rownames(de.output.positive)
-        # do the enrichment analysis
-        enriched.positive <- enrichr(genes = gene.symbols.sig.positive, databases = c('Reactome_2016'))
-        # grab the reactome result
-        enriched.reactome.positive <- enriched.positive[['Reactome_2016']]
-        # write a result if there is one
-        if(nrow(enriched.reactome.positive) > 0){
-          # paste the output path together
-          enriched.reactome.positive.loc <- paste(pathway.output.loc, comparison, '_positive', '.tsv', sep = '')
-          # write the result
-          write.table(enriched.reactome.positive, enriched.reactome.positive.loc, sep = '\t', quote = T, row.names = F, col.names = T)
-        }
+        try({
+          # grab the genes
+          gene.symbols.sig.positive <- rownames(de.output.positive)
+          # do the enrichment analysis
+          enriched.positive <- enrichr(genes = gene.symbols.sig.positive, databases = c(database))
+          # grab the reactome result
+          enriched.reactome.positive <- enriched.positive[[database]]
+          # write a result if there is one
+          if(nrow(enriched.reactome.positive) > 0){
+            # paste the output path together
+            enriched.reactome.positive.loc <- paste(pathway.output.loc, comparison, '_positive', '.tsv', sep = '')
+            # write the result
+            write.table(enriched.reactome.positive, enriched.reactome.positive.loc, sep = '\t', quote = T, row.names = F, col.names = T)
+          }
+        })
       }
     }
     else{
@@ -251,14 +257,45 @@ gse.output.v3.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/
 do_enrichr(mast.output.v3.loc, gse.output.v3.loc)
 
 # location of limma output
-limma.output.loc <-  '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/'
+limma.output.loc <-  '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
 # location of limma gse output
-gse.output.limma.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/assignment_chem/'
+gse.output.limma.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
 # do gse
 do_enrichr(limma.output.loc, gse.output.limma.loc, p.val.column = 'p.bonferroni', log.fc.column = 'logFC', de_method = 'limma', do_positive = T, do_negative = F, do_joint = F, list.regex = '*.tsv')
 do_enrichr(limma.output.loc, gse.output.limma.loc, p.val.column = 'p.bonferroni', log.fc.column = 'logFC', de_method = 'limma', do_positive = F, do_negative = T, do_joint = F, list.regex = '*.tsv')
 do_enrichr(limma.output.loc, gse.output.limma.loc, p.val.column = 'p.bonferroni', log.fc.column = 'logFC', de_method = 'limma', do_positive = F, do_negative = F, do_joint = T, list.regex = '*.tsv')
 
+# location of limma output
+limma.meta.output.loc <-  '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/limma_dream/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+# location of limma gse output
+gse.output.limma.meta.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/limma_dream/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+# do gse
+do_enrichr(limma.meta.output.loc, gse.output.limma.meta.loc, p.val.column = 'invnorm.TestStatistic.signed', log.fc.column = 'meta_fc', de_method = 'limma', do_positive = T, do_negative = F, do_joint = F, list.regex = '*.tsv')
+do_enrichr(limma.meta.output.loc, gse.output.limma.meta.loc, p.val.column = 'invnorm.TestStatistic.signed', log.fc.column = 'meta_fc', de_method = 'limma', do_positive = F, do_negative = T, do_joint = F, list.regex = '*.tsv')
+do_enrichr(limma.meta.output.loc, gse.output.limma.meta.loc, p.val.column = 'invnorm.TestStatistic.signed', log.fc.column = 'meta_fc', de_method = 'limma', do_positive = F, do_negative = F, do_joint = T, list.regex = '*.tsv')
 
+```
+
+```{r signed_mast, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# location of the Seurat MAST output
+mast.output.signed.meta.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_metasamesign_paired_lores_lfc01minpct01ncountrna_20210301_wstats_byncell/rna/'
+# location of the GSE output
+gse.output.signed.meta.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr/MAST/stemi_metasamesign_paired_lores_lfc01minpct01ncountrna_20210301_wstats_byncell/rna/'
+# do the GSE
+do_enrichr(mast.output.signed.meta.loc, gse.output.signed.meta.loc, p.val.column = 'invnorm.pval.bonferroni', log.fc.column = 'meta_fc', do_positive = T, do_negative = F, do_joint = F)
+do_enrichr(mast.output.signed.meta.loc, gse.output.signed.meta.loc, p.val.column = 'invnorm.pval.bonferroni', log.fc.column = 'meta_fc', do_positive = F, do_negative = T, do_joint = F)
+do_enrichr(mast.output.signed.meta.loc, gse.output.signed.meta.loc, p.val.column = 'invnorm.pval.bonferroni', log.fc.column = 'meta_fc', do_positive = F, do_negative = F, do_joint = T)
+
+```
+
+```{r signed_mast, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+gse.output.limma.loc.kegg <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr_kegg/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+do_enrichr(limma.output.loc, gse.output.limma.loc.kegg, p.val.column = 'p.bonferroni', log.fc.column = 'logFC', de_method = 'limma', do_positive = T, do_negative = F, do_joint = F, list.regex = '*.tsv', database = 'KEGG_2021_Human')
+do_enrichr(limma.output.loc, gse.output.limma.loc.kegg, p.val.column = 'p.bonferroni', log.fc.column = 'logFC', de_method = 'limma', do_positive = F, do_negative = T, do_joint = F, list.regex = '*.tsv', database = 'KEGG_2021_Human')
+do_enrichr(limma.output.loc, gse.output.limma.loc.kegg, p.val.column = 'p.bonferroni', log.fc.column = 'logFC', de_method = 'limma', do_positive = F, do_negative = F, do_joint = T, list.regex = '*.tsv', database = 'KEGG_2021_Human')
 
 ```
