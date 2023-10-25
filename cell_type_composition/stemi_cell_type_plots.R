@@ -4,14 +4,22 @@
 
 library(ggplot2)
 library(cowplot)
-library(GGally)
 
-library(Seurat)
 
 ####################
 # Functions        #
 ####################
 
+
+#' get a celltype number table, with the numbers per cell type, timepoint and donor
+#' 
+#' @param metadata the metadata to load the cell numbers from
+#' @param cell_type_column the column in the metadata denoting the cell type
+#' @param timepoint.column the column in the metadata denoting the timepoint
+#' @param assignment.column the column in the metadata denoting the donor
+#' @param timepoints which timepoints to return in the table
+#' @returns a celltype number table dataframe, with the numbers per cell type, timepoint and donor
+#' 
 metadata_to_ct_table <- function(metadata, cell_type_column='cell_type_lowerres', timepoint.column='timepoint.final', assignment.column='assignment.final', timepoints=c('UT', 'Baseline', 't24h', 't8w')){
   # init table
   cell_type_table <- NULL
@@ -44,6 +52,13 @@ metadata_to_ct_table <- function(metadata, cell_type_column='cell_type_lowerres'
   return(cell_type_table)
 }
 
+#' scale cell numbers in conditions by the numbers in another condition to show relative change
+#' 
+#' @param cell_numbers cell numbers to load the cell numbers from
+#' @param timepoints_to_scale the timepoints to scale (changes)
+#' @param timepoint_to_scale_by the timepoint to scale by (reference)
+#' @returns a dataframe tabel with for each donor and each scaled timepoint, what the relative number of cells is
+#' 
 scale_cell_numbers_to_condition <- function(cell_numbers, timepoints_to_scale, timepoint_to_scale_by){
   # init table
   scaled_number_table <- NULL
@@ -78,7 +93,21 @@ scale_cell_numbers_to_condition <- function(cell_numbers, timepoints_to_scale, t
   return(scaled_number_table)
 }
 
-plot_ct_numbers_boxplot <- function(numbers_table, conditions_to_plot=c('UT', 'Baseline', 't24h', 't8w'), cell_types_to_plot=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), use_label_dict=T, to_fraction=F, pointless=F, legendless=F, to_pct=F, ylim=NULL, paper_style=T){
+
+#' scale cell numbers in conditions by the numbers in another condition to show relative change
+#' 
+#' @param numbers_table cell numbers to load the cell numbers from
+#' @param conditions_to_plot which conditions to plot
+#' @param cell_types_to_plot which cell types to plot
+#' @param use_label_dict convert cell type and condition names into nicer names
+#' @param to_fraction turn absolute cell numbers into fraction of observation
+#' @param pointless remove ticks on the bottom of plot (optional, default F)
+#' @param legendless remove the legend (optional, default F)
+#' @param paper_style add extra whitespace to plot (optional, default T)
+#' @param point_color color the observations (dots) by a group
+#' @returns a dataframe tabel with for each donor and each scaled timepoint, what the relative number of cells is
+#' 
+plot_ct_numbers_boxplot <- function(numbers_table, conditions_to_plot=c('UT', 'Baseline', 't24h', 't8w'), cell_types_to_plot=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), use_label_dict=T, to_fraction=F, pointless=F, legendless=F, to_pct=F, ylim=NULL, paper_style=T, point_color=NULL){
   # subset to want we want to plot
   numbers_table <- numbers_table[numbers_table$condition %in% conditions_to_plot, ]
   numbers_table <- numbers_table[numbers_table$cell_type %in% cell_types_to_plot, ]
@@ -107,12 +136,23 @@ plot_ct_numbers_boxplot <- function(numbers_table, conditions_to_plot=c('UT', 'B
   # set colors based on condition
   colScale <- scale_fill_manual(name = "condition",values = unlist(cc[numbers_table$condition]))
   # create the plot
-  p <- ggplot(data=numbers_table, aes(x=condition, y=number, fill=condition)) + 
-    geom_boxplot(outlier.shape = NA) + 
-    colScale +
-    geom_jitter(size = 0.5, alpha = 0.5) +
-    facet_grid(. ~ cell_type) +
-    ylab(ylabel)
+  if (!is.null(point_color)) {
+    numbers_table[['group']] <- numbers_table[[point_color]]
+    p <- ggplot(data=numbers_table, aes(x=condition, y=number, fill=condition)) + 
+      geom_boxplot(outlier.shape = NA) + 
+      colScale +
+      geom_jitter(size = 0.5, alpha = 0.5, mapping = aes(color = group)) +
+      facet_grid(. ~ cell_type) +
+      ylab(ylabel)
+  }
+  else {
+    p <- ggplot(data=numbers_table, aes(x=condition, y=number, fill=condition)) + 
+      geom_boxplot(outlier.shape = NA) + 
+      colScale +
+      geom_jitter(size = 0.5, alpha = 0.5) +
+      facet_grid(. ~ cell_type) +
+      ylab(ylabel)
+  }
   # add xlimit if requested
   if(!is.null(ylim)){
     p <- p + ylim(ylim)
@@ -130,44 +170,12 @@ plot_ct_numbers_boxplot <- function(numbers_table, conditions_to_plot=c('UT', 'B
   return(p)
 }
 
-metadata_to_ggally_table <- function(metadata, cell_type_column='cell_type_lowerres', timepoint.column='timepoint.final', assignment.column='assignment.final', timepoints=c('UT', 'Baseline', 't24h', 't8w'), to_fraction=F){
-  # get the unique cell types
-  cell_types <- unique(metadata[[cell_type_column]])
-  # get the unique participants
-  participants <- unique(metadata[[assignment.column]])
-  # get the unique timepoints
-  timepoints <- unique(metadata[[timepoint.column]])
-  # combinations of cell type and participant
-  part_ct_comb <- paste(rep(participants, each = length(cell_types)), cell_types, sep = ".")
-  # create matrix
-  number_matrix <- matrix(, nrow = length(part_ct_comb), ncol=2+length(timepoints), dimnames = list(part_ct_comb, c('assignment', 'cell_type', timepoints)))
-  # check the combinations
-  for(cell_type in cell_types){
-    for(participant in participants){
-      # add to matrix
-      number_matrix[paste(participant, cell_type, sep = '.'), 'assignment'] <- participant
-      number_matrix[paste(participant, cell_type, sep = '.'), 'cell_type'] <- cell_type
-      for(timepoint in timepoints){
-        # get the number of cells
-        nr_of_cells <- nrow(metadata[metadata[[cell_type_column]] == cell_type &
-                                       metadata[[assignment.column]] == participant &
-                                       metadata[[timepoint.column]] == timepoint,
-        ])
-        if(to_fraction){
-          total_cells <- nrow(metadata[metadata[[assignment.column]] == participant &
-                                         metadata[[timepoint.column]] == timepoint,
-          ])
-          nr_of_cells <- nr_of_cells/total_cells
-        }
-        # add to matrix
-        number_matrix[paste(participant, cell_type, sep = '.'), timepoint] <- nr_of_cells
-      }
-    }
-  }
-  number_matrix <- data.frame(number_matrix)
-  return(number_matrix)
-}
 
+#' sum cell numbers of donors together for celltype and timepoint, to get totals regardless of donors
+#' 
+#' @param numbers_table cell numbers to load the cell numbers from
+#' @returns dataframe table with cell numbers of donors summed per celltype/timepoint
+#' 
 get_cell_types_per_condition <- function(numbers_table){
   aggregate_df <- NULL
   # check per condition
@@ -197,6 +205,14 @@ get_cell_types_per_condition <- function(numbers_table){
   return(aggregate_df)
 }
 
+#' plot the number of cells per celltype and condition
+#' 
+#' @param numbers_per_cond cell numbers table to load the cell numbers from
+#' @param to_fraction cell plot fraction of cells from total instead of raw numbers
+#' @param use_label_dict convert cell type and condition names to nicer names 
+#' @param split_chem plot chemistries separately
+#' @returns plot with cell numbers per celltype/timepoint
+#' 
 plot_cell_type_per_condition_bars <- function(numbers_per_cond, to_fraction=T, use_label_dict=T, split_chem=F){
   # get prettier labels if requested
   if(use_label_dict){
@@ -225,6 +241,17 @@ plot_cell_type_per_condition_bars <- function(numbers_per_cond, to_fraction=T, u
   return(p)
 }
 
+
+#' get cell numbers per donor/timepoint/celltype
+#' 
+#' @param metadata the metadata to load the cell numbers from
+#' @param cell_type_to_check cell plot fraction of cells from total instead of raw numbers
+#' @param timepoints which timepoints to return in the table
+#' @param cell_type_column the column in the metadata denoting the cell type
+#' @param condition_column the column in the metadata denoting the timepoint
+#' @param assignment.column the column in the metadata denoting the donor
+#' @returns dataframe table with cell numbers per celltype/timepoint/donor
+#' 
 get_cell_numbers <- function(metadata, cell_type_to_check, conditions=c('Baseline', 't24h', 't8w'), cell_type_column='cell_type_lowerres', condition_column='timepoint.final', assignment_column='assignment.final' ){
   counts <- NULL
   # check each participant
@@ -443,10 +470,10 @@ label_dict <- function(){
   label_dict[['Baselinet24h']] <- 't0-t24h'
   label_dict[['Baselinet8w']] <- 't0-t8w'
   # conditions
-  label_dict[['UT']] <- 'Control'
+  label_dict[['UT']] <- 'C'
   label_dict[['Baseline']] <- 't0'
   label_dict[['t24h']] <- 't24h'
-  label_dict[['t8w']] <- 't6-8w'
+  label_dict[['t8w']] <- 't8w'
   # major cell types
   label_dict[["Bulk"]] <- "bulk-like"
   label_dict[["CD4T"]] <- "CD4+ T"
@@ -500,7 +527,7 @@ meta.data <- read.table(meta.data.loc, sep = '\t', header = T, row.names = 1, st
 # get the cell numbers
 cell_numbers <- metadata_to_ct_table(meta.data)
 # plot the cell numbers
-plot_ct_numbers_boxplot(numbers_table = cell_numbers, legendless = F, pointless = T, to_pct = T, ylim=c(0,100))
+plot_ct_numbers_boxplot(numbers_table = cell_numbers, legendless = T, pointless = F, to_pct = T, ylim=c(0,100), point_color=NULL)
 # change to scaled cell numbers
 cell_numbers_baselinescaled <- scale_cell_numbers_to_condition(cell_numbers, c('t24h', 't8w'), 'Baseline')
 # plot these scaled numbers
@@ -509,40 +536,19 @@ plot_ct_numbers_boxplot(numbers_table = cell_numbers_baselinescaled, pointless =
 cell_numbers_hr <- metadata_to_ct_table(meta.data, cell_type_column = 'cell_type')
 plot_ct_numbers_boxplot(numbers_table = cell_numbers_hr[cell_numbers_hr$cell_type %in% c('cMono', 'NKdim'), ], to_fraction = T, legendless = F, pointless = T)
 
+# now for v2 and v3 separately
+cell_numbers_v2 <- metadata_to_ct_table(meta.data[meta.data$chem == 'V2', ])
+cell_numbers_v3 <- metadata_to_ct_table(meta.data[meta.data$chem == 'V3', ])
+# add the chemistry as a value
+cell_numbers_v2[['chemistry']] <- 'v2'
+cell_numbers_v3[['chemistry']] <- 'v3'
+# plot the cell numbers
+plot_ct_numbers_boxplot(numbers_table = rbind(cell_numbers_v2, cell_numbers_v3), legendless = T, pointless = F, to_pct = T, ylim=c(0,100), point_color = 'chemistry')
 
-# use the gally method to plot the cell numbers
-cell_numbers_gally_stemi <- metadata_to_ggally_table(meta.data[meta.data$orig.ident == 'stemi_v2' | meta.data$orig.ident == 'stemi_v3', ])
-ggparcoord(cell_numbers_gally_stemi[cell_numbers_gally_stemi$cell_type == 'monocyte', ], columns = c(4,3,5), groupColumn = 'assignment')
-# do the same, but with fractions
-cell_numbers_gally_stemi_frac <- metadata_to_ggally_table(meta.data[meta.data$orig.ident == 'stemi_v2' | meta.data$orig.ident == 'stemi_v3', ], to_fraction = T)
-ggparcoord(cell_numbers_gally_stemi_frac[cell_numbers_gally_stemi_frac$cell_type == 'monocyte', ], columns = c(4,3,5), groupColumn = 'assignment')
-# now with the lfc of fractions
-cell_numbers_gally_stemi_frac_baselinescaled <- cell_numbers_gally_stemi_frac[, c('assignment', 'cell_type')]
-#cell_numbers_gally_stemi_frac_baselinescaled$t0_t0 <- log2(as.numeric(cell_numbers_gally_stemi_frac$Baseline) / as.numeric(cell_numbers_gally_stemi_frac$Baseline))
-#cell_numbers_gally_stemi_frac_baselinescaled$t24h_t0 <- log2(as.numeric(cell_numbers_gally_stemi_frac$t24h) / as.numeric(cell_numbers_gally_stemi_frac$Baseline))
-#cell_numbers_gally_stemi_frac_baselinescaled$t8w_t0 <- log2(as.numeric(cell_numbers_gally_stemi_frac$t8w) / as.numeric(cell_numbers_gally_stemi_frac$Baseline))
-cell_numbers_gally_stemi_frac_baselinescaled$t24h_t0 <- apply(cell_numbers_gally_stemi_frac, 1, function(x){log2(as.numeric(x['Baseline']) / as.numeric(x['Baseline']))})
-cell_numbers_gally_stemi_frac_baselinescaled$t24h_t0 <- apply(cell_numbers_gally_stemi_frac, 1, function(x){log2(as.numeric(x['t24h']) / as.numeric(x['Baseline']))})
-cell_numbers_gally_stemi_frac_baselinescaled$t8w_t0 <- apply(cell_numbers_gally_stemi_frac, 1, function(x){log2(as.numeric(x['t8w']) / as.numeric(x['Baseline']))})
-ggparcoord(cell_numbers_gally_stemi_frac_baselinescaled[cell_numbers_gally_stemi_frac_baselinescaled$cell_type == 'monocyte' & cell_numbers_gally_stemi_frac_baselinescaled$assignment != 'TEST_81', ], columns = c(3,4,5), groupColumn = 'assignment', scale = 'globalminmax')
-
-
-# set the fraction as the number
-cell_numbers_fracasnr <- cell_numbers
-cell_numbers_fracasnr$number <- cell_numbers_fracasnr$fraction
-# scale that
-cell_numbers_fracasnr_baselinescaled <- scale_cell_numbers_to_condition(cell_numbers_fracasnr, c('t24h', 't8w'), 'Baseline')
-# set label correctly again
-cell_numbers_fracasnr_baselinescaled$fraction <- cell_numbers_fracasnr_baselinescaled$number
-# plot
-plot_ct_numbers_boxplot(numbers_table = cell_numbers_fracasnr_baselinescaled, pointless = T, to_fraction = T)
 
 # get cell numbers regardless of the participant
 numbers_per_cond <- get_cell_types_per_condition(numbers_table = cell_numbers)
 plot_cell_type_per_condition_bars(numbers_per_cond)
-# now for v2 and v3 separately
-cell_numbers_v2 <- metadata_to_ct_table(meta.data[meta.data$chem == 'V2', ])
-cell_numbers_v3 <- metadata_to_ct_table(meta.data[meta.data$chem == 'V3', ])
 numbers_per_cond_v2 <- get_cell_types_per_condition(numbers_table = cell_numbers_v2)
 numbers_per_cond_v3 <- get_cell_types_per_condition(numbers_table = cell_numbers_v3)
 numbers_per_cond_v2$chem <- 'V2'
@@ -560,7 +566,6 @@ rownames(ct_tbl) <- as.vector(unlist(label_dict()[rownames(ct_tbl)]))
 colnames(ct_tbl_hr) <- as.vector(unlist(label_dict()[colnames(ct_tbl_hr)]))
 rownames(ct_tbl_hr) <- as.vector(unlist(label_dict()[rownames(ct_tbl_hr)]))
 
-model_ncMono_t24ht0 <- lm(data=cell_numbers_gally_stemi_frac_baselinescaled_hr_ncmono_clinvar[!is.na(cell_numbers_gally_stemi_frac_baselinescaled_hr_ncmono_clinvar$t24h_t0), ], formula=t24h_t0 ~ logpeakckmb+age+gender+ck_mb)
 
 # get the unique lane and participant combinations
 participant_condition_lane <- unique(meta.data[, c('lane', 'assignment.final', 'timepoint.final')])
@@ -578,9 +583,17 @@ cell_numbers[['level']] <- 'major'
 cell_numbers_hr[['level']] <- 'minor'
 # turn into one table
 cell_numbers_both <- rbind(cell_numbers, cell_numbers_hr)
-cell_numbers_both[['condition']] <- as.vector(unlist(list('UT' = 'control', 'Baseline' = 't0', 't24h' = 't24h', 't8w' = 't6-8w')[cell_numbers_both[['condition']]]))
+cell_numbers_both[['condition']] <- as.vector(unlist(list('UT' = 'control', 'Baseline' = 't0', 't24h' = 't24h', 't8w' = 't8w')[cell_numbers_both[['condition']]]))
+# create a mapping of the LifeLines IDs to numbers
+ordered_ll_samples <- unique(cell_numbers_both[['participant']][startsWith(cell_numbers_both[['participant']], 'LLDeep')])
+ordered_ll_samples <- ordered_ll_samples[order(ordered_ll_samples)]
+ordered_ll_numbers <- paste('C', 1:length(ordered_ll_samples), sep = '')
+stemi_samples <- unique(cell_numbers_both[['participant']][!startsWith(cell_numbers_both[['participant']], 'LLDeep')])
+mapping <- as.list(c(ordered_ll_numbers, stemi_samples))
+names(mapping) <- c(ordered_ll_samples, stemi_samples)
+cell_numbers_both[['participant']] <- as.vector(unlist(mapping[as.character(cell_numbers_both[['participant']])]))
 # write result
-write.table(cell_numbers_both[, c('level', 'lane', 'condition', 'participant', 'cell_type', 'number')], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/stemi_cell_numbers_overview.tsv', sep = '\t', row.names = F, col.names = T)
+write.table(cell_numbers_both[, c('level', 'lane', 'condition', 'participant', 'cell_type', 'number', 'level')], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/stemi_cell_numbers_overview.tsv', sep = '\t', row.names = F, col.names = T)
 
 # finally make the final plot
 cardio_integrated_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/seurat/cardio.integrated.20210301.rds'
@@ -588,8 +601,8 @@ cardio_integrated <- readRDS(cardio_integrated_loc)
 # add a nicer label
 cardio_integrated@meta.data[['cell_type_lowerres_safe']] <- as.vector(unlist(label_dict()[as.character(cardio_integrated@meta.data[['cell_type_lowerres']])]))
 # the two UMAPs
-p_umap_lowerres <- DimPlot(cardio_integrated, group.by = 'cell_type_lowerres_safe', label = TRUE, label.size = 3, repel = TRUE) + scale_colour_manual(name = 'cell type', values = get_color_coding_dict()) + NoLegend()
-p_umap_higherres <- DimPlot(cardio_integrated, group.by = 'cell_type', label = TRUE, label.size = 3, repel = TRUE) + NoLegend()
+p_umap_lowerres <- DimPlot(cardio_integrated, group.by = 'cell_type_lowerres_safe', label = FALSE, label.size = 3, repel = TRUE) + scale_colour_manual(name = 'cell type', values = get_color_coding_dict()) + NoLegend() + xlab('UMAP 1') + ylab('UMAP 2')
+p_umap_higherres <- DimPlot(cardio_integrated, group.by = 'cell_type', label = TRUE, label.size = 3, repel = TRUE) + NoLegend() + xlab('UMAP 1') + ylab('UMAP 2')
 # the cell type plots
 p_ctprops_mono <- plot_ct_numbers_boxplot(numbers_table = cell_numbers, legendless = T, pointless = F, to_pct = T, ylim=c(0,100),, cell_types_to_plot = c('monocyte'))
 p_ctprops_cmono <- plot_ct_numbers_boxplot(numbers_table = cell_numbers_hr, legendless = T, pointless = F, to_pct = T, ylim=c(0,100), cell_types_to_plot = c('cMono'))
