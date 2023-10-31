@@ -38,7 +38,7 @@ metadata_to_ct_table <- function(metadata, cell_type_column='cell_type_lowerres'
         # get that number of cells
         nr_cells <- nrow(metadata.tp.part[metadata.tp.part[[cell_type_column]] == cell_type, ])
         # turn into that dataframe
-        nr_cells_df <- data.frame(participant=c(participant), condition=c(timepoint), cell_type=c(cell_type), number=c(nr_cells), fraction=c(nr_cells/total_cells), stringsAsFactors = F)
+        nr_cells_df <- data.frame(participant=c(participant), condition=c(timepoint), cell_type=c(cell_type), number=c(nr_cells), fraction=c(nr_cells/total_cells), weight=c(total_cells), stringsAsFactors = F)
         # add to existing dataframe
         if(is.null(cell_type_table)){
           cell_type_table <- nr_cells_df
@@ -105,9 +105,11 @@ scale_cell_numbers_to_condition <- function(cell_numbers, timepoints_to_scale, t
 #' @param legendless remove the legend (optional, default F)
 #' @param paper_style add extra whitespace to plot (optional, default T)
 #' @param point_color color the observations (dots) by a group
+#' @param point_size size of jitter points
+#' @param use_weight use the weights to determine q1, median and q3
 #' @returns a dataframe tabel with for each donor and each scaled timepoint, what the relative number of cells is
 #' 
-plot_ct_numbers_boxplot <- function(numbers_table, conditions_to_plot=c('UT', 'Baseline', 't24h', 't8w'), cell_types_to_plot=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), use_label_dict=T, to_fraction=F, pointless=F, legendless=F, to_pct=F, ylim=NULL, paper_style=T, point_color=NULL){
+plot_ct_numbers_boxplot <- function(numbers_table, conditions_to_plot=c('UT', 'Baseline', 't24h', 't8w'), cell_types_to_plot=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), use_label_dict=T, to_fraction=F, pointless=F, legendless=F, to_pct=F, ylim=NULL, paper_style=T, point_color=NULL, point_size=0.5, use_weight=F){
   # subset to want we want to plot
   numbers_table <- numbers_table[numbers_table$condition %in% conditions_to_plot, ]
   numbers_table <- numbers_table[numbers_table$cell_type %in% cell_types_to_plot, ]
@@ -136,17 +138,24 @@ plot_ct_numbers_boxplot <- function(numbers_table, conditions_to_plot=c('UT', 'B
   # set colors based on condition
   colScale <- scale_fill_manual(name = "condition",values = unlist(cc[numbers_table$condition]))
   # create the plot
+  p <- NULL
+  if (use_weight) {
+    p <- ggplot(data=numbers_table, aes(x=condition, y=number, fill=condition, weight=weight))
+  }
+  else {
+    p <- ggplot(data=numbers_table, aes(x=condition, y=number, fill=condition))
+  }
   if (!is.null(point_color)) {
     numbers_table[['group']] <- numbers_table[[point_color]]
-    p <- ggplot(data=numbers_table, aes(x=condition, y=number, fill=condition)) + 
+    p <- p + 
       geom_boxplot(outlier.shape = NA) + 
       colScale +
-      geom_jitter(size = 0.5, alpha = 0.5, mapping = aes(color = group)) +
+      geom_jitter(size = point_size, alpha = 0.5, mapping = aes(color = group)) +
       facet_grid(. ~ cell_type) +
       ylab(ylabel)
   }
   else {
-    p <- ggplot(data=numbers_table, aes(x=condition, y=number, fill=condition)) + 
+    p <- p +  
       geom_boxplot(outlier.shape = NA) + 
       colScale +
       geom_jitter(size = 0.5, alpha = 0.5) +
@@ -527,14 +536,14 @@ meta.data <- read.table(meta.data.loc, sep = '\t', header = T, row.names = 1, st
 # get the cell numbers
 cell_numbers <- metadata_to_ct_table(meta.data)
 # plot the cell numbers
-plot_ct_numbers_boxplot(numbers_table = cell_numbers, legendless = T, pointless = F, to_pct = T, ylim=c(0,100), point_color=NULL)
+plot_ct_numbers_boxplot(numbers_table = cell_numbers, legendless = T, pointless = F, to_pct = T, ylim=c(0,100), point_color=NULL, use_weight = T, cell_types_to_plot = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'))
 # change to scaled cell numbers
 cell_numbers_baselinescaled <- scale_cell_numbers_to_condition(cell_numbers, c('t24h', 't8w'), 'Baseline')
 # plot these scaled numbers
-plot_ct_numbers_boxplot(numbers_table = cell_numbers_baselinescaled, pointless = T)
+#plot_ct_numbers_boxplot(numbers_table = cell_numbers_baselinescaled, pointless = T)
 # for higher res as well
 cell_numbers_hr <- metadata_to_ct_table(meta.data, cell_type_column = 'cell_type')
-plot_ct_numbers_boxplot(numbers_table = cell_numbers_hr[cell_numbers_hr$cell_type %in% c('cMono', 'NKdim'), ], to_fraction = T, legendless = F, pointless = T)
+plot_ct_numbers_boxplot(numbers_table = cell_numbers_hr, cell_types_to_plot = c('NKbright', 'NKdim'), to_fraction = T, legendless = F, pointless = T, use_weight = T)
 
 # now for v2 and v3 separately
 cell_numbers_v2 <- metadata_to_ct_table(meta.data[meta.data$chem == 'V2', ])
@@ -545,6 +554,18 @@ cell_numbers_v3[['chemistry']] <- 'v3'
 # plot the cell numbers
 plot_ct_numbers_boxplot(numbers_table = rbind(cell_numbers_v2, cell_numbers_v3), legendless = T, pointless = F, to_pct = T, ylim=c(0,100), point_color = 'chemistry')
 
+# and highres as well
+cell_numbers_v2_hr <- metadata_to_ct_table(meta.data[meta.data$chem == 'V2', ], cell_type_column = 'cell_type')
+cell_numbers_v3_hr <- metadata_to_ct_table(meta.data[meta.data$chem == 'V3', ], cell_type_column = 'cell_type')
+plot_ct_numbers_boxplot(numbers_table = cell_numbers_v2_hr, legendless = T, pointless = F, to_pct = T, ylim=c(0,100), cell_types_to_plot = c('cMono', 'ncMono'))
+plot_ct_numbers_boxplot(numbers_table = cell_numbers_v3_hr, legendless = T, pointless = F, to_pct = T, ylim=c(0,100), cell_types_to_plot = c('cMono', 'ncMono'))
+
+# difference between weighted and unweighted
+plot_grid(
+  plot_ct_numbers_boxplot(numbers_table = cell_numbers_v3_hr, legendless = T, pointless = F, to_pct = T, ylim=c(0,100), cell_types_to_plot = c('cMono', 'ncMono'), use_weight = F),
+  plot_ct_numbers_boxplot(numbers_table = cell_numbers_v3_hr, legendless = T, pointless = F, to_pct = T, ylim=c(0,100), cell_types_to_plot = c('cMono', 'ncMono'), use_weight = T),
+  nrow = 2
+)
 
 # get cell numbers regardless of the participant
 numbers_per_cond <- get_cell_types_per_condition(numbers_table = cell_numbers)
@@ -555,7 +576,6 @@ numbers_per_cond_v2$chem <- 'V2'
 numbers_per_cond_v3$chem <- 'V3'
 numbers_per_cond_chemsplit <- rbind(numbers_per_cond_v2, numbers_per_cond_v3)
 plot_cell_type_per_condition_bars(numbers_per_cond_chemsplit, split_chem = T)
-ggsave('~/Desktop/cardio.integrated.20210301.cell_type_proportions_lowerres_overall_per_chem.pdf', width = 10, height = 5)
 
 # create the cell type number tables as required in the supplements
 ct_tbl <- metadata_to_ct_table_per_column(meta.data)
@@ -593,7 +613,7 @@ mapping <- as.list(c(ordered_ll_numbers, stemi_samples))
 names(mapping) <- c(ordered_ll_samples, stemi_samples)
 cell_numbers_both[['participant']] <- as.vector(unlist(mapping[as.character(cell_numbers_both[['participant']])]))
 # write result
-write.table(cell_numbers_both[, c('level', 'lane', 'condition', 'participant', 'cell_type', 'number', 'level')], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/stemi_cell_numbers_overview.tsv', sep = '\t', row.names = F, col.names = T)
+#write.table(cell_numbers_both[, c('level', 'lane', 'condition', 'participant', 'cell_type', 'number', 'level')], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/stemi_cell_numbers_overview.tsv', sep = '\t', row.names = F, col.names = T)
 
 # finally make the final plot
 cardio_integrated_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/seurat/cardio.integrated.20210301.rds'
@@ -604,7 +624,7 @@ cardio_integrated@meta.data[['cell_type_lowerres_safe']] <- as.vector(unlist(lab
 p_umap_lowerres <- DimPlot(cardio_integrated, group.by = 'cell_type_lowerres_safe', label = FALSE, label.size = 3, repel = TRUE) + scale_colour_manual(name = 'cell type', values = get_color_coding_dict()) + NoLegend() + xlab('UMAP 1') + ylab('UMAP 2')
 p_umap_higherres <- DimPlot(cardio_integrated, group.by = 'cell_type', label = TRUE, label.size = 3, repel = TRUE) + NoLegend() + xlab('UMAP 1') + ylab('UMAP 2')
 # the cell type plots
-p_ctprops_mono <- plot_ct_numbers_boxplot(numbers_table = cell_numbers, legendless = T, pointless = F, to_pct = T, ylim=c(0,100),, cell_types_to_plot = c('monocyte'))
+p_ctprops_mono <- plot_ct_numbers_boxplot(numbers_table = cell_numbers, legendless = T, pointless = F, to_pct = T, ylim=c(0,100), cell_types_to_plot = c('monocyte'))
 p_ctprops_cmono <- plot_ct_numbers_boxplot(numbers_table = cell_numbers_hr, legendless = T, pointless = F, to_pct = T, ylim=c(0,100), cell_types_to_plot = c('cMono'))
 p_ctprops_ncmono <- plot_ct_numbers_boxplot(numbers_table = cell_numbers_hr, legendless = T, pointless = F, to_pct = T, ylim=c(0,25), cell_types_to_plot = c('ncMono'))
 p_ctprops_nk <- plot_ct_numbers_boxplot(numbers_table = cell_numbers, legendless = T, pointless = F, to_pct = T, ylim=c(0,40), cell_types_to_plot = c('NK'))
