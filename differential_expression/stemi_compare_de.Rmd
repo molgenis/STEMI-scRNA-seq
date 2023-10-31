@@ -177,20 +177,31 @@ plot_concordance <- function(de_table, set_1_column, set_2_column, pointless=F, 
   # calculate concordance
   concordance <- sum(!is.na(de_table[['concordant']]) & de_table[['concordant']] == 'concordant') / sum(!is.na(de_table[['concordant']]))
   
+  # get the location of where to plot the text
+  x_pos_text <- max(abs(de_table[[set_1_column]])) * -.92
+  y_pos_text <- max(abs(de_table[[set_2_column]])) * .97
+  
   # create the plot
   p <- ggplot(data = NULL, mapping = aes(x = de_table[[set_1_column]], y = de_table[[set_2_column]], color = de_table[['concordant']])) +
     geom_point() +
     xlab(set_1_column) +
     ylab(set_2_column) +
     guides(color=guide_legend(title='concordance')) +
-    geom_text(x=0, y=0, label = round(concordance, digits = 2))
+    annotate('text', x=x_pos_text, y=y_pos_text, color = 'black', label = round(concordance, digits = 2), hjust=1)
   
   # add xlimit if requested
   if(!is.null(ylim)){
     p <- p + ylim(ylim)
   }
+  else{
+    p <- p + ylim(c(-1 * max(abs(de_table[[set_2_column]])), max(abs(de_table[[set_2_column]]))))
+  }
+  # and y limit
   if(!is.null(xlim)){
     p <- p + xlim(xlim)
+  }
+  else{
+    p <- p + xlim(c(-1 * max(abs(de_table[[set_1_column]])), max(abs(de_table[[set_1_column]]))))
   }
   if(pointless){
     p <- p + theme(axis.text.x=element_blank(), 
@@ -410,7 +421,7 @@ get_de_overlaps <- function(gene_table_1, gene_table_2, gene_column_1, gene_colu
 }
 
 
-get_de_effect_sizes <- function(gene_table_1, gene_table_2, gene_column_1, gene_column_2, lfc_column_1, lfc_column_2, significance_column_1, significance_column_2, comparison_column_1='combination', comparison_column_2='combination', cell_type_column_1='cell_type', cell_type_column_2='cell_type', name_1='table_1', name_2='table_2', significance_cutoff_1=0.05, significance_cutoff_2=0.05, sign_flip_combinations_1=c(), sign_flip_combinations_2=c(), only_tested_both=F, na_to_zero=F) {
+get_de_effect_sizes <- function(gene_table_1, gene_table_2, gene_column_1, gene_column_2, lfc_column_1, lfc_column_2, significance_column_1, significance_column_2, comparison_column_1='combination', comparison_column_2='combination', cell_type_column_1='cell_type', cell_type_column_2='cell_type', name_1='table_1', name_2='table_2', significance_cutoff_1=0.05, significance_cutoff_2=0.05, lfc_cutoff_1=NULL, lfc_cutoff_2=NULL, sign_flip_combinations_1=c(), sign_flip_combinations_2=c(), only_tested_both=F, na_to_zero=F) {
   # we will store the genes per for each combination, per comparison
   genes_per_combination_per_set <- list()
   # we will check each combination
@@ -451,10 +462,25 @@ get_de_effect_sizes <- function(gene_table_1, gene_table_2, gene_column_1, gene_
       # set names
       colnames(lfc_table_both) <- c('gene', 'combination', 'cell_type', name_1, name_2)
       
+      # check which were significant
+      if (!is.null(lfc_cutoff_1) & !is.null(lfc_cutoff_2)) {
+        genes_sig_1 <- genes_1[!is.na(genes_1[[significance_column_1]]) & 
+                                 genes_1[[significance_column_1]] < significance_cutoff_1 &
+                                 !is.na(genes_1[[lfc_column_1]]) &
+                                 abs(genes_1[[lfc_column_1]]) >= lfc_cutoff_1, 
+                               gene_column_1]
+        genes_sig_2 <- genes_2[!is.na(genes_2[[significance_column_2]]) & 
+                                 genes_2[[significance_column_2]] < significance_cutoff_2 &
+                                 !is.na(genes_2[[lfc_column_2]]) &
+                                 abs(genes_2[[lfc_column_2]]) >= lfc_cutoff_2, 
+                               gene_column_2]
+      }
+      else{
+        genes_sig_1 <- genes_1[!is.na(genes_1[[significance_column_1]]) & genes_1[[significance_column_1]] < significance_cutoff_1, gene_column_1]
+        genes_sig_2 <- genes_2[!is.na(genes_2[[significance_column_2]]) & genes_2[[significance_column_2]] < significance_cutoff_2, gene_column_2]
+      }
       # set where it was significance
       lfc_table_both[['significant']] <- NA
-      genes_sig_1 <- genes_1[!is.na(genes_1[[significance_column_1]]) & genes_1[[significance_column_1]] < significance_cutoff_1, gene_column_1]
-      genes_sig_2 <- genes_2[!is.na(genes_2[[significance_column_2]]) & genes_2[[significance_column_2]] < significance_cutoff_2, gene_column_2]
       lfc_table_both[lfc_table_both[['gene']] %in% genes_sig_1 & !(lfc_table_both[['gene']] %in% genes_sig_2), 'significant'] <- name_1
       lfc_table_both[lfc_table_both[['gene']] %in% genes_sig_2 & !(lfc_table_both[['gene']] %in% genes_sig_1), 'significant'] <- name_2
       lfc_table_both[lfc_table_both[['gene']] %in% genes_sig_2 & lfc_table_both[['gene']] %in% genes_sig_1, 'significant'] <- 'both'
@@ -487,11 +513,23 @@ get_de_effect_sizes <- function(gene_table_1, gene_table_2, gene_column_1, gene_
 }
 
 
-plot_effect_sizes <- function(de_table, set_1_column, set_2_column, category_column=NULL, pointless=F, legendless=F, ylim=NULL, xlim=NULL, paper_style=T) {
+plot_effect_sizes <- function(de_table, set_1_column, set_2_column, category_column=NULL, pointless=F, legendless=F, ylim=NULL, xlim=NULL, paper_style=T, category_order=NULL) {
   # create the plot
   p <- NULL
   # with a catagory or not
   if (!is.null(category_column)) {
+    # order the category if requested
+    if (!is.null(category_order)) {
+      de_table_list <- list()
+      # by checking each category
+      for (category in category_order) {
+        de_table_category <- de_table[de_table[[category_column]] == category, ]
+        de_table_list[[category]] <- de_table_category
+      }
+      # add the ones we didn't check last
+      de_table_list[['leftover']] <- de_table[!(de_table[[category_column]] %in% category_order), ]
+      de_table <- do.call('rbind', de_table_list)
+    }
     p <- ggplot(data = NULL, mapping = aes(x = de_table[[set_1_column]], y = de_table[[set_2_column]], color = de_table[[category_column]])) +
     geom_point() +
     xlab(set_1_column) +
@@ -508,8 +546,15 @@ plot_effect_sizes <- function(de_table, set_1_column, set_2_column, category_col
   if(!is.null(ylim)){
     p <- p + ylim(ylim)
   }
+  else{
+    p <- p + ylim(c(-1 * max(abs(de_table[[set_2_column]])), max(abs(de_table[[set_2_column]]))))
+  }
+  # and y limit
   if(!is.null(xlim)){
     p <- p + xlim(xlim)
+  }
+  else{
+    p <- p + xlim(c(-1 * max(abs(de_table[[set_1_column]])), max(abs(de_table[[set_1_column]]))))
   }
   if(pointless){
     p <- p + theme(axis.text.x=element_blank(), 
@@ -553,8 +598,8 @@ get_de_significance_overlaps <- function(de_table_both, lfc_column_1, lfc_column
       de_table_condition_celltype[['sign2']] <- sign(de_table_condition_celltype[[lfc_column_2]])
       
       # counting
-      sig_same <- nrow(de_table_condition_celltype[de_table_condition_celltype[[significant_column]] == 'significant' & de_table_condition_celltype[[tested_column]] == 'both' & de_table_condition_celltype[['sign1']] == de_table_condition_celltype[['sign2']], ])
-      sig_dif <- nrow(de_table_condition_celltype[de_table_condition_celltype[[significant_column]] == 'significant' & de_table_condition_celltype[[tested_column]] == 'both' & de_table_condition_celltype[['sign1']] != de_table_condition_celltype[['sign2']], ])
+      sig_same <- nrow(de_table_condition_celltype[de_table_condition_celltype[[significant_column]] == 'both' & de_table_condition_celltype[[tested_column]] == 'both' & de_table_condition_celltype[['sign1']] == de_table_condition_celltype[['sign2']], ])
+      sig_dif <- nrow(de_table_condition_celltype[de_table_condition_celltype[[significant_column]] == 'both' & de_table_condition_celltype[[tested_column]] == 'both' & de_table_condition_celltype[['sign1']] != de_table_condition_celltype[['sign2']], ])
       both_sig1 <- nrow(de_table_condition_celltype[de_table_condition_celltype[[significant_column]] == lfc_column_1 & de_table_condition_celltype[[tested_column]] == 'both', ])
       both_sig2 <- nrow(de_table_condition_celltype[de_table_condition_celltype[[significant_column]] == lfc_column_2 & de_table_condition_celltype[[tested_column]] == 'both', ])
       only1_sig1 <- nrow(de_table_condition_celltype[de_table_condition_celltype[[significant_column]] == lfc_column_1 & de_table_condition_celltype[[tested_column]] == lfc_column_1, ])
@@ -853,7 +898,7 @@ stemi_limma_both_output_all[stemi_limma_both_output_all$combination != 'Baseline
 stemi_limma_both_output_all[stemi_limma_both_output_all$combination == 'UT-Baseline', 'combination'] <- 'Baseline-UT'
 
 # get lfcs
-unsigned_mast_vs_limma_both_effect_sizes <- get_de_effect_sizes(stemi_mast_meta_unsigned_output_all, stemi_limma_both_output_all, gene_column_1 = 'gene', gene_column_2 = 'gene', significance_column_1 = 'metap_bonferroni', significance_column_2 = 'p.bonferroni', name_1 = 'mast_meta_unsigned', name_2 = 'limma_both', lfc_column_1 = 'metafc', lfc_column_2 = 'logFC', sign_flip_combinations_1 = c('t24h-Baseline', 't8w-Baseline', 't8w-t24h'), sign_flip_combinations_2 = c(), na_to_zero = T)
+unsigned_mast_vs_limma_both_effect_sizes <- get_de_effect_sizes(stemi_mast_meta_unsigned_output_all, stemi_limma_both_output_all, gene_column_1 = 'gene', gene_column_2 = 'gene', significance_column_1 = 'metap_bonferroni', significance_column_2 = 'p.bonferroni', name_1 = 'mast_meta_unsigned', name_2 = 'limma_both', lfc_column_1 = 'metafc', lfc_column_2 = 'logFC', sign_flip_combinations_1 = c('t24h-Baseline', 't8w-Baseline', 't8w-t24h'), sign_flip_combinations_2 = c(), na_to_zero = T, lfc_cutoff_1 = 0.1, lfc_cutoff_2 = 0.1)
 
 ```
 
@@ -863,19 +908,19 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 # plot the concordance
 plot_grid(
   # CD4T Baseline vs UT
-  plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = c(-0.5, 0.5), ylim=c(-3, 3)) + ggtitle('CD4T C vs t0 effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category = 'tested', legendless = F, xlim = c(-0.5, 0.5), ylim=c(-3, 3)) + ggtitle('CD4T C vs t0 tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category = 'significant', legendless = F, xlim = c(-0.5, 0.5), ylim=c(-3, 3)) + ggtitle('CD4T C vs t0 significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
+  plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD4T C vs t0 effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD4T C vs t0 tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('CD4T C vs t0 significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
   
   # CD4T t24h Baseline
-  plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = c(-0.5, 0.5), ylim=c(-3, 3)) + ggtitle('CD4T t0 vs t24h effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category = 'tested', legendless = F, xlim = c(-0.5, 0.5), ylim=c(-3, 3)) + ggtitle('CD4T t0 vs t24h tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category = 'significant', legendless = F, xlim = c(-0.5, 0.5), ylim=c(-3, 3)) + ggtitle('CD4T t0 vs t24h significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
+  plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD4T t0 vs t24h effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD4T t0 vs t24h tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('CD4T t0 vs t24h significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
   
   # CD4T t8w Baseline
-   plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = c(-0.5, 0.5), ylim=c(-3, 3)) + ggtitle('CD4T t0 vs t8w effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category = 'tested', legendless = F, xlim = c(-0.5, 0.5), ylim=c(-3, 3)) + ggtitle('CD4T t0 vs t8w tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category = 'significant', legendless = F, xlim = c(-0.5, 0.5), ylim=c(-3, 3)) + ggtitle('CD4T t0 vs t8w significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
+   plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD4T t0 vs t8w effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD4T t0 vs t8w tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('CD4T t0 vs t8w significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
   
   # plot params
   ncol = 3
@@ -885,19 +930,62 @@ plot_grid(
 # plot the concordance
 plot_grid(
   # monocyte Baseline vs UT
-  plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = c(-0.5, 0.5), ylim=c(-3, 3)) + ggtitle('monocyte C vs t0 effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category = 'tested', legendless = F, xlim = c(-0.5, 0.5), ylim=c(-3, 3)) + ggtitle('monocyte C vs t0 tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category = 'significant', legendless = F, xlim = c(-0.5, 0.5), ylim=c(-3, 3)) + ggtitle('monocyte C vs t0 significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
+  plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('monocyte C vs t0 effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('monocyte C vs t0 tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('monocyte C vs t0 significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
   
   # monocyte t24h Baseline
-  plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = c(-0.5, 0.5), ylim=c(-3, 3)) + ggtitle('monocyte t0 vs t24h effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category = 'tested', legendless = F, xlim = c(-0.5, 0.5), ylim=c(-3, 3)) + ggtitle('monocyte t0 vs t24h tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category = 'significant', legendless = F, xlim = c(-0.5, 0.5), ylim=c(-3, 3)) + ggtitle('monocyte t0 vs t24h significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
+  plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('monocyte t0 vs t24h effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('monocyte t0 vs t24h tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('monocyte t0 vs t24h significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
   
   # monocyte t8w Baseline
-   plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = c(-0.5, 0.5), ylim=c(-3, 3)) + ggtitle('monocyte t0 vs t8w effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category = 'tested', legendless = F, xlim = c(-0.5, 0.5), ylim=c(-3, 3)) + ggtitle('monocyte t0 vs t8w tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category = 'significant', legendless = F, xlim = c(-0.5, 0.5), ylim=c(-3, 3)) + ggtitle('monocyte t0 vs t8w significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
+   plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('monocyte t0 vs t8w effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('monocyte t0 vs t8w tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('monocyte t0 vs t8w significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
+  
+  # plot params
+  ncol = 3
+)
+
+# plot the concordance
+plot_grid(
+  # B Baseline vs UT
+  plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'B' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('B C vs t0 effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'B', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('B C vs t0 tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'B', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('B C vs t0 significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
+  
+  # B t24h Baseline
+  plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'B' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('B t0 vs t24h effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'B', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('B t0 vs t24h tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'B', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('B t0 vs t24h significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
+  
+  # B t8w Baseline
+   plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'B' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('B t0 vs t8w effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'B', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('B t0 vs t8w tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'B', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('B t0 vs t8w significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
+  
+  # plot params
+  ncol = 3
+)
+
+
+# plot the concordance
+plot_grid(
+  # CD8T Baseline vs UT
+  plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD8T' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD8T C vs t0 effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD8T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD8T C vs t0 tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD8T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('CD8T C vs t0 significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
+  
+  # CD8T t24h Baseline
+  plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD8T' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD8T t0 vs t24h effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD8T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD8T t0 vs t24h tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD8T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('CD8T t0 vs t24h significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
+  
+  # CD8T t8w Baseline
+   plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD8T' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD8T t0 vs t8w effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD8T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD8T t0 vs t8w tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
+  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD8T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('CD8T t0 vs t8w significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
   
   # plot params
   ncol = 3
@@ -930,5 +1018,11 @@ plot_grid(
   plot_de_significance_overlaps(unsigned_mast_vs_limma_both_effect_overlaps[unsigned_mast_vs_limma_both_effect_overlaps$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_overlaps$classification != 'tested only limma_both and not significant', ]) + scale_fill_manual(values = classification_color_list) + ggtitle('t24h-t8w DE gene overlap'),
   plot_de_significance_overlaps(unsigned_mast_vs_limma_both_effect_overlaps[unsigned_mast_vs_limma_both_effect_overlaps$combination == 't8w-Baseline' & unsigned_mast_vs_limma_both_effect_overlaps$classification != 'tested only limma_both and not significant', ]) + scale_fill_manual(values = classification_color_list) + ggtitle('t0-t8w DE gene overlap')
 )
-
+# plot them
+plot_grid(
+  plot_de_significance_overlaps(unsigned_mast_vs_limma_both_effect_overlaps[unsigned_mast_vs_limma_both_effect_overlaps$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_overlaps$classification != 'tested only limma_both and not significant', ], number_column = 'proportion') + scale_fill_manual(values = classification_color_list) + ggtitle('C-t0 DE gene overlap'),
+  plot_de_significance_overlaps(unsigned_mast_vs_limma_both_effect_overlaps[unsigned_mast_vs_limma_both_effect_overlaps$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_overlaps$classification != 'tested only limma_both and not significant', ], number_column = 'proportion') + scale_fill_manual(values = classification_color_list) + ggtitle('t0-t24h DE gene overlap'),
+  plot_de_significance_overlaps(unsigned_mast_vs_limma_both_effect_overlaps[unsigned_mast_vs_limma_both_effect_overlaps$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_overlaps$classification != 'tested only limma_both and not significant', ], number_column = 'proportion') + scale_fill_manual(values = classification_color_list) + ggtitle('t24h-t8w DE gene overlap'),
+  plot_de_significance_overlaps(unsigned_mast_vs_limma_both_effect_overlaps[unsigned_mast_vs_limma_both_effect_overlaps$combination == 't8w-Baseline' & unsigned_mast_vs_limma_both_effect_overlaps$classification != 'tested only limma_both and not significant', ], number_column = 'proportion') + scale_fill_manual(values = classification_color_list) + ggtitle('t0-t8w DE gene overlap')
+)
 ```

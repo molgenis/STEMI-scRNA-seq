@@ -27,7 +27,7 @@ library(future.apply)
 ###
 # Simulation of a data set with different number of cells and their cell types
 ###
-simCells<-function(n=10^7, prop=c(0.6, 0.3, 0.05, 0.03, 0.01, 0.005, 0.005)){
+simCells<-function(n=10^7, prop=c(0.5, 0.3, 0.05, 0.03, 0.01, 0.005, 0.005)){
   ct<-paste("Cell_Type_",1:length(prop),sep="");
   nct<-round(n*prop);
   lab<-rep(ct,nct);	
@@ -359,11 +359,12 @@ pairs[['t24h_t8w']] <- t24h_t8w
 metadata_v2 <- metadata[metadata$chem == 'V2', ]
 cell_count_v2 <- get_cell_counts(metadata_v2)
 # get the null distributions
-null_dist_v2 <- get_null_distributions_mt(cell_count_v2, ps=c(0.05))
+null_dist_v2 <- get_null_distributions_mt(cell_count_v2, ps=c(0.1, 0.05))
 # get the results
-diff_v2 <- test_two_class_mt(cell_count_v2, null_dist_v2, pairs, ps=c(0.05))
+diff_v2 <- test_two_class_mt(cell_count_v2, null_dist_v2, pairs = list('ut_t24h' = c('UT', 't24h')), ps=c(0.1, 0.05))
 # write results
 write.table(diff_v2[['ut_baseline']], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/elife_2020/v2_ut_baseline_20201209.tsv', sep = '\t', row.names=T)
+write.table(diff_v2[['ut_t24h']], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/elife_2020/v2_ut_t24h_20201209.tsv', sep = '\t', row.names=T)
 write.table(diff_v2[['ut_t8w']], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/elife_2020/v2_ut_t8w_20201209.tsv', sep = '\t', row.names=T)
 write.table(diff_v2[['baseline_t8w']], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/elife_2020/v2_baseline_t8w_20201209.tsv', sep = '\t', row.names=T)
 write.table(diff_v2[['baseline_t24h']], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/elife_2020/v2_baseline_t24h_20210301.tsv', sep = '\t', row.names=T)
@@ -374,11 +375,12 @@ write.table(diff_v2[['t24h_t8w']], '/groups/umcg-franke-scrna/tmp01/releases/blo
 metadata_v3 <- metadata[metadata$chem == 'V3', ]
 cell_count_v3 <- get_cell_counts(metadata_v3)
 # get the null distributions
-null_dist_v3 <- get_null_distributions_mt(cell_count_v3, ps=c(0.05))
+null_dist_v3 <- get_null_distributions_mt(cell_count_v3, ps=c(0.1, 0.05))
 # get the results
-diff_v3 <- test_two_class_mt(cell_count_v3, null_dist_v3, pairs, ps=c(0.05))
+diff_v3 <- test_two_class_mt(cell_count_v3, null_dist_v3, pairs = list('ut_t24h' = c('UT', 't24h')), ps=c(0.1, 0.05))
 # write results
 write.table(diff_v3[['ut_baseline']], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/elife_2020/v3_ut_baseline_20201209.tsv', sep = '\t', row.names=T)
+write.table(diff_v3[['ut_t24h']], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/elife_2020/v3_ut_t24h_20201209.tsv', sep = '\t', row.names=T)
 write.table(diff_v3[['ut_t8w']], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/elife_2020/v3_ut_t8w_20201209.tsv', sep = '\t', row.names=T)
 write.table(diff_v3[['baseline_t8w']], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/elife_2020/v3_baseline_t8w_20201209.tsv', sep = '\t', row.names=T)
 write.table(diff_v3[['baseline_t24h']], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/elife_2020/v3_baseline_t24h_20210301.tsv', sep = '\t', row.names=T)
@@ -388,11 +390,12 @@ write.table(diff_v3[['t24h_t8w']], '/groups/umcg-franke-scrna/tmp01/releases/blo
 # for more granular cell types
 cell_count_hires_v2 <- get_cell_counts(metadata_v2, cell_type_column = 'cell_type')
 # get the null distributions
-null_dist_hires_v2 <- get_null_distributions_mt(cell_count_hires_v2, ps=c(0.05))
+null_dist_hires_v2 <- get_null_distributions_mt(cell_count_hires_v2, ps=c(0.1, 0.05))
 # get the results
-diff_hires_v2 <- test_two_class_mt(cell_count_hires_v2, null_dist_hires_v2, pairs, ps=c(0.05))
+diff_hires_v2 <- test_two_class_mt(cell_count_hires_v2, null_dist_hires_v2, pairs = list('ut_t24h' = c('UT', 't24h')), ps=c(0.1, 0.05))
 # write results
 write.table(diff_hires_v2[['ut_baseline']], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/elife_2020/v2_ut_baseline_20201209_hires.tsv', sep = '\t', row.names=T)
+write.table(diff_hires_v2[['ut_t24h']], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/elife_2020/v2_ut_t24h_20201209_hires.tsv', sep = '\t', row.names=T)
 write.table(diff_hires_v2[['ut_t8w']], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/elife_2020/v2_ut_t8w_20201209_hires.tsv', sep = '\t', row.names=T)
 write.table(diff_hires_v2[['baseline_t8w']], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/elife_2020/v2_baseline_t8w_20201209_hires.tsv', sep = '\t', row.names=T)
 write.table(diff_hires_v2[['baseline_t24h']], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/elife_2020/v2_baseline_t24h_20210301_hires.tsv', sep = '\t', row.names=T)
@@ -402,11 +405,12 @@ write.table(diff_hires_v2[['t24h_t8w']], '/groups/umcg-franke-scrna/tmp01/releas
 # for more granular cell types
 cell_count_hires_v3 <- get_cell_counts(metadata_v3, cell_type_column = 'cell_type')
 # get the null distributions
-null_dist_hires_v3 <- get_null_distributions_mt(cell_count_hires_v3, ps=c(0.05))
+null_dist_hires_v3 <- get_null_distributions_mt(cell_count_hires_v3, ps=c(0.1, 0.05))
 # get the results
-diff_hires_v3 <- test_two_class_mt(cell_count_hires_v3, null_dist_hires_v3, pairs, ps=c(0.05))
+diff_hires_v3 <- test_two_class_mt(cell_count_hires_v3, null_dist_hires_v3, pairs = list('ut_t24h' = c('UT', 't24h')), ps=c(0.1, 0.05))
 # write results
 write.table(diff_hires_v3[['ut_baseline']], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/elife_2020/v3_ut_baseline_20201209_hires.tsv', sep = '\t', row.names=T)
+write.table(diff_hires_v3[['ut_t24h']], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/elife_2020/v3_ut_t24h_20201209_hires.tsv', sep = '\t', row.names=T)
 write.table(diff_hires_v3[['ut_t8w']], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/elife_2020/v3_ut_t8w_20201209_hires.tsv', sep = '\t', row.names=T)
 write.table(diff_hires_v3[['baseline_t8w']], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/elife_2020/v3_baseline_t8w_20201209_hires.tsv', sep = '\t', row.names=T)
 write.table(diff_hires_v3[['baseline_t24h']], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/elife_2020/v3_baseline_t24h_20210301_hires.tsv', sep = '\t', row.names=T)
