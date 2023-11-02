@@ -28,7 +28,7 @@ library(foreach)
 
 ```
 
-```{r libraries, include=FALSE}
+```{r functions, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 ####################
 # Functions        #
@@ -125,6 +125,7 @@ get_de_output <- function(de.output.loc, de_method, p.val.column='bonferroni', p
 #' @param p.val.column the column to use for filtering the significant genes
 #' @param p.val.cutoff the cutoff value to use for filtering the significant genes
 #' @param log.fc.column the column containing the log fold change of the gene
+#' @param abs_lfc_cutoff the cutoff for the lfc where to include the genes
 #' @param contrast.var the value in the model that we are interested in (only necessary for mast_standalone)
 #' @param list.regex regular expression pattern to use when lising the DE output files
 #' @param do_positive test just the positive LFC genes
@@ -132,7 +133,7 @@ get_de_output <- function(de.output.loc, de_method, p.val.column='bonferroni', p
 #' @param do_joint test genes regardless of LFC direction
 #' @returns 0 if succesfull
 #' do_enrichr(limma_lowm20_output_path, gse_enrichr_limma_lowm20_output_path, de_method = 'limma', log.fc.column = 'logFC', p.val.column = 'p.bonferroni')
-do_enrichr <- function(mast.output.loc, pathway.output.loc, de_method='mast_seurat', log.fc.column='avg_log2FC', p.val.column='p_val_adj', p.val.cutoff=0.05, contrast.var = NULL, list.regex = NULL, do_positive=T, do_negative=T, do_joint=T, database='Reactome_2016'){
+do_enrichr <- function(mast.output.loc, pathway.output.loc, de_method='mast_seurat', log.fc.column='avg_log2FC', p.val.column='p_val_adj', p.val.cutoff=0.05, abs_lfc_cutoff=0, contrast.var = NULL, list.regex = NULL, do_positive=T, do_negative=T, do_joint=T, database='Reactome_2016'){
   # check if the output folder exists
   if(!dir.exists(pathway.output.loc)){
     dir.create(pathway.output.loc, recursive = T)
@@ -162,6 +163,11 @@ do_enrichr <- function(mast.output.loc, pathway.output.loc, de_method='mast_seur
     de.output <- get_de_output(de.output.loc = de.output.loc, de_method = de_method, p.val.column = p.val.column, p.val.cutoff = p.val.cutoff, contrast = contrast.var)
     # check if there are any results
     if(nrow(de.output) > 0){
+      # do absolute log fold change cutoff
+      if (!is.null(abs_lfc_cutoff) & abs_lfc_cutoff > 0) {
+        de.output <- de.output[abs(de.output[[log.fc.column]]) > abs_lfc_cutoff, ]
+      }
+      # do lfc cutoff as well
       if (do_joint==T) {
         # grab the genes
         gene.symbols.sig <- rownames(de.output)
@@ -176,6 +182,7 @@ do_enrichr <- function(mast.output.loc, pathway.output.loc, de_method='mast_seur
             enriched.reactome.loc <- paste(pathway.output.loc, comparison, '.tsv', sep = '')
             # write the result
             write.table(enriched.reactome, enriched.reactome.loc, sep = '\t', quote = T, row.names = F, col.names = T)
+            Sys.sleep(5)
           }
         })
       }
@@ -196,6 +203,7 @@ do_enrichr <- function(mast.output.loc, pathway.output.loc, de_method='mast_seur
             enriched.reactome.negative.loc <- paste(pathway.output.loc, comparison, '_negative', '.tsv', sep = '')
             # write the result
             write.table(enriched.reactome.negative, enriched.reactome.negative.loc, sep = '\t', quote = T, row.names = F, col.names = T)
+            Sys.sleep(5)
           }
         })
       }
@@ -216,6 +224,7 @@ do_enrichr <- function(mast.output.loc, pathway.output.loc, de_method='mast_seur
             enriched.reactome.positive.loc <- paste(pathway.output.loc, comparison, '_positive', '.tsv', sep = '')
             # write the result
             write.table(enriched.reactome.positive, enriched.reactome.positive.loc, sep = '\t', quote = T, row.names = F, col.names = T)
+            Sys.sleep(5)
           }
         })
       }
@@ -230,7 +239,7 @@ do_enrichr <- function(mast.output.loc, pathway.output.loc, de_method='mast_seur
 
 ```
 
-```{r libraries, include=FALSE}
+```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 ####################
 # Main Code        #
@@ -290,12 +299,51 @@ do_enrichr(mast.output.signed.meta.loc, gse.output.signed.meta.loc, p.val.column
 
 ```
 
-```{r signed_mast, include=FALSE}
+```{r signed_mast_kegg, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 
 gse.output.limma.loc.kegg <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr_kegg/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
 do_enrichr(limma.output.loc, gse.output.limma.loc.kegg, p.val.column = 'p.bonferroni', log.fc.column = 'logFC', de_method = 'limma', do_positive = T, do_negative = F, do_joint = F, list.regex = '*.tsv', database = 'KEGG_2021_Human')
 do_enrichr(limma.output.loc, gse.output.limma.loc.kegg, p.val.column = 'p.bonferroni', log.fc.column = 'logFC', de_method = 'limma', do_positive = F, do_negative = T, do_joint = F, list.regex = '*.tsv', database = 'KEGG_2021_Human')
 do_enrichr(limma.output.loc, gse.output.limma.loc.kegg, p.val.column = 'p.bonferroni', log.fc.column = 'logFC', de_method = 'limma', do_positive = F, do_negative = F, do_joint = T, list.regex = '*.tsv', database = 'KEGG_2021_Human')
+
+```
+
+```{r limma_reactome_new, include=FALSE}
+
+# location of limma output
+limma.output.loc <-  '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+# location of limma gse output
+gse.output.limma.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr_reactome_2023/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+# do gse
+do_enrichr(limma.output.loc, gse.output.limma.loc, p.val.column = 'p.bonferroni', log.fc.column = 'logFC', de_method = 'limma', do_positive = T, do_negative = F, do_joint = F, database = 'Reactome_2022', list.regex = '*.tsv')
+do_enrichr(limma.output.loc, gse.output.limma.loc, p.val.column = 'p.bonferroni', log.fc.column = 'logFC', de_method = 'limma', do_positive = F, do_negative = T, do_joint = F, database = 'Reactome_2022',  list.regex = '*.tsv')
+do_enrichr(limma.output.loc, gse.output.limma.loc, p.val.column = 'p.bonferroni', log.fc.column = 'logFC', de_method = 'limma', do_positive = F, do_negative = F, do_joint = T, database = 'Reactome_2022',  list.regex = '*.tsv')
+
+```
+
+```{r limma_reactome_new_05, include=FALSE}
+
+# location of limma output
+limma.output.loc <-  '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+# location of limma gse output
+gse.output.limma.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr_reactome_2023_lfc05/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+# do gse
+do_enrichr(limma.output.loc, gse.output.limma.loc, p.val.column = 'p.bonferroni', log.fc.column = 'logFC', de_method = 'limma', do_positive = T, do_negative = F, do_joint = F, database = 'Reactome_2022', list.regex = '*.tsv', abs_lfc_cutoff = 0.5)
+do_enrichr(limma.output.loc, gse.output.limma.loc, p.val.column = 'p.bonferroni', log.fc.column = 'logFC', de_method = 'limma', do_positive = F, do_negative = T, do_joint = F, database = 'Reactome_2022',  list.regex = '*.tsv', abs_lfc_cutoff = 0.5)
+do_enrichr(limma.output.loc, gse.output.limma.loc, p.val.column = 'p.bonferroni', log.fc.column = 'logFC', de_method = 'limma', do_positive = F, do_negative = F, do_joint = T, database = 'Reactome_2022',  list.regex = '*.tsv', abs_lfc_cutoff = 0.5)
+
+```
+
+```{r limma_reactome_new_01, include=FALSE}
+
+# location of limma output
+limma.output.loc <-  '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+# location of limma gse output
+gse.output.limma.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr_reactome_2023_lfc01/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+# do gse
+do_enrichr(limma.output.loc, gse.output.limma.loc, p.val.column = 'p.bonferroni', log.fc.column = 'logFC', de_method = 'limma', do_positive = T, do_negative = F, do_joint = F, database = 'Reactome_2022', list.regex = '*.tsv', abs_lfc_cutoff = 0.1)
+do_enrichr(limma.output.loc, gse.output.limma.loc, p.val.column = 'p.bonferroni', log.fc.column = 'logFC', de_method = 'limma', do_positive = F, do_negative = T, do_joint = F, database = 'Reactome_2022',  list.regex = '*.tsv', abs_lfc_cutoff = 0.1)
+do_enrichr(limma.output.loc, gse.output.limma.loc, p.val.column = 'p.bonferroni', log.fc.column = 'logFC', de_method = 'limma', do_positive = F, do_negative = F, do_joint = T, database = 'Reactome_2022',  list.regex = '*.tsv', abs_lfc_cutoff = 0.1)
 
 ```

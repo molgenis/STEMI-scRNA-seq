@@ -1,16 +1,18 @@
 ---
-title: "stemi_compare_de"
+title: "stemi_compare_pathways"
 output: html_document
-date: "2023-10-16"
+date: "2023-10-31"
 ---
+
 ```{r header, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 #!/usr/bin/env Rscript
 ############################################################################################################################
 # Authors: Roy Oelen
-# Name: stemi_compare_de.Rmd
-# Function: perform gene set enrichment with REACTOME and enrichr
+# Name: stemi_compare_pathways
+# Function: compare the pathways
 ############################################################################################################################
+
 ```
 
 ```{r libraries, include=FALSE}
@@ -19,13 +21,9 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 # libraries        #
 ####################
 
-# for the plots
 library(ggplot2)
 library(cowplot)
-library(RColorBrewer)
-
-# for doing the enrichment
-library(enrichR)
+library(ggVennDiagram)
 
 ```
 
@@ -35,718 +33,97 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 # Functions        #
 ####################
 
-#' get each gene and their LFC from a MAST output file created using the Seurat version of MAST
-#' 
-#' @param mast.output.loc the location of the output file
-#' @param p.val.column the column to use for filtering the significant genes
-#' @param p.val.cutoff the cutoff value to use for filtering the significant genes
-#' @returns a table with the DE genes filtered by the given significance level
-#' 
-get_gene_and_lfc_seurat_mast <- function(mast.output.loc, p.val.column='p_val_adj', p.val.cutoff=0.05){
-  # read the output
-  de.output <- read.table(mast.output.loc, header = T, row.names = 1, sep = '\t', stringsAsFactors = F)
-  # subset to what is significant
-  de.output.significant <- de.output[!is.na(de.output[[p.val.column]]) & de.output[[p.val.column]] < p.val.cutoff, ]
-  return(de.output.significant)
-}
-
-
-#' get each gene and their LFC from a limma output file
-#' 
-#' @param limma.output.loc the location of the output file
-#' @param p.val.column the column to use for filtering the significant genes
-#' @param p.val.cutoff the cutoff value to use for filtering the significant genes
-#' @returns a table with the DE genes filtered by the given significance level
-#' 
-get_gene_and_lfc_limma <- function(limma.output.loc, p.val.column='adj.P.Val', p.val.cutoff=0.05){
-  # read the output
-  de.output <- read.table(limma.output.loc, header = T, row.names = 1, sep = '\t', stringsAsFactors = F)
-  # subset to what is significant
-  de.output.significant <- de.output[!is.na(de.output[[p.val.column]]) & de.output[[p.val.column]] < p.val.cutoff, ]
-  return(de.output.significant)
-}
-
-
-#' get each gene and their LFC from a MAST output file created using the standalone version of MAST
-#' 
-#' @param mast.output.loc the location of the output file
-#' @param p.val.column the column to use for filtering the significant genes
-#' @param p.val.cutoff the cutoff value to use for filtering the significant genes
-#' @param contrast the value in the model that we are interested in
-#' @returns a table with the DE genes filtered by the given significance level
-#' 
-get_gene_and_lfc_standalone_mast <- function(mast.output.loc, p.val.column='bonferroni', p.val.cutoff=0.05, contrast='inflammation_statusNI'){
-  # read the output
-  de.output <- read.table(mast.output.loc, header = T, sep = '\t', stringsAsFactors = F)
-  # subset to just the contrast we care about
-  de.output.contrast <- de.output[de.output[['contrast']] == contrast &
-                                    de.output[['component']] == 'H', ]
-  # subset to just what is significant
-  de.output.contrast.significant <- de.output.contrast[!is.na(de.output.contrast[[p.val.column]]) & de.output.contrast[[p.val.column]] < p.val.cutoff, ]
-  # we can now safely set the rownames to be the genes, as with one contrast, there is only one entry per gene
-  rownames(de.output.contrast.significant) <- de.output.contrast.significant[['primerid']]
-  return(de.output.contrast.significant)
-}
-
-
-#' get each gene and their LFC from a DE output file
-#' 
-#' @param de.output.loc the location of the output file
-#' @param de_method the methods used to generate the output file (mast_standalone, mast_seurat, limma)
-#' @param p.val.column the column to use for filtering the significant genes
-#' @param p.val.cutoff the cutoff value to use for filtering the significant genes
-#' @param contrast the value in the model that we are interested in (only necessary for mast_standalone)
-#' @returns a table with the DE genes filtered by the given significance level
-#' 
-get_de_output <- function(de.output.loc, de_method, p.val.column='bonferroni', p.val.cutoff=0.05, contrast='inflammation_statusNI'){
-  # use the correct method
-  de.output <- NULL
-  if (de_method == 'mast_standalone') {
-    de.output <- get_gene_and_lfc_standalone_mast(de.output.loc, p.val.column = p.val.column, p.val.cutoff = p.val.cutoff, contrast = contrast)
-  }
-  else if (de_method == 'mast_seurat') {
-    de.output <- get_gene_and_lfc_seurat_mast(de.output.loc, p.val.column = p.val.column, p.val.cutoff = p.val.cutoff)
-  }
-  else if (de_method == 'limma'){
-    de.output <- get_gene_and_lfc_limma(de.output.loc, p.val.column = p.val.column, p.val.cutoff = p.val.cutoff)
-  }
-  else{
-    print('de_method not valid, valid options are: mast_standalone, mast_seurat, limma')
-  }
-  return(de.output)
-}
-
-
-get_de_genes_per_condition_and_celltype <- function(de_output_loc, de_method='mast_seurat', cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), conditions=c('Baseline', 't24h', 't8w', 'UT'), p_val_column='p_val_adj', p_val_cutoff=0.05, contrast_var = NULL) {
-  # first store each table separately
-  df_per_combination <- list()
-  # we need to have all columns present to be able to merge later on
-  cols_present <- c()
-  # check each condition combination
-  for (condition1 in conditions) {
-    for(condition2 in conditions) {
-      # check each cell type
-      for (cell_type in cell_types) {
-        # paste together the path
-        full_de_path <- NULL
-        # paste is different depending on the method
-        if ('mast_seurat' == de_method) {
-          full_de_path <- paste(de_output_loc, '/', cell_type, condition1, condition2, '.tsv', sep = '')
+get_pathways_per_celltype_condition <- function(pathway_output_loc, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), conditions=c('UT', 'Baseline', 't24h', 't8w'), de_method='limma', append='.tsv', pval_column='Old.Adjusted.P.value', pval_cutoff=0.05, direction_column='enrichmentScore', only_positive=F, only_negative=F) {
+  # we will save everything in a list first
+  output_per_ct_and_comb <- list()
+  # we will check each cell type
+  for (cell_type in cell_types) {
+    # and each condition
+    for (condition_1 in conditions) {
+      # against each other condition
+      for (condition_2 in conditions) {
+        # we'll paste the full path together
+        path_to_output <- NULL
+        if ('limma' == de_method) {
+          path_to_output <- paste(pathway_output_loc, '/', cell_type, '_timepoint.final.', condition_1, '_', condition_2, append, sep = '')
         }
-        else if('limma' == de_method) {
-          full_de_path <- paste(de_output_loc, '/', cell_type, '_timepoint.final.', condition2, '_', condition1, '.tsv', sep = '')
+        else{
+          path_to_output <- paste(pathway_output_loc, '/', cell_type, condition_1, condition_2, append, sep = '')
         }
-        # check if this file exists
-        if (file.exists(full_de_path)) {
+        # check if the file exists
+        if (file.exists(path_to_output)) {
           # read the file
-          full_de <- get_de_output(de.output.loc = full_de_path, de_method = de_method, p.val.column = p_val_column, p.val.cutoff = p_val_cutoff, contrast = contrast_var)
-          if (nrow(full_de) > 0) {
-            # add the combination and cell type
-            full_de <- cbind(data.frame(gene = rownames(full_de), combination = rep(paste(condition2, condition1, sep = '-'), times = nrow(full_de)), cell_type = rep(cell_type, times = nrow(full_de))), full_de)
-            # add to the list
-            df_per_combination[[paste(cell_type, condition2, condition1, sep = '_')]] <- full_de
-            # add the column names
-            cols_present <- unique(c(cols_present, colnames(full_de)))
+          pathway_output <- read.table(path_to_output, header = T, sep = '\t', comment.char='')
+          # filter direction if requested
+          if (only_positive) {
+            pathway_output <- pathway_output[pathway_output[[direction_column]] > 0, ]
           }
-        }
-      }
-    }
-  }
-  # add missing columns where present
-  for (comb in names(df_per_combination)) {
-    df_comb <- df_per_combination[[comb]]
-    # check which columns are missing, and set those to NA
-    df_comb[, setdiff(cols_present, colnames(df_comb))] <- NA
-    # add back
-    df_per_combination[[comb]] <- df_comb
-  }
-  # merge all of them
-  df_all <- do.call('rbind', df_per_combination)
-  return(df_all)
-}
-
-
-plot_concordance <- function(de_table, set_1_column, set_2_column, pointless=F, legendless=F, ylim=NULL, xlim=NULL, paper_style=T) {
-  # add the signs
-  de_table[['sign_1']] <- sign(de_table[[set_1_column]])
-  de_table[['sign_2']] <- sign(de_table[[set_2_column]])
-  # then check if they are the same
-  de_table[['concordant']] <- NA
-  de_table[!is.na(de_table[['sign_1']]) & !is.na(de_table[['sign_2']]) & de_table[['sign_1']] == de_table[['sign_2']], 'concordant'] <- 'concordant'
-  de_table[!is.na(de_table[['sign_1']]) & !is.na(de_table[['sign_2']]) &de_table[['sign_1']] != de_table[['sign_2']], 'concordant'] <- 'disconcordant'
-  # calculate concordance
-  concordance <- sum(!is.na(de_table[['concordant']]) & de_table[['concordant']] == 'concordant') / sum(!is.na(de_table[['concordant']]))
-  
-  # get the location of where to plot the text
-  x_pos_text <- max(abs(de_table[[set_1_column]])) * -.92
-  y_pos_text <- max(abs(de_table[[set_2_column]])) * .97
-  
-  # create the plot
-  p <- ggplot(data = NULL, mapping = aes(x = de_table[[set_1_column]], y = de_table[[set_2_column]], color = de_table[['concordant']])) +
-    geom_point() +
-    xlab(set_1_column) +
-    ylab(set_2_column) +
-    guides(color=guide_legend(title='concordance')) +
-    annotate('text', x=x_pos_text, y=y_pos_text, color = 'black', label = round(concordance, digits = 2), hjust=1)
-  
-  # add xlimit if requested
-  if(!is.null(ylim)){
-    p <- p + ylim(ylim)
-  }
-  else{
-    p <- p + ylim(c(-1 * max(abs(de_table[[set_2_column]])), max(abs(de_table[[set_2_column]]))))
-  }
-  # and y limit
-  if(!is.null(xlim)){
-    p <- p + xlim(xlim)
-  }
-  else{
-    p <- p + xlim(c(-1 * max(abs(de_table[[set_1_column]])), max(abs(de_table[[set_1_column]]))))
-  }
-  if(pointless){
-    p <- p + theme(axis.text.x=element_blank(), 
-                   axis.ticks = element_blank())
-  }
-  if(legendless){
-    p <- p + theme(legend.position = 'none')
-  }
-  if (paper_style) {
-    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
-  }
-  return(p)
-}
-
-
-get_gene_overlaps <- function(gene_table_1, gene_table_2, gene_column_1, gene_column_2, comparison_column_1='combination', comparison_column_2='combination', cell_type_column_1='cell_type', cell_type_column_2='cell_type', name_1='table_1', name_2='table_2') {
-  # we will save this per combination
-  overlap_per_combination <- list()
-  # we will check each combination
-  combinations_both <- intersect(unique(gene_table_1[[comparison_column_1]]), unique(gene_table_2[[comparison_column_2]]))
-  for (combination in combinations_both) {
-    # we will store the result for this combination
-    overlap_per_combination[[combination]] <- list()
-    # subset both tables
-    gene_table_1_combination <- gene_table_1[gene_table_1[[comparison_column_1]] == combination, ]
-    gene_table_2_combination <- gene_table_2[gene_table_2[[comparison_column_2]] == combination, ]
-    # get the cell type
-    cell_types_both <- intersect(unique(gene_table_1_combination[[cell_type_column_1]]), unique(gene_table_2_combination[[cell_type_column_2]]))
-    # check each cell type
-    for (cell_type in cell_types_both) {
-      # get the genes in the first
-      genes_1 <- gene_table_1_combination[gene_table_1_combination[[cell_type_column_1]] == cell_type, ]
-      genes_2 <- gene_table_2_combination[gene_table_2_combination[[cell_type_column_2]] == cell_type, ]
-      # now get overlap and differences
-      genes_shared <- intersect(genes_1[[gene_column_1]], genes_2[[gene_column_2]])
-      genes_only_1 <- setdiff(genes_1[[gene_column_1]], genes_2[[gene_column_2]])
-      genes_only_2 <- setdiff(genes_2[[gene_column_2]], genes_1[[gene_column_1]])
-      # for the ones in both, we need to merge them
-      gene_df_both <- cbind(data.frame(gene = genes_shared),
-                            genes_1[match(genes_shared, genes_1[[gene_column_1]]), ],
-                            genes_2[match(genes_shared, genes_2[[gene_column_2]]), ])
-      # put that in a list
-      overlap_list <- list(
-        'shared' = gene_df_both,
-        # also set gene as explicit column
-        'set_1' = cbind(data.frame(gene = genes_only_1), genes_1[match(genes_only_1, genes_1[[gene_column_1]]), ]),
-        'set_2' = cbind(data.frame(gene = genes_only_2), genes_2[match(genes_only_2, genes_2[[gene_column_2]]), ])
-      )
-      names(overlap_list) <- c('shared', name_1, name_2)
-      # put in the list for this cell type
-      overlap_per_combination[[combination]][[cell_type]] <- overlap_list
-    }
-  }
-  return(overlap_per_combination)
-}
-
-
-write_gene_overlaps <- function(overlap_list, output_loc, gene_column='gene', output_directionally=F, lfc_column_per_set=NULL) {
-  # check each combination
-  for (combination in names(overlap_list)) {
-    # check each cell type
-    for (cell_type in names(overlap_list[[combination]])) {
-      # get the overlap lists
-      overlapping <- overlap_list[[combination]][[cell_type]][['shared']][[gene_column]]
-      # set output directory
-      overlap_out <- paste(output_loc, '/', cell_type, '_', combination, '_', 'shared.txt', sep = '')
-      # write the result
-      write.table(data.frame(x = overlapping), overlap_out, row.names = F, col.names = F, quote = F)
-      
-      # now check the direction as well
-      if (output_directionally) {
-        # get the overlapping set
-        overlapping_df <- overlap_list[[combination]][[cell_type]][['shared']]
-        # check each set
-        for (set in names(lfc_column_per_set)) {
-          # get the lfc column
-          lfc_column <- lfc_column_per_set[[set]]
-          # get the positive for that set
-          overlapping_df_set_positive <- overlapping_df[overlapping_df[[lfc_column]] > 0, gene_column]
-          # set output directory
-          overlap_set_positive_out <- paste(output_loc, '/', cell_type, '_', combination, '_', 'shared', '_',  set, '_positive.txt', sep = '')
-          # write result
-          write.table(data.frame(x = overlapping_df_set_positive), overlap_set_positive_out, row.names = F, col.names = F, quote = F)
-          # and the negative one
-          overlapping_df_set_negative <- overlapping_df[overlapping_df[[lfc_column]] < 0, gene_column]
-          overlap_set_negative_out <- paste(output_loc, '/', cell_type, '_', combination, '_', 'shared', '_', set, '_negative.txt', sep = '')
-          write.table(data.frame(x = overlapping_df_set_negative), overlap_set_negative_out, row.names = F, col.names = F, quote = F)
-        }
-      }
-      
-      # check the non-overlapping
-      non_overlapping_conditions <- setdiff(names(overlap_list[[combination]][[cell_type]]), 'shared')
-      for (non_overlap_set in non_overlapping_conditions) {
-        # do the same as with the overlapping one
-        no_overlap <- overlap_list[[combination]][[cell_type]][[non_overlap_set]][[gene_column]]
-        no_overlap_out <- paste(output_loc, '/', cell_type, '_', 'only_', combination, '_', non_overlap_set, '.txt', sep = '')
-        write.table(data.frame(x = no_overlap), no_overlap_out, row.names = F, col.names = F, quote = F)
-        # do directionally if requested
-        if (output_directionally) {
-          # we need the full table for this
-          no_overlap_table <- overlap_list[[combination]][[cell_type]][[non_overlap_set]]
-          # get the LFC column
-          lfc_column <- lfc_column_per_set[[non_overlap_set]]
-          # get the positive set
-          no_overlap_positive <- no_overlap_table[no_overlap_table[[lfc_column]] > 0, gene_column]
-          no_overlap_positive_out <- paste(output_loc, '/', cell_type, '_', 'only_', combination, '_', non_overlap_set, '_positive.txt', sep = '')
-          write.table(data.frame(x = no_overlap_positive), no_overlap_positive_out, row.names = F, col.names = F, quote = F)
-          # and negative set
-          no_overlap_negative <- no_overlap_table[no_overlap_table[[lfc_column]] < 0, gene_column]
-          no_overlap_negative_out <- paste(output_loc, '/', cell_type, '_', 'only_', combination, '_', non_overlap_set, '_negative.txt', sep = '')
-          write.table(data.frame(x = no_overlap_negative), no_overlap_negative_out, row.names = F, col.names = F, quote = F)
-        }
-      }
-    }
-  }
-  return(0)
-}
-
-
-do_gse_gene_overlaps_enrichr <- function(overlap_list, output_loc, sets_to_consider=NULL, gene_column='gene') {
-  # check each combination
-  for (combination in names(overlap_list)) {
-    # check each cell type
-    for (cell_type in names(overlap_list[[combination]])) {
-      if (is.null(sets_to_consider) | 'shared' %in% sets_to_consider) {
-        # get the overlap lists
-        overlapping <- overlap_list[[combination]][[cell_type]][['shared']][[gene_column]]
-        # set output directory
-        overlap_out <- paste(output_loc, '/', cell_type, '_', 'overlap_', combination, '.txt', sep = '')
-        try(
-          {
-            # do the enrichment analysis
-            enriched <- enrichr(genes = overlapping, databases = c('Reactome_2016'))
-            # grab the reactome result
-            enriched.reactome <- enriched[['Reactome_2016']]
-            # write a result if there is one
-            if(!(is.null(enriched.reactome)) & nrow(enriched.reactome) > 0){
-              # write the result
-              write.table(enriched.reactome, overlap_out, sep = '\t', quote = T, row.names = F, col.names = T)
-            }
+          if (only_negative) {
+            pathway_output <- pathway_output[pathway_output[[direction_column]] < 0, ]
           }
-        )
-      }
-      # check the non-overlapping
-      non_overlapping_conditions <- setdiff(names(overlap_list[[combination]][[cell_type]]), 'shared')
-      for (non_overlap_set in non_overlapping_conditions) {
-        if (is.null(sets_to_consider) | non_overlap_set %in% sets_to_consider) {
-           # do the same as with the overlapping one
-          no_overlap <- overlap_list[[combination]][[cell_type]][[non_overlap_set]][[gene_column]]
-          no_overlap_out <- paste(output_loc, '/', cell_type, '_','only_', combination, '_', non_overlap_set, '.txt', sep = '')
-          try(
-            {
-              # do the enrichment analysis
-              enriched <- enrichr(genes = no_overlap, databases = c('Reactome_2016'))
-              # grab the reactome result
-              enriched.reactome <- enriched[['Reactome_2016']]
-              # write a result if there is one
-              if(!(is.null(enriched.reactome)) & nrow(enriched.reactome) > 0){
-                # write the result
-                write.table(enriched.reactome, no_overlap_out, sep = '\t', quote = T, row.names = F, col.names = T)
-              }
-            }
+          # add the cell type and the condition
+          pathway_output <- cbind(
+            data.frame(
+              condition1=rep(condition_1, times = nrow(pathway_output)),
+              condition2=rep(condition_2, times = nrow(pathway_output)),
+              cell_type=rep(cell_type, times = nrow(pathway_output))
+            ), 
+            pathway_output
           )
+          # filter if possible
+          if (!is.null(pval_column) & !is.null(pval_cutoff)) {
+            pathway_output <- pathway_output[pathway_output[[pval_column]] < pval_cutoff, ]
+          }
+          # add to the list
+          output_per_ct_and_comb[[paste(condition_1, condition_2, cell_type, sep = '')]] <- pathway_output
         }
       }
     }
   }
-  return(0)
+  # merge everything
+  output_per_ct_and_comb_df <- do.call('rbind', output_per_ct_and_comb)
+  return(output_per_ct_and_comb_df)
 }
 
 
-get_de_overlaps <- function(gene_table_1, gene_table_2, gene_column_1, gene_column_2, lfc_column_1, lfc_column_2, comparison_column_1='combination', comparison_column_2='combination', cell_type_column_1='cell_type', cell_type_column_2='cell_type', name_1='table_1', name_2='table_2', sign_flip_combinations_1=c(), sign_flip_combinations_2=c()) {
-  # we will store the genes per for each combination, per comparison
-  genes_per_combination_per_set <- list()
-  # we will check each combination
-  combinations_both <- intersect(unique(gene_table_1[[comparison_column_1]]), unique(gene_table_2[[comparison_column_2]]))
-  for (combination in combinations_both) {
-    # we will store the result for this combination
-    genes_per_combination_per_set[[combination]] <- list()
-    # subset both tables
-    gene_table_1_combination <- gene_table_1[gene_table_1[[comparison_column_1]] == combination, ]
-    gene_table_2_combination <- gene_table_2[gene_table_2[[comparison_column_2]] == combination, ]
-    # get the cell type
-    cell_types_both <- intersect(unique(gene_table_1_combination[[cell_type_column_1]]), unique(gene_table_2_combination[[cell_type_column_2]]))
-    # check each cell type
-    for (cell_type in cell_types_both) {
-      # get the genes in the first
-      genes_1 <- gene_table_1_combination[gene_table_1_combination[[cell_type_column_1]] == cell_type, ]
-      genes_2 <- gene_table_2_combination[gene_table_2_combination[[cell_type_column_2]] == cell_type, ]
-      # check if we need to flip anything
-      if (!is.null(sign_flip_combinations_1) & combination %in% sign_flip_combinations_1) {
-        genes_1[[lfc_column_1]] <- -1 * genes_1[[lfc_column_1]]
-      }
-      if (!is.null(sign_flip_combinations_2) & combination %in% sign_flip_combinations_2) {
-        genes_2[[lfc_column_2]] <- -1 * genes_2[[lfc_column_2]]
-      }
-      # get the positive ones
-      genes_1_pos <- genes_1[genes_1[[lfc_column_1]] > 0, gene_column_1]
-      # for the other set as well
-      genes_2_pos <- genes_2[genes_2[[lfc_column_2]] > 0, gene_column_2]
-      # into list
-      positive_genes <- list(genes_1_pos, genes_2_pos)
-      # with names we wanted
-      names(positive_genes) <- c(name_1, name_2)
-      
-      # and negative ones
-      genes_1_neg <- genes_1[genes_1[[lfc_column_1]] < 0, gene_column_1]
-      genes_2_neg <- genes_2[genes_2[[lfc_column_2]] < 0, gene_column_2]
-      negative_genes <- list(genes_1_neg, genes_2_neg)
-      names(negative_genes) <- c(name_1, name_2)
-      
-      # put into the list for the cell type
-      genes_per_combination_per_set[[combination]][[cell_type]] <- list('positive' = positive_genes, 'negative' = negative_genes)
+create_lists_from_pathway_tables <- function(pathway_table_1, pathway_table_2, name_table_1='set_1', name_table_2='set_2', condition_1_table_1='condition1', condition_2_table_1='condition2', cell_type_table_1='cell_type', term_column_table_1='Term', significance_table_1='Old.Adjusted.P.value', significance_cutoff_table_1=1, condition_1_table_2='condition1', condition_2_table_2='condition2', cell_type_table_2='cell_type', term_column_table_2='Term', significance_table_2='Old.Adjusted.P.value', significance_cutoff_table_2=1) {
+  # store per cell type
+  terms_per_celltype <- list()
+  # get the cell types present
+  cell_types <- intersect(unique(pathway_table_1[[cell_type_table_1]]), unique(pathway_table_2[[cell_type_table_2]]))
+  # check each cell type
+  for (cell_type in cell_types) {
+    # subset pathway tables
+    pathway_table_1_ct <- pathway_table_1[pathway_table_1[[cell_type_table_1]] == cell_type, ]
+    pathway_table_2_ct <- pathway_table_2[pathway_table_2[[cell_type_table_2]] == cell_type, ]
+    # create a column that has the condition combination
+    pathway_table_1_ct[['comparison']] <- paste(pathway_table_1_ct[[condition_1_table_1]], pathway_table_1_ct[[condition_2_table_1]], sep = '-')
+    pathway_table_2_ct[['comparison']] <- paste(pathway_table_2_ct[[condition_1_table_2]], pathway_table_2_ct[[condition_2_table_2]], sep = '-')
+    # we'll store the result per comparison
+    result_per_comparison <- list()
+    # get the comparisons present
+    comparisons <- intersect(unique(pathway_table_1_ct[['comparison']]), unique(pathway_table_2_ct[['comparison']]))
+    # check each comparison
+    for (comparison in comparisons) {
+      print(paste(cell_type, comparison))
+      # subset pathway tables
+      pathway_table_1_ct_com <- pathway_table_1_ct[pathway_table_1_ct[['comparison']] == comparison, ]
+      pathway_table_2_ct_com <- pathway_table_2_ct[pathway_table_2_ct[['comparison']] == comparison, ]
+      # get the significant results
+      sig_pathway_table_1_ct_com <- pathway_table_1_ct_com[pathway_table_1_ct_com[[significance_table_1]] < significance_cutoff_table_1, ]
+      sig_pathway_table_2_ct_com <- pathway_table_2_ct_com[pathway_table_2_ct_com[[significance_table_2]] < significance_cutoff_table_2, ]
+      # make into list
+      pathways_either <- list('set_1' = sig_pathway_table_1_ct_com[[term_column_table_1]], 'set_2' = sig_pathway_table_2_ct_com[[term_column_table_2]])
+      # set supplied names
+      names(pathways_either) <- c(name_table_1, name_table_2)
+      # add for this comparison
+      result_per_comparison[[comparison]] <- pathways_either
     }
+    # add for this cell type
+    terms_per_celltype[[cell_type]] <- result_per_comparison
   }
-  return(genes_per_combination_per_set)
+  return(terms_per_celltype)
 }
-
-
-get_de_effect_sizes <- function(gene_table_1, gene_table_2, gene_column_1, gene_column_2, lfc_column_1, lfc_column_2, significance_column_1, significance_column_2, comparison_column_1='combination', comparison_column_2='combination', cell_type_column_1='cell_type', cell_type_column_2='cell_type', name_1='table_1', name_2='table_2', significance_cutoff_1=0.05, significance_cutoff_2=0.05, lfc_cutoff_1=NULL, lfc_cutoff_2=NULL, sign_flip_combinations_1=c(), sign_flip_combinations_2=c(), only_tested_both=F, na_to_zero=F) {
-  # we will store the genes per for each combination, per comparison
-  genes_per_combination_per_set <- list()
-  # we will check each combination
-  combinations_both <- intersect(unique(gene_table_1[[comparison_column_1]]), unique(gene_table_2[[comparison_column_2]]))
-  for (combination in combinations_both) {
-    # we will store the result for this combination
-    genes_per_combination_celltype <- list()
-    # subset both tables
-    gene_table_1_combination <- gene_table_1[gene_table_1[[comparison_column_1]] == combination, ]
-    gene_table_2_combination <- gene_table_2[gene_table_2[[comparison_column_2]] == combination, ]
-    # get the cell type
-    cell_types_both <- intersect(unique(gene_table_1_combination[[cell_type_column_1]]), unique(gene_table_2_combination[[cell_type_column_2]]))
-    # check each cell type
-    for (cell_type in cell_types_both) {
-      # get the genes in the first
-      genes_1 <- gene_table_1_combination[gene_table_1_combination[[cell_type_column_1]] == cell_type, ]
-      genes_2 <- gene_table_2_combination[gene_table_2_combination[[cell_type_column_2]] == cell_type, ]
-      # check if we need to flip anything
-      if (!is.null(sign_flip_combinations_1) & combination %in% sign_flip_combinations_1) {
-        genes_1[[lfc_column_1]] <- -1 * genes_1[[lfc_column_1]]
-      }
-      if (!is.null(sign_flip_combinations_2) & combination %in% sign_flip_combinations_2) {
-        genes_2[[lfc_column_2]] <- -1 * genes_2[[lfc_column_2]]
-      }
-      # join the two tables
-      genes_both <- unique(c(genes_1[[gene_column_1]], genes_2[[gene_column_2]]))
-      # but only for the joint ones if requested
-      if (only_tested_both) {
-        genes_both <- intersect(genes_1[[gene_column_1]], genes_2[[gene_column_2]])
-      }
-      lfc_table_both <- data.frame(
-        gene = genes_both, 
-        combination = rep(combination, times = length(genes_both)),
-        cell_type = rep(cell_type, times = length(genes_both)),
-        lfc_1=genes_1[match(genes_both, genes_1[[gene_column_1]]), lfc_column_1],
-        lfc_2=genes_2[match(genes_both, genes_2[[gene_column_2]]), lfc_column_2]
-      )
-      # set names
-      colnames(lfc_table_both) <- c('gene', 'combination', 'cell_type', name_1, name_2)
-      
-      # check which were significant
-      if (!is.null(lfc_cutoff_1) & !is.null(lfc_cutoff_2)) {
-        genes_sig_1 <- genes_1[!is.na(genes_1[[significance_column_1]]) & 
-                                 genes_1[[significance_column_1]] < significance_cutoff_1 &
-                                 !is.na(genes_1[[lfc_column_1]]) &
-                                 abs(genes_1[[lfc_column_1]]) >= lfc_cutoff_1, 
-                               gene_column_1]
-        genes_sig_2 <- genes_2[!is.na(genes_2[[significance_column_2]]) & 
-                                 genes_2[[significance_column_2]] < significance_cutoff_2 &
-                                 !is.na(genes_2[[lfc_column_2]]) &
-                                 abs(genes_2[[lfc_column_2]]) >= lfc_cutoff_2, 
-                               gene_column_2]
-      }
-      else{
-        genes_sig_1 <- genes_1[!is.na(genes_1[[significance_column_1]]) & genes_1[[significance_column_1]] < significance_cutoff_1, gene_column_1]
-        genes_sig_2 <- genes_2[!is.na(genes_2[[significance_column_2]]) & genes_2[[significance_column_2]] < significance_cutoff_2, gene_column_2]
-      }
-      # set where it was significance
-      lfc_table_both[['significant']] <- NA
-      lfc_table_both[lfc_table_both[['gene']] %in% genes_sig_1 & !(lfc_table_both[['gene']] %in% genes_sig_2), 'significant'] <- name_1
-      lfc_table_both[lfc_table_both[['gene']] %in% genes_sig_2 & !(lfc_table_both[['gene']] %in% genes_sig_1), 'significant'] <- name_2
-      lfc_table_both[lfc_table_both[['gene']] %in% genes_sig_2 & lfc_table_both[['gene']] %in% genes_sig_1, 'significant'] <- 'both'
-      lfc_table_both[!(lfc_table_both[['gene']] %in% genes_sig_1) & !(lfc_table_both[['gene']] %in% genes_sig_2), 'significant'] <- 'neither'
-      
-      # and where it was tested
-      lfc_table_both[['tested']] <- NA
-      lfc_table_both[lfc_table_both[['gene']] %in% genes_1[[gene_column_1]] & !(lfc_table_both[['gene']] %in% genes_2[[gene_column_2]]), 'tested'] <- name_1
-      lfc_table_both[lfc_table_both[['gene']] %in% genes_2[[gene_column_2]] & !(lfc_table_both[['gene']] %in% genes_1[[gene_column_1]]), 'tested'] <- name_2
-      lfc_table_both[lfc_table_both[['gene']] %in% genes_2[[gene_column_2]] & lfc_table_both[['gene']] %in% genes_1[[gene_column_1]], 'tested'] <- 'both'
-      lfc_table_both[!(lfc_table_both[['gene']] %in% genes_1[[gene_column_1]]) & !(lfc_table_both[['gene']] %in% genes_2[[gene_column_2]]), 'tested'] <- 'neither'
-      
-      # convert NA LFC to zero if requested
-      if (na_to_zero) {
-        lfc_table_both[is.na(lfc_table_both[[name_1]]), name_1] <- 0
-        lfc_table_both[is.na(lfc_table_both[[name_2]]), name_2] <- 0
-      }
-      
-      # put into the list for the cell type
-      genes_per_combination_celltype[[cell_type]] <- lfc_table_both
-    }
-    # merge all of them
-    genes_per_celltype <- do.call('rbind', genes_per_combination_celltype)
-    # put in list of combinations
-    genes_per_combination_per_set[[combination]] <- genes_per_celltype
-  }
-  # merge all combinations
-  genes_all <- do.call('rbind', genes_per_combination_per_set)
-  return(genes_all)
-}
-
-
-plot_effect_sizes <- function(de_table, set_1_column, set_2_column, category_column=NULL, pointless=F, legendless=F, ylim=NULL, xlim=NULL, paper_style=T, category_order=NULL) {
-  # create the plot
-  p <- NULL
-  # with a catagory or not
-  if (!is.null(category_column)) {
-    # order the category if requested
-    if (!is.null(category_order)) {
-      de_table_list <- list()
-      # by checking each category
-      for (category in category_order) {
-        de_table_category <- de_table[de_table[[category_column]] == category, ]
-        de_table_list[[category]] <- de_table_category
-      }
-      # add the ones we didn't check last
-      de_table_list[['leftover']] <- de_table[!(de_table[[category_column]] %in% category_order), ]
-      de_table <- do.call('rbind', de_table_list)
-    }
-    p <- ggplot(data = NULL, mapping = aes(x = de_table[[set_1_column]], y = de_table[[set_2_column]], color = de_table[[category_column]])) +
-    geom_point() +
-    xlab(set_1_column) +
-    ylab(set_2_column) +
-    guides(color=guide_legend(title=category_column))
-  }
-  else {
-     p <- ggplot(data = NULL, mapping = aes(x = de_table[[set_1_column]], y = de_table[[set_2_column]])) +
-    geom_point() +
-    xlab(set_1_column) +
-    ylab(set_2_column)
-  }
-  # add xlimit if requested
-  if(!is.null(ylim)){
-    p <- p + ylim(ylim)
-  }
-  else{
-    p <- p + ylim(c(-1 * max(abs(de_table[[set_2_column]])), max(abs(de_table[[set_2_column]]))))
-  }
-  # and y limit
-  if(!is.null(xlim)){
-    p <- p + xlim(xlim)
-  }
-  else{
-    p <- p + xlim(c(-1 * max(abs(de_table[[set_1_column]])), max(abs(de_table[[set_1_column]]))))
-  }
-  if(pointless){
-    p <- p + theme(axis.text.x=element_blank(), 
-                   axis.ticks = element_blank())
-  }
-  if(legendless){
-    p <- p + theme(legend.position = 'none')
-  }
-  if (paper_style) {
-    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
-  }
-  return(p)
-}
-
-
-get_de_significance_overlaps <- function(de_table_both, lfc_column_1, lfc_column_2, tested_column='tested', significant_column='significant', combination_column='combination', cell_type_column='cell_type') {
-  # check the cell types we have
-  cell_types <- unique(de_table_both[[cell_type_column]])
-  # and the combinations
-  combinations <- unique(de_table_both[[combination_column]])
-  # and we will do these classifications
-  classifications <- c('tested both, significant, same direction', 
-                       'tested both, significant opposite direction', 
-                       paste('tested both, only significant in', lfc_column_1), 
-                       paste('tested both, only significant in', lfc_column_2),
-                       paste('tested only', lfc_column_1, 'and significant'),
-                       paste('tested only', lfc_column_2, 'and significant'),
-                       paste('tested only', lfc_column_1, 'and not significant'),
-                       paste('tested only', lfc_column_2, 'and not significant'))
-  # we'll store in a list
-  df_per_ct_and_comb <- list()
-  # check each combination
-  for (combination in combinations) {
-    # we'll check each cell type
-    for (cell_type in cell_types) {
-      # subset for that cell type and combination
-      de_table_condition_celltype <- de_table_both[de_table_both[[combination_column]] == combination &
-                                                     de_table_both[[cell_type_column]] == cell_type, ]
-      # add the sign
-      de_table_condition_celltype[['sign1']] <- sign(de_table_condition_celltype[[lfc_column_1]])
-      de_table_condition_celltype[['sign2']] <- sign(de_table_condition_celltype[[lfc_column_2]])
-      
-      # counting
-      sig_same <- nrow(de_table_condition_celltype[de_table_condition_celltype[[significant_column]] == 'both' & de_table_condition_celltype[[tested_column]] == 'both' & de_table_condition_celltype[['sign1']] == de_table_condition_celltype[['sign2']], ])
-      sig_dif <- nrow(de_table_condition_celltype[de_table_condition_celltype[[significant_column]] == 'both' & de_table_condition_celltype[[tested_column]] == 'both' & de_table_condition_celltype[['sign1']] != de_table_condition_celltype[['sign2']], ])
-      both_sig1 <- nrow(de_table_condition_celltype[de_table_condition_celltype[[significant_column]] == lfc_column_1 & de_table_condition_celltype[[tested_column]] == 'both', ])
-      both_sig2 <- nrow(de_table_condition_celltype[de_table_condition_celltype[[significant_column]] == lfc_column_2 & de_table_condition_celltype[[tested_column]] == 'both', ])
-      only1_sig1 <- nrow(de_table_condition_celltype[de_table_condition_celltype[[significant_column]] == lfc_column_1 & de_table_condition_celltype[[tested_column]] == lfc_column_1, ])
-      only2_sig2 <- nrow(de_table_condition_celltype[de_table_condition_celltype[[significant_column]] == lfc_column_2 & de_table_condition_celltype[[tested_column]] == lfc_column_2, ])
-      only1_nosig <- nrow(de_table_condition_celltype[de_table_condition_celltype[[significant_column]] == 'neither' & de_table_condition_celltype[[tested_column]] == lfc_column_1, ])
-      only2_nosig <- nrow(de_table_condition_celltype[de_table_condition_celltype[[significant_column]] == 'neither' & de_table_condition_celltype[[tested_column]] == lfc_column_2, ])
-      # and the sum
-      all <- sum(sig_same, sig_dif, both_sig1, both_sig2, only1_sig1, only2_sig2, only1_nosig, only2_nosig)
-      
-      # put numbers there
-      nr_table <- data.frame(combination = rep(combination, times = length(classifications)), 
-                 cell_type = rep(cell_type, times = length(classifications)),
-                 classification = classifications,
-                 nr = c(sig_same, sig_dif, both_sig1, both_sig2, only1_sig1, only2_sig2, only1_nosig, only2_nosig),
-                 proportion = c(sig_same/all, sig_dif/all, both_sig1/all, both_sig2/all, only1_sig1/all, only2_sig2/all, only1_nosig/all, only2_nosig/all))
-      # add to list
-      df_per_ct_and_comb[[paste(combination, cell_type)]] <- nr_table
-    }
-  }
-  # merge all
-  df_all <- do.call('rbind', df_per_ct_and_comb)
-  return(df_all)
-}
-
-plot_de_significance_overlaps <- function(overlap_table, cell_type_column='cell_type', category_column='classification', number_column='nr', pointless=F, legendless=F, ylim=NULL, xlim=NULL, paper_style=T) {
-  # make plot
-  p <- ggplot(data = NULL, mapping = aes(x = overlap_table[[cell_type_column]], y = overlap_table[[number_column]], fill = overlap_table[[category_column]])) + 
-    geom_bar(stat = 'identity', position = 'stack') +
-    xlab('cell type') +
-    ylab('DE genes') +
-    guides(fill = guide_legend(title = category_column))
-  # add xlimit if requested
-  if(!is.null(ylim)){
-    p <- p + ylim(ylim)
-  }
-  if(!is.null(xlim)){
-    p <- p + xlim(xlim)
-  }
-  if(pointless){
-    p <- p + theme(axis.text.x=element_blank(), 
-                   axis.ticks = element_blank())
-  }
-  if(legendless){
-    p <- p + theme(legend.position = 'none')
-  }
-  if (paper_style) {
-    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
-  }
-  return(p)
-}
-
-#' get a vector of as distinct possible colours
-#' 
-#' @param number_of_colours how many colours to return
-#' @param use_sampling whether or not to randomly extract the colours instead of grabbing the first n colours
-#' @param color_indices (optional, not used by default) if specific colours are needed, supply the indices of the colours here. Use 'get_available_colours_grid' to get the colours and their indices
-#' @returns a vector of colours
-#' 
-sample_many_colours <- function(number_of_colours, use_sampling=F, color_indices=NULL) {
-  # get all colours from the 'quality' palettes
-  quality_colour_palettes <- brewer.pal.info[brewer.pal.info[['category']] == 'qual', ]
-  # save each palette
-  colours_per_palette <- list()
-  # apply over each palette
-  for (i in 1:nrow(quality_colour_palettes)) {
-    # get the name of the palette
-    palette_name <- rownames(quality_colour_palettes)[i]
-    # get the number of colours in the palette
-    palette_max_colours <- quality_colour_palettes[i, 'maxcolors']
-    # use brewer.pal to get all colours
-    colours_palette <- brewer.pal(palette_max_colours, palette_name)
-    # put result in the list
-    colours_per_palette[[palette_name]] <- colours_palette
-  }
-  # merge all palettes
-  all_colours <- do.call('c', colours_per_palette)
-  # randomly get colours from the palette
-  max_possible_colours <- length(all_colours)
-  if (is.null(number_of_colours)) {
-    message('no number of colors supplied, assuming color indices have been')
-  }
-  else if (number_of_colours > max_possible_colours) {
-    message(paste('requesting more colours than is possible: ', as.character(number_of_colours), ' vs ', max_possible_colours, ', returning max possible', sep = ''))
-    number_of_colours <- max_possible_colours
-  }
-  colours_to_return <- NULL
-  # specific colours we like (the indices)
-  if (!is.null(color_indices)) {
-    colours_to_return <- all_colours[color_indices]
-  }
-  # or use sampling
-  else if (use_sampling) {
-    colours_to_return <- sample(all_colours, number_of_colours)
-  }
-  # or the first x colours
-  else {
-    colours_to_return <- all_colours[1 : number_of_colours]
-  }
-  return(as.vector(unlist(colours_to_return)))
-}
-
-#' get a vector of as distinct possible colours, but with more possibilities ()
-#' 
-#' @param number_of_colours how many colours to return
-#' @param use_sampling whether or not to randomly extract the colours instead of grabbing the first n colours
-#' @param color_indices (optional, not used by default) if specific colours are needed, supply the indices of the colours here. Use 'get_available_colours_grid' to get the colours and their indices
-#' @returns a vector of colours
-#' 
-sample_tons_of_colors <- function(number_of_colours, use_sampling=F, color_indices=NULL) {
-  # get colours available to device
-  all_colours <- grDevices::colors()
-  # remove gray
-  all_colours <- all_colours[grep('gr(a|e)y', all_colours, invert = T)]
-  # check how many are possible
-  max_possible_colours <- length(all_colours)
-  if (is.null(number_of_colours)) {
-    message('no number of colors supplied, assuming color indices have been')
-  }
-  else if (number_of_colours > max_possible_colours) {
-    message(paste('requesting more colours than is possible: ', as.character(number_of_colours), ' vs ', max_possible_colours, ', returning max possible', sep = ''))
-    number_of_colours <- max_possible_colours
-  }
-  colours_to_return <- NULL
-  # specific colours we like (the indices)
-  if (!is.null(color_indices)) {
-    colours_to_return <- all_colours[color_indices]
-  }
-  # or use sampling
-  else if (use_sampling) {
-    colours_to_return <- sample(all_colours, number_of_colours)
-  }
-  # or the first x colours
-  else {
-    colours_to_return <- all_colours[1 : number_of_colours]
-  }
-  return(as.vector(unlist(colours_to_return)))
-}
-
-
-```
-
-```{r settings, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
-####################
-# Settings.        #
-####################
-setEnrichrSite("Enrichr") # Human genes
 
 ```
 
@@ -756,273 +133,60 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 # Main Code        #
 ####################
 
-# paths to files
-stemi_mast_meta_unsigned_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/rna/'
-stemi_mast_meta_signed_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_metasamesign_paired_lores_lfc01minpct01ncountrna_20210301_wstats_byncell/rna/'
-stemi_limma_meta_signed_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/limma_dream/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
-stemi_limma_both_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+# location of limma gse output
+gse.output.limma.lfc01.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr_reactome_2023_lfc01/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+# location of limma gse output
+gse.output.limma.lfc05.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr_reactome_2023_lfc05/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+# location of limma gse output
+gse.output.limma.nolfc.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr_reactome_2023/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+
 
 ```
 
-```{r output, include=FALSE}
+
+
+```{r create_comparisons, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 
-# get the outputs
-stemi_mast_meta_unsigned_output <- get_de_genes_per_condition_and_celltype(stemi_mast_meta_unsigned_loc, p_val_column = 'metap_bonferroni')
-stemi_mast_meta_signed_output <- get_de_genes_per_condition_and_celltype(stemi_mast_meta_signed_loc, p_val_column = 'invnorm.pval.bonferroni')
-stemi_limma_meta_signed_output <- get_de_genes_per_condition_and_celltype(stemi_limma_meta_signed_loc, de_method = 'limma', p_val_column = 'invnorm.pval.bonferroni')
-stemi_limma_both_output <- get_de_genes_per_condition_and_celltype(stemi_limma_both_loc, de_method = 'limma', p_val_column = 'p.bonferroni')
+# get both of the outputs
+gse_limma_lfc05 <- get_pathways_per_celltype_condition(pathway_output_loc = gse.output.limma.lfc05.loc, pval_cutoff = 0.05, append = '_positive.tsv')
+gse_limma_lfc01 <- get_pathways_per_celltype_condition(pathway_output_loc = gse.output.limma.lfc01.loc, pval_cutoff = 0.05, append = '_positive.tsv')
+gse_limma_nolfc <- get_pathways_per_celltype_condition(pathway_output_loc = gse.output.limma.nolfc.loc, pval_cutoff = 0.05, append = '_positive.tsv')
+# get lists
+pathways_celltype_comparisons_lfc05 <- create_lists_from_pathway_tables(gse_limma_nolfc, gse_limma_lfc05, name_table_1 = 'no LFC cutoff', name_table_2 = 'LFC 0.5', significance_cutoff_table_1 = 0.05, significance_cutoff_table_2 = 0.05)
+pathways_celltype_comparisons_lfc01 <- create_lists_from_pathway_tables(gse_limma_nolfc, gse_limma_lfc01, name_table_1 = 'no LFC cutoff', name_table_2 = 'LFC 0.1', significance_cutoff_table_1 = 0.05, significance_cutoff_table_2 = 0.05)
+pathways_celltype_comparisons_lfc01_vs_05 <- create_lists_from_pathway_tables(gse_limma_lfc01, gse_limma_lfc05, name_table_1 = 'LFC 0.1', name_table_2 = 'LFC 0.5', significance_cutoff_table_1 = 0.05, significance_cutoff_table_2 = 0.05)
 
 ```
 
-```{r concordance, include=TRUE, fig.width=20, fig.height=10}
+```{r plots_comparisons, include=TRUE, fig.width=10, fig.height=10}
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 
-# plot the concordance
 plot_grid(
-  plot_concordance(stemi_mast_meta_unsigned_output[stemi_mast_meta_unsigned_output$combination == 't24h-Baseline' & stemi_mast_meta_unsigned_output$cell_type == 'monocyte', ], set_1_column = 'avg_logFC_v2', set_2_column = 'avg_logFC_v3', legendless = T) + ggtitle('monocytes t0 vs t24h'),
-  plot_concordance(stemi_mast_meta_unsigned_output[stemi_mast_meta_unsigned_output$combination == 't8w-Baseline' & stemi_mast_meta_unsigned_output$cell_type == 'monocyte', ], set_1_column = 'avg_logFC_v2', set_2_column = 'avg_logFC_v3', legendless = T) + ggtitle('monocytes t0 vs t8w'),
-  plot_concordance(stemi_mast_meta_unsigned_output[stemi_mast_meta_unsigned_output$combination == 't8w-t24h' & stemi_mast_meta_unsigned_output$cell_type == 'monocyte', ], set_1_column = 'avg_logFC_v2', set_2_column = 'avg_logFC_v3', legendless = T) + ggtitle('monocytes t24h vs t8w'),
-  plot_concordance(stemi_mast_meta_unsigned_output[stemi_mast_meta_unsigned_output$combination == 'Baseline-UT' & stemi_mast_meta_unsigned_output$cell_type == 'monocyte', ], set_1_column = 'avg_logFC_v2', set_2_column = 'avg_logFC_v3', legendless = T) + ggtitle('monocytes C vs t0'),
-  plot_concordance(stemi_mast_meta_unsigned_output[stemi_mast_meta_unsigned_output$combination == 't24h-Baseline' & stemi_mast_meta_unsigned_output$cell_type == 'NK', ], set_1_column = 'avg_logFC_v2', set_2_column = 'avg_logFC_v3', legendless = T) + ggtitle('NKs t0 vs t24h'),
-  plot_concordance(stemi_mast_meta_unsigned_output[stemi_mast_meta_unsigned_output$combination == 't8w-Baseline' & stemi_mast_meta_unsigned_output$cell_type == 'NK', ], set_1_column = 'avg_logFC_v2', set_2_column = 'avg_logFC_v3', legendless = T) + ggtitle('NKs t0 vs t8w'),
-  plot_concordance(stemi_mast_meta_unsigned_output[stemi_mast_meta_unsigned_output$combination == 't8w-t24h' & stemi_mast_meta_unsigned_output$cell_type == 'NK', ], set_1_column = 'avg_logFC_v2', set_2_column = 'avg_logFC_v3', legendless = T) + ggtitle('NKs t24h vs t8w'),
-  plot_concordance(stemi_mast_meta_unsigned_output[stemi_mast_meta_unsigned_output$combination == 'Baseline-UT' & stemi_mast_meta_unsigned_output$cell_type == 'NK', ], set_1_column = 'avg_logFC_v2', set_2_column = 'avg_logFC_v3', legendless = T) + ggtitle('NKs C vs t0'),
+  ggVennDiagram(pathways_celltype_comparisons_lfc01[['monocyte']][['UT-Baseline']]),
+  ggVennDiagram(pathways_celltype_comparisons_lfc01[['monocyte']][['t24h-Baseline']]),
+  ggVennDiagram(pathways_celltype_comparisons_lfc01[['monocyte']][['t8w-Baseline']]),
+  ggVennDiagram(pathways_celltype_comparisons_lfc01[['monocyte']][['t8w-t24h']]),
   nrow = 2,
-  ncol = 4
+  ncol = 2
 )
-
-```
-
-```{r overlaps, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
-
-# get overlap of old MAST and limma both
-unsigned_mast_vs_limma_both <- get_gene_overlaps(stemi_mast_meta_unsigned_output, stemi_limma_both_output, gene_column_1 = 'gene', gene_column_2 = 'gene', name_1 = 'mast_meta_unsigned', name_2 = 'limma_both')
-# and old MAST with MAST filtered by direction
-unsigned_mast_vs_signed_mast <- get_gene_overlaps(stemi_mast_meta_unsigned_output, stemi_mast_meta_signed_output, gene_column_1 = 'gene', gene_column_2 = 'gene', name_1 = 'mast_meta_unsigned', name_2 = 'mast_meta_signed')
-# and old MAST with MAST meta analysis
-unsigned_mast_vs_limma_meta <- get_gene_overlaps(stemi_mast_meta_unsigned_output, stemi_limma_meta_signed_output, gene_column_1 = 'gene', gene_column_2 = 'gene', name_1 = 'mast_meta_unsigned', name_2 = 'limma_meta_signed')
-# get overlap of old MAST and limma both
-limma_meta_vs_limma_both <- get_gene_overlaps(stemi_limma_meta_signed_output, stemi_limma_both_output, gene_column_1 = 'gene', gene_column_2 = 'gene', name_1 = 'limma_meta_signed', name_2 = 'limma_both')
-
-# write the sets
-write_gene_overlaps(unsigned_mast_vs_limma_both, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/method_comparison/unsigned_mast_vs_limma_both/', output_directionally = T, 
-                    lfc_column_per_set = list('limma_both' = 'logFC', 'mast_meta_unsigned' = 'metafc'))
-write_gene_overlaps(unsigned_mast_vs_signed_mast, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/method_comparison/unsigned_mast_vs_signed_mast/', output_directionally = T,
-                    lfc_column_per_set = list('mast_meta_signed' = 'meta_fc', 'mast_meta_unsigned' = 'metafc'))
-write_gene_overlaps(unsigned_mast_vs_limma_meta, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/method_comparison/unsigned_mast_vs_limma_meta/', output_directionally = T, 
-                    lfc_column_per_set = list('mast_meta_unsigned' = 'metafc', 'limma_meta_signed' = 'meta_fc'))
-write_gene_overlaps(limma_meta_vs_limma_both, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/method_comparison/limma_meta_vs_limma_both/', output_directionally = T, 
-                    lfc_column_per_set = list('limma_meta_signed' = 'meta_fc', 'limma_both' = 'logFC'))
-
-```
-
-```{r plot_overlaps, include=TRUE, fig.width=20, fig.height=10}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
-
-# get overlap of old MAST and limma both
-unsigned_mast_vs_limma_both_overlaps <- get_de_overlaps(stemi_mast_meta_unsigned_output, stemi_limma_both_output, gene_column_1 = 'gene', gene_column_2 = 'gene', name_1 = 'mast_meta_unsigned', name_2 = 'limma_both', lfc_column_1 = 'metafc', lfc_column_2 = 'logFC', sign_flip_combinations_1 = c('t24h-Baseline', 't8w-Baseline', 't8w-t24h'), sign_flip_combinations_2 = c('Baseline-UT'))
-# and old MAST with MAST filtered by direction
-unsigned_mast_vs_signed_mast_overlaps <- get_de_overlaps(stemi_mast_meta_unsigned_output, stemi_mast_meta_signed_output, gene_column_1 = 'gene', gene_column_2 = 'gene', name_1 = 'mast_meta_unsigned', name_2 = 'mast_meta_signed', lfc_column_1 = 'metafc', lfc_column_2 = 'meta_fc', sign_flip_combinations_1 = c('t24h-Baseline', 't8w-Baseline', 't8w-t24h'), sign_flip_combinations_2 = c('t24h-Baseline', 't8w-Baseline', 't8w-t24h'))
-# and old MAST with MAST meta analysis
-unsigned_mast_vs_limma_meta_overlaps <- get_de_overlaps(stemi_mast_meta_unsigned_output, stemi_limma_meta_signed_output, gene_column_1 = 'gene', gene_column_2 = 'gene', name_1 = 'mast_meta_unsigned', name_2 = 'limma_meta_signed', lfc_column_1 = 'metafc', lfc_column_2 = 'meta_fc', sign_flip_combinations_1 = c('t24h-Baseline', 't8w-Baseline', 't8w-t24h'), sign_flip_combinations_2 = c('Baseline-UT'))
-# get overlap of old MAST and limma both
-limma_meta_vs_limma_both_overlaps <- get_de_overlaps(stemi_limma_meta_signed_output, stemi_limma_both_output, gene_column_1 = 'gene', gene_column_2 = 'gene', name_1 = 'limma_meta_signed', name_2 = 'limma_both', lfc_column_1 = 'meta_fc', lfc_column_2 = 'logFC', sign_flip_combinations_1 = c('Baseline-UT'), sign_flip_combinations_2 = c('Baseline-UT'))
-
 plot_grid(
-  ggvenn(unsigned_mast_vs_limma_both_overlaps[['Baseline-UT']][['monocyte']][['positive']]) + ggtitle('monocyte C vs t0'),
-  ggvenn(unsigned_mast_vs_limma_both_overlaps[['t24h-Baseline']][['monocyte']][['positive']]) + ggtitle('monocyte t0 vs t24h'),
-  ggvenn(unsigned_mast_vs_limma_both_overlaps[['t8w-t24h']][['monocyte']][['positive']]) + ggtitle('monocyte t24h vs t8w'),
-  ggvenn(unsigned_mast_vs_limma_both_overlaps[['t8w-Baseline']][['monocyte']][['positive']]) + ggtitle('monocyte t0 vs t8w'),
-  ggvenn(unsigned_mast_vs_limma_both_overlaps[['Baseline-UT']][['NK']][['positive']]) + ggtitle('NK C vs t0'),
-  ggvenn(unsigned_mast_vs_limma_both_overlaps[['t24h-Baseline']][['NK']][['positive']]) + ggtitle('NK t0 vs t24h'),
-  ggvenn(unsigned_mast_vs_limma_both_overlaps[['t8w-t24h']][['NK']][['positive']]) + ggtitle('NK t24h vs t8w'),
-  ggvenn(unsigned_mast_vs_limma_both_overlaps[['t8w-Baseline']][['NK']][['positive']]) + ggtitle('NK t0 vs t8w'),
+  ggVennDiagram(pathways_celltype_comparisons_lfc05[['monocyte']][['UT-Baseline']]),
+  ggVennDiagram(pathways_celltype_comparisons_lfc05[['monocyte']][['t24h-Baseline']]),
+  ggVennDiagram(pathways_celltype_comparisons_lfc05[['monocyte']][['t8w-Baseline']]),
+  ggVennDiagram(pathways_celltype_comparisons_lfc05[['monocyte']][['t8w-t24h']]),
   nrow = 2,
-  ncol = 4
+  ncol = 2
 )
-
-
 plot_grid(
-  ggvenn(unsigned_mast_vs_signed_mast_overlaps[['Baseline-UT']][['monocyte']][['positive']]) + ggtitle('monocyte C vs t0'),
-  ggvenn(unsigned_mast_vs_signed_mast_overlaps[['t24h-Baseline']][['monocyte']][['positive']]) + ggtitle('monocyte t0 vs t24h'),
-  ggvenn(unsigned_mast_vs_signed_mast_overlaps[['t8w-t24h']][['monocyte']][['positive']]) + ggtitle('monocyte t24h vs t8w'),
-  ggvenn(unsigned_mast_vs_signed_mast_overlaps[['t8w-Baseline']][['monocyte']][['positive']]) + ggtitle('monocyte t0 vs t8w'),
-  ggvenn(unsigned_mast_vs_signed_mast_overlaps[['Baseline-UT']][['NK']][['positive']]) + ggtitle('NK C vs t0'),
-  ggvenn(unsigned_mast_vs_signed_mast_overlaps[['t24h-Baseline']][['NK']][['positive']]) + ggtitle('NK t0 vs t24h'),
-  ggvenn(unsigned_mast_vs_signed_mast_overlaps[['t8w-t24h']][['NK']][['positive']]) + ggtitle('NK t24h vs t8w'),
-  ggvenn(unsigned_mast_vs_signed_mast_overlaps[['t8w-Baseline']][['NK']][['positive']]) + ggtitle('NK t0 vs t8w'),
+  ggVennDiagram(pathways_celltype_comparisons_lfc01_vs_05[['monocyte']][['UT-Baseline']]) + ggtitle('C vs t0'),
+  ggVennDiagram(pathways_celltype_comparisons_lfc01_vs_05[['monocyte']][['t24h-Baseline']]) + ggtitle('t0 vs t24h'),
+  ggVennDiagram(pathways_celltype_comparisons_lfc01_vs_05[['monocyte']][['t8w-Baseline']]) + ggtitle('t0 vs t8w'),
+  ggVennDiagram(pathways_celltype_comparisons_lfc01_vs_05[['monocyte']][['t8w-t24h']]) + ggtitle('t24h vs t8w'),
   nrow = 2,
-  ncol = 4
-)
-
-
-plot_grid(
-  ggvenn(unsigned_mast_vs_limma_meta_overlaps[['Baseline-UT']][['monocyte']][['positive']]) + ggtitle('monocyte C vs t0'),
-  ggvenn(unsigned_mast_vs_limma_meta_overlaps[['t24h-Baseline']][['monocyte']][['positive']]) + ggtitle('monocyte t0 vs t24h'),
-  ggvenn(unsigned_mast_vs_limma_meta_overlaps[['t8w-t24h']][['monocyte']][['positive']]) + ggtitle('monocyte t24h vs t8w'),
-  ggvenn(unsigned_mast_vs_limma_meta_overlaps[['t8w-Baseline']][['monocyte']][['positive']]) + ggtitle('monocyte t0 vs t8w'),
-  ggvenn(unsigned_mast_vs_limma_meta_overlaps[['Baseline-UT']][['NK']][['positive']]) + ggtitle('NK C vs t0'),
-  ggvenn(unsigned_mast_vs_limma_meta_overlaps[['t24h-Baseline']][['NK']][['positive']]) + ggtitle('NK t0 vs t24h'),
-  # ggvenn(unsigned_mast_vs_limma_meta_overlaps[['t8w-t24h']][['NK']][['positive']]) + ggtitle('NK t24h vs t8w'),
-  ggvenn(unsigned_mast_vs_limma_meta_overlaps[['t8w-Baseline']][['NK']][['positive']]) + ggtitle('NK t0 vs t8w'),
-  nrow = 2,
-  ncol = 4
-)
-
-
-plot_grid(
-  ggvenn(limma_meta_vs_limma_both_overlaps[['Baseline-UT']][['monocyte']][['positive']]) + ggtitle('monocyte C vs t0'),
-  ggvenn(limma_meta_vs_limma_both_overlaps[['t24h-Baseline']][['monocyte']][['positive']]) + ggtitle('monocyte t0 vs t24h'),
-  ggvenn(limma_meta_vs_limma_both_overlaps[['t8w-t24h']][['monocyte']][['positive']]) + ggtitle('monocyte t24h vs t8w'),
-  ggvenn(limma_meta_vs_limma_both_overlaps[['t8w-Baseline']][['monocyte']][['positive']]) + ggtitle('monocyte t0 vs t8w'),
-  ggvenn(limma_meta_vs_limma_both_overlaps[['Baseline-UT']][['NK']][['positive']]) + ggtitle('NK C vs t0'),
-  ggvenn(limma_meta_vs_limma_both_overlaps[['t24h-Baseline']][['NK']][['positive']]) + ggtitle('NK t0 vs t24h'),
-  # ggvenn(limma_meta_vs_limma_both_overlaps[['t8w-t24h']][['NK']][['positive']]) + ggtitle('NK t24h vs t8w'),
-  ggvenn(limma_meta_vs_limma_both_overlaps[['t8w-Baseline']][['NK']][['positive']]) + ggtitle('NK t0 vs t8w'),
-  nrow = 2,
-  ncol = 4
+  ncol = 2
 )
 
 ```
 
-```{r stemi_effect_sizes, include=TRUE, fig.width=20, fig.height=10}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
-
-# get full outputs
-stemi_mast_meta_unsigned_output_all <- get_de_genes_per_condition_and_celltype(stemi_mast_meta_unsigned_loc, p_val_column = 'metap_bonferroni', p_val_cutoff = 1.1)
-stemi_limma_both_output_all <- get_de_genes_per_condition_and_celltype(stemi_limma_both_loc, de_method = 'limma', p_val_column = 'p.bonferroni', p_val_cutoff = 1.1)
-# flipped the name for limma, fixing here
-stemi_limma_both_output_all[stemi_limma_both_output_all$combination != 'Baseline-UT', ]
-stemi_limma_both_output_all[stemi_limma_both_output_all$combination == 'UT-Baseline', 'combination'] <- 'Baseline-UT'
-
-# get lfcs
-unsigned_mast_vs_limma_both_effect_sizes <- get_de_effect_sizes(stemi_mast_meta_unsigned_output_all, stemi_limma_both_output_all, gene_column_1 = 'gene', gene_column_2 = 'gene', significance_column_1 = 'metap_bonferroni', significance_column_2 = 'p.bonferroni', name_1 = 'mast_meta_unsigned', name_2 = 'limma_both', lfc_column_1 = 'metafc', lfc_column_2 = 'logFC', sign_flip_combinations_1 = c('t24h-Baseline', 't8w-Baseline', 't8w-t24h'), sign_flip_combinations_2 = c(), na_to_zero = T, lfc_cutoff_1 = 0.1, lfc_cutoff_2 = 0.1)
-
-```
-
-```{r concordance_limma_both_mast_unsigned, include=TRUE, fig.width=20, fig.height=10}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
-
-# plot the concordance
-plot_grid(
-  # CD4T Baseline vs UT
-  plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD4T C vs t0 effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD4T C vs t0 tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('CD4T C vs t0 significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
-  
-  # CD4T t24h Baseline
-  plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD4T t0 vs t24h effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD4T t0 vs t24h tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('CD4T t0 vs t24h significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
-  
-  # CD4T t8w Baseline
-   plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD4T t0 vs t8w effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD4T t0 vs t8w tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD4T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('CD4T t0 vs t8w significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
-  
-  # plot params
-  ncol = 3
-)
-
-
-# plot the concordance
-plot_grid(
-  # monocyte Baseline vs UT
-  plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('monocyte C vs t0 effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('monocyte C vs t0 tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('monocyte C vs t0 significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
-  
-  # monocyte t24h Baseline
-  plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('monocyte t0 vs t24h effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('monocyte t0 vs t24h tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('monocyte t0 vs t24h significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
-  
-  # monocyte t8w Baseline
-   plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('monocyte t0 vs t8w effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('monocyte t0 vs t8w tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'monocyte', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('monocyte t0 vs t8w significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
-  
-  # plot params
-  ncol = 3
-)
-
-# plot the concordance
-plot_grid(
-  # B Baseline vs UT
-  plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'B' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('B C vs t0 effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'B', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('B C vs t0 tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'B', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('B C vs t0 significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
-  
-  # B t24h Baseline
-  plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'B' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('B t0 vs t24h effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'B', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('B t0 vs t24h tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'B', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('B t0 vs t24h significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
-  
-  # B t8w Baseline
-   plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'B' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('B t0 vs t8w effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'B', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('B t0 vs t8w tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'B', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('B t0 vs t8w significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
-  
-  # plot params
-  ncol = 3
-)
-
-
-# plot the concordance
-plot_grid(
-  # CD8T Baseline vs UT
-  plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD8T' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD8T C vs t0 effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD8T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD8T C vs t0 tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD8T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('CD8T C vs t0 significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
-  
-  # CD8T t24h Baseline
-  plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD8T' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD8T t0 vs t24h effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD8T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD8T t0 vs t24h tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD8T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('CD8T t0 vs t24h significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
-  
-  # CD8T t8w Baseline
-   plot_concordance(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD8T' & unsigned_mast_vs_limma_both_effect_sizes$tested == 'both', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD8T t0 vs t8w effect concordance') + scale_color_manual(values = list('concordant' = 'darkgreen', 'disconcordant' = 'darkred')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD8T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'tested', legendless = F, xlim = NULL, ylim=NULL) + ggtitle('CD8T t0 vs t8w tested in') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2')),
-  plot_effect_sizes(unsigned_mast_vs_limma_both_effect_sizes[unsigned_mast_vs_limma_both_effect_sizes$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_sizes$cell_type == 'CD8T', ], set_1_column = 'mast_meta_unsigned', set_2_column = 'limma_both', category_column = 'significant', legendless = F, xlim = NULL, ylim=NULL, category_order = c('neither')) + ggtitle('CD8T t0 vs t8w significance') + scale_color_manual(values = list('both' = 'darkgreen', 'limma_both' = 'gold2', 'mast_meta_unsigned' = 'blue', 'neither' = 'gray')),
-  
-  # plot params
-  ncol = 3
-)
-
-```
-
-```{r overlap_limma_both_mast_unsigned, include=TRUE, fig.width=20, fig.height=10}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
-
-# get the overlaps
-unsigned_mast_vs_limma_both_effect_overlaps <- get_de_significance_overlaps(unsigned_mast_vs_limma_both_effect_sizes, 'mast_meta_unsigned', 'limma_both')
-# create list of colors
-classification_colors <- as.vector(unlist(sample_many_colours(8)))
-classification_color_list <- as.list(classification_colors)
-names(classification_color_list) <- c('tested both, significant, same direction', 
-                       'tested both, significant opposite direction', 
-                       paste('tested both, only significant in', 'mast_meta_unsigned'), 
-                       paste('tested both, only significant in', 'limma_both'),
-                       paste('tested only', 'mast_meta_unsigned', 'and significant'),
-                       paste('tested only', 'limma_both', 'and significant'),
-                       paste('tested only', 'mast_meta_unsigned', 'and not significant'),
-                       paste('tested only', 'limma_both', 'and not significant'))
-# we'll see a lot is tested in limma, which is why we'll exclude tested and not significant in limma
-plot_de_significance_overlaps(unsigned_mast_vs_limma_both_effect_overlaps[unsigned_mast_vs_limma_both_effect_overlaps$combination == 't8w-t24h', ]) + scale_fill_manual(values = classification_color_list)
-# plot them
-plot_grid(
-  plot_de_significance_overlaps(unsigned_mast_vs_limma_both_effect_overlaps[unsigned_mast_vs_limma_both_effect_overlaps$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_overlaps$classification != 'tested only limma_both and not significant', ]) + scale_fill_manual(values = classification_color_list) + ggtitle('C-t0 DE gene overlap'),
-  plot_de_significance_overlaps(unsigned_mast_vs_limma_both_effect_overlaps[unsigned_mast_vs_limma_both_effect_overlaps$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_overlaps$classification != 'tested only limma_both and not significant', ]) + scale_fill_manual(values = classification_color_list) + ggtitle('t0-t24h DE gene overlap'),
-  plot_de_significance_overlaps(unsigned_mast_vs_limma_both_effect_overlaps[unsigned_mast_vs_limma_both_effect_overlaps$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_overlaps$classification != 'tested only limma_both and not significant', ]) + scale_fill_manual(values = classification_color_list) + ggtitle('t24h-t8w DE gene overlap'),
-  plot_de_significance_overlaps(unsigned_mast_vs_limma_both_effect_overlaps[unsigned_mast_vs_limma_both_effect_overlaps$combination == 't8w-Baseline' & unsigned_mast_vs_limma_both_effect_overlaps$classification != 'tested only limma_both and not significant', ]) + scale_fill_manual(values = classification_color_list) + ggtitle('t0-t8w DE gene overlap')
-)
-# plot them
-plot_grid(
-  plot_de_significance_overlaps(unsigned_mast_vs_limma_both_effect_overlaps[unsigned_mast_vs_limma_both_effect_overlaps$combination == 'Baseline-UT' & unsigned_mast_vs_limma_both_effect_overlaps$classification != 'tested only limma_both and not significant', ], number_column = 'proportion') + scale_fill_manual(values = classification_color_list) + ggtitle('C-t0 DE gene overlap'),
-  plot_de_significance_overlaps(unsigned_mast_vs_limma_both_effect_overlaps[unsigned_mast_vs_limma_both_effect_overlaps$combination == 't24h-Baseline' & unsigned_mast_vs_limma_both_effect_overlaps$classification != 'tested only limma_both and not significant', ], number_column = 'proportion') + scale_fill_manual(values = classification_color_list) + ggtitle('t0-t24h DE gene overlap'),
-  plot_de_significance_overlaps(unsigned_mast_vs_limma_both_effect_overlaps[unsigned_mast_vs_limma_both_effect_overlaps$combination == 't8w-t24h' & unsigned_mast_vs_limma_both_effect_overlaps$classification != 'tested only limma_both and not significant', ], number_column = 'proportion') + scale_fill_manual(values = classification_color_list) + ggtitle('t24h-t8w DE gene overlap'),
-  plot_de_significance_overlaps(unsigned_mast_vs_limma_both_effect_overlaps[unsigned_mast_vs_limma_both_effect_overlaps$combination == 't8w-Baseline' & unsigned_mast_vs_limma_both_effect_overlaps$classification != 'tested only limma_both and not significant', ], number_column = 'proportion') + scale_fill_manual(values = classification_color_list) + ggtitle('t0-t8w DE gene overlap')
-)
 ```
