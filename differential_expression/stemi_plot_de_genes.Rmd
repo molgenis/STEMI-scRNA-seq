@@ -23,6 +23,10 @@ knitr::opts_chunk$set(echo = FALSE)
 
 library(ggplot2)
 library(cowplot)
+library(treemapify)
+library(RColorBrewer)
+
+
 
 ```
 
@@ -92,17 +96,20 @@ get_color_coding_dict <- function(){
 label_dict <- function(){
   label_dict <- list()
   # condition combinations
-  label_dict[['UTBaseline']] <- 'UT-Baseline'
-  label_dict[['UTt24h']] <- 'UT-t24h'
-  label_dict[['UTt8w']] <- 'UT-t8w'
-  label_dict[['Baselinet24h']] <- 'Baseline-t24h'
-  label_dict[['Baselinet8w']] <- 'Baseline-t8w'
+  label_dict[['UTBaseline']] <- 'C-t0'
+  label_dict[['UT_Baseline']] <- 'C-t0'
+  label_dict[['UTt24h']] <- 'C-t24h'
+  label_dict[['UTt8w']] <- 'C-t8w'
+  label_dict[['Baselinet24h']] <- 't0-t24h'
+  label_dict[['Baselinet8w']] <- 't0-t8w'
   label_dict[['t24ht8w']] <- 't24h-t8w'
   label_dict[['UTBaseline']] <- 'HC-t0'
   label_dict[['UTt24h']] <- 'HC-t24h'
   label_dict[['UTt8w']] <- 'HC-t8w'
   label_dict[['Baselinet24h']] <- 't0-t24h'
   label_dict[['Baselinet8w']] <- 't0-t8w'
+  label_dict[['t24h_Baseline']] <- 't0-t24h'
+  label_dict[['t8w_t24h']] <- 't24h-t8w'
   # conditions
   label_dict[['UT']] <- 'Control'
   label_dict[['Baseline']] <- 't0'
@@ -157,9 +164,331 @@ label_dict <- function(){
 }
 
 
-get_significant_genes <- function(mast_output_loc, pval_column='metap_bonferroni', sig_pval=0.05, max=NULL, max_by_pval=T, only_positive=F, only_negative=F, lfc_column='metafc', to_ens=F, symbols.to.ensg.mapping='genes.tsv'){
+#' get a vector of as distinct possible colours
+#' 
+#' @param number_of_colours how many colours to return
+#' @param use_sampling whether or not to randomly extract the colours instead of grabbing the first n colours
+#' @param color_indices (optional, not used by default) if specific colours are needed, supply the indices of the colours here. Use 'get_available_colours_grid' to get the colours and their indices
+#' @returns a vector of colours
+#' 
+sample_many_colours <- function(number_of_colours, use_sampling=F, color_indices=NULL) {
+  # get all colours from the 'quality' palettes
+  quality_colour_palettes <- brewer.pal.info[brewer.pal.info[['category']] == 'qual', ]
+  # save each palette
+  colours_per_palette <- list()
+  # apply over each palette
+  for (i in 1:nrow(quality_colour_palettes)) {
+    # get the name of the palette
+    palette_name <- rownames(quality_colour_palettes)[i]
+    # get the number of colours in the palette
+    palette_max_colours <- quality_colour_palettes[i, 'maxcolors']
+    # use brewer.pal to get all colours
+    colours_palette <- brewer.pal(palette_max_colours, palette_name)
+    # put result in the list
+    colours_per_palette[[palette_name]] <- colours_palette
+  }
+  # merge all palettes
+  all_colours <- do.call('c', colours_per_palette)
+  # randomly get colours from the palette
+  max_possible_colours <- length(all_colours)
+  if (is.null(number_of_colours)) {
+    message('no number of colors supplied, assuming color indices have been')
+  }
+  else if (number_of_colours > max_possible_colours) {
+    message(paste('requesting more colours than is possible: ', as.character(number_of_colours), ' vs ', max_possible_colours, ', returning max possible', sep = ''))
+    number_of_colours <- max_possible_colours
+  }
+  colours_to_return <- NULL
+  # specific colours we like (the indices)
+  if (!is.null(color_indices)) {
+    colours_to_return <- all_colours[color_indices]
+  }
+  # or use sampling
+  else if (use_sampling) {
+    colours_to_return <- sample(all_colours, number_of_colours)
+  }
+  # or the first x colours
+  else {
+    colours_to_return <- all_colours[1 : number_of_colours]
+  }
+  return(colours_to_return)
+}
+
+#' get a vector of as distinct possible colours, but with more possibilities ()
+#' 
+#' @param number_of_colours how many colours to return
+#' @param use_sampling whether or not to randomly extract the colours instead of grabbing the first n colours
+#' @param color_indices (optional, not used by default) if specific colours are needed, supply the indices of the colours here. Use 'get_available_colours_grid' to get the colours and their indices
+#' @returns a vector of colours
+#' 
+sample_tons_of_colors <- function(number_of_colours, use_sampling=F, color_indices=NULL) {
+  # get colours available to device
+  all_colours <- grDevices::colors()
+  # remove gray
+  all_colours <- all_colours[grep('gr(a|e)y', all_colours, invert = T)]
+  # check how many are possible
+  max_possible_colours <- length(all_colours)
+  if (is.null(number_of_colours)) {
+    message('no number of colors supplied, assuming color indices have been')
+  }
+  else if (number_of_colours > max_possible_colours) {
+    message(paste('requesting more colours than is possible: ', as.character(number_of_colours), ' vs ', max_possible_colours, ', returning max possible', sep = ''))
+    number_of_colours <- max_possible_colours
+  }
+  colours_to_return <- NULL
+  # specific colours we like (the indices)
+  if (!is.null(color_indices)) {
+    colours_to_return <- all_colours[color_indices]
+  }
+  # or use sampling
+  else if (use_sampling) {
+    colours_to_return <- sample(all_colours, number_of_colours)
+  }
+  # or the first x colours
+  else {
+    colours_to_return <- all_colours[1 : number_of_colours]
+  }
+  return(colours_to_return)
+}
+
+
+#' get a grid showing the available colours and their indices
+#' 
+#' @param many use the 'many' method to get the colours
+#' @param tons use the 'tons' method to get the colours
+#' @returns a ggplot grid showing the available colours and their indices
+#' 
+get_available_colours_grid <- function(many=T, tons=F) {
+  colours_possible <- NULL
+  # get from the many method
+  if (many) {
+    # ask for unreasonable amount
+    colours_possible <- sample_many_colours(1000)
+  }
+  else if(tons) {
+    colours_possible <- sample_tons_of_colors(1000)
+  }
+  # get how many colours we actually have
+  available_colours <- length(colours_possible)
+  # we need to put that into a square grid, so we need to get the square root, to know how many rows and columns
+  nrow_and_ncol <- sqrt(available_colours)
+  # and we need to round that up of course
+  nrow_and_ncol <- ceiling(nrow_and_ncol)
+  # so we'll have a total number of blocks
+  total_cells <- nrow_and_ncol * nrow_and_ncol
+  # let's see how many colours we are off from that number of cells
+  cells_no_colour_number <- total_cells - available_colours
+  # we will just add white for those
+  cells_no_colour <- rep('white', times = cells_no_colour_number)
+  # add that to the colours we have
+  colours_possible <- c(colours_possible, cells_no_colour)
+  # create each combination of x and y
+  indices_grid <- expand.grid(as.character(1 : nrow_and_ncol), as.character(1 : nrow_and_ncol))
+  # add the index and colour name
+  indices_grid[['index_colour']] <- paste(c(1:total_cells), colours_possible, sep = '\n')
+  # make mapping of colours
+  colours_to_use <- as.list(colours_possible)
+  names(colours_to_use) <- indices_grid[['index_colour']]
+  # now plot
+  p <- ggplot(data = indices_grid, mapping = aes(x = Var1, y = Var2, fill = index_colour)) + 
+    geom_tile() + 
+    geom_text(aes(label=index_colour)) + 
+    scale_fill_manual(values = colours_to_use) + 
+    theme(legend.position = 'none')
+  return(p)
+}
+
+
+split_string_with_max_length <- function(string, max_length=15) {
+  # split the string on the space first
+  words <- strsplit(string, ' ')[[1]]
+  # and initial pasted string
+  final_string <- ''
+  # and the temporary string
+  tmp_string <- ''
+  # check each word
+  for (word in words) {
+    # get the lenght of the temporary string
+    tmp_len <- nchar(tmp_string)
+    # get the length of the word
+    word_len <- nchar(word)
+    # length of the final string
+    final_len <- nchar(final_string)
+    # check if adding the next word would make us go over the limit
+    if ((tmp_len + word_len) > max_length) {
+      if (final_len > 0) {
+        # add the temporary word to the final string if it was not empty
+        final_string <- paste(final_string, '\n', tmp_string, sep = '')
+      }
+      else{
+        # if there was not final string yet, it will just become that temporary string
+        final_string <- tmp_string
+      }
+      # reset the temporary string
+      tmp_string <- word
+    }
+    else{
+      # otherwise add it to the temporary string
+      if (tmp_len > 0) {
+        tmp_string <- paste(tmp_string, word)
+      }
+      # or set if the temporary string was empty
+      else{
+        tmp_string <- word
+      }
+    }
+  }
+  # add last word
+  if (nchar(paste(final_string, tmp_string)) > max_length) {
+    if (nchar(final_string) == 0) {
+      final_string <- tmp_string
+    }
+    else if (nchar(tmp_string > 0)) {
+      final_string <- paste(final_string, '\n', tmp_string, sep = '')
+    }
+    else{
+      # nothing the final string is as it is
+    }
+  }
+  else {
+    if (nchar(final_string) == 0) {
+      final_string <- tmp_string
+    }
+    else if(nchar(tmp_string) == 0){
+      # nothing, the final string is as is
+    }
+    else{
+      final_string <- paste(final_string, ' ', tmp_string, sep = '')
+    }
+  }
+  # add the last word
+  return(final_string)
+}
+
+
+get_children <- function(relation_table, starting_id){
+  # get all of the children of the starting ID
+  children <- as.character(relation_table[relation_table$V1 == starting_id, 'V2'])
+  # these children are all family
+  family <- children
+  # see if there were any children
+  if(length(children) > 0){
+    # if there were children, we need to get their children as well
+    for(child in children){
+      # get the grandchildren and add these to the family
+      grand_children <- get_children(relation_table, child)
+      family <- c(family, grand_children)
+    }
+  }
+  return(family)
+}
+
+
+get_filtered_pathway_names <- function(pathway_table, relation_table, starting_id, add_id=F, only_id=F){
+  # get all of the children of the starting ID
+  all_children <- get_children(relation_table, starting_id)
+  # get the names of the pathways that are children
+  pathways_to_include_names <- pathway_table[pathway_table$V1 %in% all_children, ]
+  pathway_names <- NULL
+  # add the id if requested
+  if (only_id) {
+    pathway_names <-pathways_to_include_names[['V1']]
+  }
+  else if (add_id) {
+    pathway_names <- paste(pathways_to_include_names[['V2']], pathways_to_include_names[['V1']])
+  }
+  else {
+    pathway_names <-pathways_to_include_names[['V2']]
+  }
+  return(pathway_names)
+}
+
+
+pathway_names_to_top_level <- function(pathway_mappings, pathway_names) {
+  # subset to just human to speed up the search
+  pathway_names <- pathway_names[pathway_names$V3 == 'Homo sapiens', ]
+  # get the top level human pathways
+  top_level_pathways <- unique(pathway_mappings[pathway_mappings$V2 %in% pathways$V1 & # is human
+                                        !(pathway_mappings$V1 %in% pathway_mappings$V2) , 'V1']) # doesn't have a parent
+  # first store in list
+  pathway_name_to_top_level <- list()
+  # check each top level pathway
+  for (top_level in top_level_pathways) {
+    # get the filtered names for that one
+    filtered_names <- get_filtered_pathway_names(pathways, pathway_mappings, top_level, add_id = T)
+    # and filtered IDs
+    filtered_ids <- get_filtered_pathway_names(pathways, pathway_mappings, top_level, only_id = T)
+    # get the name of this parent
+    parent_name <- pathway_names[match(top_level, pathway_names[['V1']]), 'V2']
+    # make dataframe
+    pathway_mapping_category <- data.frame(pathway = filtered_names, id = filtered_ids, top_parent = rep(parent_name, times = length(parent_name)), top_id = rep(top_level, length(parent_name)))
+    # add the category itself as well
+    pathway_mapping_category <- rbind(pathway_mapping_category, data.frame(pathway = c(paste(parent_name, top_level)), id = c(top_level), top_parent = c(parent_name), top_id=c(top_level)))
+    # add to list
+    pathway_name_to_top_level[[top_level]] <- pathway_mapping_category
+  }
+  # merge lists
+  pathways_to_top_parent <- do.call('rbind', pathway_name_to_top_level)
+  return(pathways_to_top_parent)
+}
+
+get_pathways_per_celltype_condition <- function(pathway_output_loc, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), conditions=c('UT', 'Baseline', 't24h', 't8w'), de_method='limma', append='.tsv', pval_column='Adjusted.P.value', pval_cutoff=0.05, direction_column='enrichmentScore', only_positive=F, only_negative=F) {
+  # we will save everything in a list first
+  output_per_ct_and_comb <- list()
+  # we will check each cell type
+  for (cell_type in cell_types) {
+    # and each condition
+    for (condition_1 in conditions) {
+      # against each other condition
+      for (condition_2 in conditions) {
+        # we'll paste the full path together
+        path_to_output <- NULL
+        if ('limma' == de_method) {
+          path_to_output <- paste(pathway_output_loc, '/', cell_type, '_timepoint.final.', condition_1, '_', condition_2, append, sep = '')
+        }
+        else{
+          path_to_output <- paste(pathway_output_loc, '/', cell_type, condition_1, condition_2, append, sep = '')
+        }
+        # check if the file exists
+        if (file.exists(path_to_output)) {
+          # read the file
+          pathway_output <- read.table(path_to_output, header = T, sep = '\t', comment.char='')
+          # filter direction if requested
+          if (only_positive) {
+            pathway_output <- pathway_output[pathway_output[[direction_column]] > 0, ]
+          }
+          if (only_negative) {
+            pathway_output <- pathway_output[pathway_output[[direction_column]] < 0, ]
+          }
+          # add the cell type and the condition
+          pathway_output <- cbind(
+            data.frame(
+              condition1=rep(condition_1, times = nrow(pathway_output)),
+              condition2=rep(condition_2, times = nrow(pathway_output)),
+              cell_type=rep(cell_type, times = nrow(pathway_output))
+            ), 
+            pathway_output
+          )
+          # filter if possible
+          if (!is.null(pval_column) & !is.null(pval_cutoff)) {
+            pathway_output <- pathway_output[pathway_output[[pval_column]] < pval_cutoff, ]
+          }
+          # add to the list
+          output_per_ct_and_comb[[paste(condition_1, condition_2, cell_type, sep = '')]] <- pathway_output
+        }
+      }
+    }
+  }
+  # merge everything
+  output_per_ct_and_comb_df <- do.call('rbind', output_per_ct_and_comb)
+  return(output_per_ct_and_comb_df)
+}
+
+
+
+get_significant_genes <- function(mast_output_loc, pval_column='metap_bonferroni', sig_pval=0.05, max=NULL, max_by_pval=T, only_positive=F, only_negative=F, lfc_column='metafc', to_ens=F, symbols.to.ensg.mapping='genes.tsv', regex='*.tsv'){
   # get the files
-  files <- list.files(mast_output_loc)
+  files <- list.files(mast_output_loc, pattern = regex)
   # store the results
   results_per_file <- list()
   # try to read each file
@@ -214,7 +543,7 @@ get_significant_genes <- function(mast_output_loc, pval_column='metap_bonferroni
 }
 
 
-get_max_lfc_genes <- function(output_per_comparison, pval_column='metap_bonferroni', sig_pval=0.05, max=5, only_positive=F, only_negative=F, lfc_column='metafc') {
+get_max_lfc_genes <- function(output_per_comparison, pval_column='metap_bonferroni', sig_pval=0.05, max=5, only_positive=F, only_negative=F, lfc_column='metafc', gene_column=NULL) {
   # create a list per key
   genes_per_entry <- list()
   # check each output
@@ -239,17 +568,24 @@ get_max_lfc_genes <- function(output_per_comparison, pval_column='metap_bonferro
     }
     mast <- mast[1:max_num,]
     # put those in the resulting list
-    genes_per_entry[[output_name]] <- rownames(mast)
+    if (is.null(gene_column)) {
+      genes_per_entry[[output_name]] <- rownames(mast)
+    }
+    else {
+      genes_per_entry[[output_name]] <- mast[[gene_column]]
+    }
   }
   return(genes_per_entry)
 }
 
 
-merge_genes_into_table <- function(output_per_comparison, max_genes_per_comparison, merge_groups) {
+merge_genes_into_table <- function(output_per_comparison, max_genes_per_comparison, merge_groups, gene_column=NULL, de_method='mast_seurat', comparison_column='comparison') {
   # get the names present in both lists
   comparisons <- intersect(names(output_per_comparison), names(max_genes_per_comparison))
   # put the results in a list first, which we will merge later
   filtered_comparison_results_list <- list()
+  # keep track of column names
+  all_colnames <- c()
   # check each group
   for (merge_group in names(merge_groups)) {
     # get the comparisons that are in this group
@@ -268,20 +604,51 @@ merge_genes_into_table <- function(output_per_comparison, max_genes_per_comparis
     # now that we have the genes, we can get all the genes
     for (comparison in comparisons) {
       # get the table that has these genes
-      results_comparison <- output_per_comparison[[comparison]]
+      if (de_method == 'limma') {
+        results_comparison <- output_per_comparison[output_per_comparison[[comparison_column]] == comparison, ]
+      }
+      else{
+        results_comparison <- output_per_comparison[[comparison]]
+      }
       # we might not have tested all genes, so we need to take that into consideration
-      genes_to_subset <- intersect(genes_group, rownames(results_comparison))
+      genes_to_subset <- NULL
+      if (is.null(gene_column)) {
+        genes_to_subset <- intersect(genes_group, rownames(results_comparison))
+      }
+      else {
+        genes_to_subset <- intersect(genes_group, results_comparison[[gene_column]])
+      }
       # if we have any left, we can subset our result
       if (length(genes_to_subset) > 0 ) {
         # subset to those genes
-        results_comparison <- results_comparison[genes_to_subset, ]
+        if (is.null(gene_column)) {
+          results_comparison <- results_comparison[genes_to_subset, ]
+        }
+        else{
+          results_comparison <- results_comparison[match(genes_to_subset, results_comparison[[gene_column]]), ]
+        }
         # add a column that denotes the comparison
         results_comparison <- cbind(data.frame(comparison = rep(comparison, times = length(genes_to_subset)), gene = genes_to_subset),
                                   results_comparison)
         # put that in the list
         filtered_comparison_results_list[[comparison]] <- results_comparison
+        # keep track of colnames as well
+        all_colnames <- unique(c(all_colnames, colnames(results_comparison)))
       }
     }
+  }
+  # fix colnames that might not be present all times
+  for (result_name in names(filtered_comparison_results_list)) {
+    # get the result
+    result <- filtered_comparison_results_list[[result_name]]
+    # get the column names that are missing
+    missing_colnames <- setdiff(all_colnames, colnames(result))
+    # add those empty
+    for (missing_colname in missing_colnames) {
+      result[[missing_colname]] <- NA
+    }
+    # add back
+    filtered_comparison_results_list[[result_name]] <- result
   }
   # merge the list of tables
   filtered_comparison_results <- do.call('rbind', filtered_comparison_results_list)
@@ -289,10 +656,132 @@ merge_genes_into_table <- function(output_per_comparison, max_genes_per_comparis
 }
 
 
-lfc_table_to_tile <- function(lfc_table, gene_column='gene', comparison_column='vs_timepoint', value_column='avg_lfc', use_label_mapping=T, paper_style=T, print_lfc_value=T, round_digits=2, align_right=T, legendless=F, colour_ticks=F, x_order=NULL, y_order=NULL) {
+get_output_per_comparison <- function(output_loc, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), comparisons=c('UTBaseline', 'Baselinet24h', 't24ht8w'), de_method='mast_seurat', pval_column='adj.P.Val', pval_cutoff=0.05) {
+  # store the results per cell type
+  results_per_celltype <- list()
+  # and the colnames
+  all_colnames <- c()
+  # check each cell type
+  for (cell_type in cell_types) {
+    # store per condition combination as well
+    result_per_comparison <- list()
+    # check each comparison
+    for (comparison in comparisons) {
+      # we'll paste the full path together
+      path_to_output <- NULL
+      if ('limma' == de_method) {
+        output_loc_full <- paste(output_loc, '/', cell_type, '_timepoint.final.', comparison, '.tsv', sep = '')
+      }
+      else{
+         output_loc_full <- paste(output_loc, cell_type, comparison, '.tsv', sep = '')
+      }
+      print(output_loc_full)
+      if (file.exists(output_loc_full)) {
+        # read the table
+        output <- read.table(output_loc_full, header = T, sep = '\t', row.names = 1)
+        # add the cell type and comparison
+        output <- cbind(
+          data.frame(cell_type = rep(cell_type, times = nrow(output)), comparison = rep(comparison, times = nrow(output)), gene = rownames(output)),
+          output
+        )
+        # filter by the significance if requested
+        if (!is.null(pval_column) & !is.null(pval_cutoff)) {
+          output <- output[output[[pval_column]] < pval_cutoff, ]
+        }
+        if (nrow(output) > 0) {
+          # update the colnames
+          all_colnames <- unique(c(all_colnames, colnames(output)))
+          # add to the comparison list
+          result_per_comparison[[comparison]] <- output
+        }
+        else{
+          warning(paste(output_loc_full, 'has no entries'))
+        }
+      }
+      else {
+        warning(paste('skipping', output_loc_full, 'because it does not exist'))
+      }
+    }
+    # fix colnames that might not be present all times
+    for (result_name in names(result_per_comparison)) {
+      # get the result
+      result <- result_per_comparison[[result_name]]
+      # get the column names that are missing
+      missing_colnames <- setdiff(all_colnames, colnames(result))
+      # add those empty
+      for (missing_colname in missing_colnames) {
+        result[[missing_colname]] <- NA
+      }
+      # add back
+      result_per_comparison[[result_name]] <- result
+    }
+    # merge the list of dataframes together
+    results_comparisons <- do.call("rbind", result_per_comparison)
+    # add to the list per cell type
+    results_per_celltype[[cell_type]] <- results_comparisons
+  }
+  return(results_per_celltype)
+}
+
+
+filter_de_by_pathways <- function(de_output, pathway_output, gene_column='gene', cell_type_column_de='cell_type', cell_type_column_pathways='cell_type', de_comparison_column='comparison', pathway_comparison_column='comparison', pval_column_pathways='Adjusted.P.value', pval_cutoff_pathways=0.05, gene_list_column='Genes') {
+  # save results in a list first
+  results_cell_type_comparisons <- list()
+  # check the cell types present
+  cell_types_de <- unique(de_output[[cell_type_column_de]])
+  cell_types_pathway <- unique(pathway_output[[cell_type_column_pathways]])
+  # use the intersect
+  for (cell_type in intersect(cell_types_de, cell_types_pathway)) {
+    # subset the tables
+    de_output_celltype <- de_output[de_output[[cell_type_column_de]] == cell_type, ]
+    pathway_output_celltype <- pathway_output[pathway_output[[cell_type_column_pathways]] == cell_type, ]
+    # now check the pathways
+    comparisons_de <- unique(de_output_celltype[[de_comparison_column]])
+    comparisons_pathways <- unique(pathway_output_celltype[[pathway_comparison_column]])
+    # use the intersect
+    for (comparison in intersect(comparisons_de, comparisons_pathways)) {
+      # get the significant output for the pathways
+      pathways_significant_genes <- pathway_output_celltype[pathway_output_celltype[[pathway_comparison_column]] == comparison &
+                                                        pathway_output_celltype[[pval_column_pathways]] < pval_cutoff_pathways, gene_list_column]
+      # then the genes
+      pathways_significant_genes <- strsplit(pathways_significant_genes, split = ';')
+      # and then reduce
+      pathways_significant_genes <- do.call('c', pathways_significant_genes)
+      # now subset the de output
+      de_output_filtered <- de_output_celltype[de_output_celltype[[de_comparison_column]] == comparison &
+                                                 de_output_celltype[[gene_column]] %in% pathways_significant_genes, ]
+      # put in the list
+      results_cell_type_comparisons[[paste(cell_type, comparison, sep = '_')]] <- de_output_filtered
+    }
+  }
+  # merge it all
+  results_all <- do.call('rbind', results_cell_type_comparisons)
+  return(results_all)
+}
+
+
+lfc_table_to_tile <- function(lfc_table, gene_column='gene', comparison_column='vs_timepoint', value_column='avg_lfc', use_label_mapping=T, paper_style=T, print_lfc_value=T, value_print_column=NULL, round_digits=2, align_right=T, legendless=F, colour_ticks=F, x_order=NULL, add_non_combinations=F) {
   # change the celltype label if requested
   if (use_label_mapping) {
     lfc_table[[comparison_column]] <- as.vector(unlist(label_dict()[as.character(lfc_table[[comparison_column]])]))
+  }
+  # add the combinations that are not present if requested
+  if (add_non_combinations) {
+    # get all combinations
+    all_combinations <- expand.grid(lfc_table[[comparison_column]], lfc_table[[gene_column]])
+    colnames(all_combinations) <- c(comparison_column, gene_column)
+    # add the expression column
+    all_combinations[[value_column]] <- NA
+    # get a combined column
+    all_combinations[['combined']] <- paste(all_combinations[[comparison_column]], all_combinations[[gene_column]])
+    # for the original as well
+    lfc_table[['combined']] <- paste(lfc_table[[comparison_column]], lfc_table[[gene_column]])
+    # filter the all combinations to remove which we already have 
+    all_combinations <- all_combinations[!(all_combinations[['combined']] %in% lfc_table[['combined']]), ]
+    # add to original
+    lfc_table <- rbind(lfc_table, all_combinations)
+    # remove column we dont need anymore
+    lfc_table[['combined']] <- NULL
   }
   # order the gene names by alphabet
   genes <- unique(lfc_table[[gene_column]])
@@ -300,7 +789,7 @@ lfc_table_to_tile <- function(lfc_table, gene_column='gene', comparison_column='
   lfc_table[[gene_column]] <- as.factor(lfc_table[[gene_column]])
   lfc_table[[gene_column]] <- factor(lfc_table[[gene_column]], levels = genes_reverse_alphabet)
   # extract the maximum absolute value
-  max_abs_lfc <- max(abs(lfc_table[[value_column]]))
+  max_abs_lfc <- max(abs(lfc_table[[value_column]][!is.na(lfc_table[[value_column]])]))
   # set the x labels as factors, but first backup the string representation
   comparisons <- unique(lfc_table[[comparison_column]])
   lfc_table[[comparison_column]] <- as.factor(lfc_table[[comparison_column]])
@@ -311,21 +800,19 @@ lfc_table_to_tile <- function(lfc_table, gene_column='gene', comparison_column='
   else {
     lfc_table[[comparison_column]] <- factor(lfc_table[[comparison_column]], levels = comparisons[order(comparisons)])
   }
-  # same for y order
-  genes <- unique(lfc_table[[gene_column]])
-  if (!is.null(y_order)) {
-    lfc_table[[gene_column]] <- factor(lfc_table[[gene_column]], levels = y_order)
-  }
-  else{
-    lfc_table[[gene_column]] <- factor(lfc_table[[gene_column]], levels = genes[order(genes)])
-  }
   # make the plot
   p <- ggplot(data = NULL, aes(x = lfc_table[[comparison_column]], y = lfc_table[[gene_column]], fill = lfc_table[[value_column]])) + geom_tile() + coord_equal()
   # set the gradient equally from zero in both directions
-  p <- p + scale_fill_gradientn(colours = c('blue', 'white', 'red'),  limits = (c(-1 * max_abs_lfc, max_abs_lfc)), name = 'Average\nLFC')
+  p <- p + scale_fill_gradientn(colours = c('blue', 'white', 'red'),  limits = (c(-1 * max_abs_lfc, max_abs_lfc)), name = 'average\nLFC')
   # add the values of the LFC if requested
   if (print_lfc_value) {
-    p <- p + geom_text(aes(label = round(lfc_table[[value_column]], digits = round_digits)), size=2)
+    if (is.null(value_print_column)) {
+      value_print_column <- value_column
+    }
+    if(is.numeric(lfc_table[[value_print_column]])) {
+      lfc_table[[value_print_column]] <- round(lfc_table[[value_print_column]], digits = round_digits)
+    }
+    p <- p + geom_text(aes(label = lfc_table[[value_print_column]]))
   }
   # align to the right side
   if (align_right) {
@@ -350,11 +837,94 @@ lfc_table_to_tile <- function(lfc_table, gene_column='gene', comparison_column='
     # get the appropriate colours
     x_colours <- as.vector(unlist(get_color_coding_dict()[as.character(x_labels)]))
     p <- p + theme(axis.ticks = element_line(),      # Change ticks line fo all axes
-    axis.ticks.x = element_line(linewidth = 7, colour = x_colours),    # Change x axis ticks only
+    axis.ticks.x = element_line(linewidth = 10, colour = x_colours),    # Change x axis ticks only
     )
   }
   return(p)
 }
+
+
+plot_pathway_categories_celltype <- function(pathway_table, category_mapping, significance_column='Old.Adjusted.P.value', pval_cutoff=0.05, term_column_pathways_table='Term', term_column_mapping_table='pathway', parent_column_mapping_table='top_parent', gene_column='Genes', legendless=F, paper_style=T, to_fractions=F, use_distinct_colours=T, use_sampling=F, color_indices=NULL, drop_categories=NULL, text_loc='topleft') {
+  # filter the table
+  pathway_table_significant <- pathway_table[pathway_table[[significance_column]] < pval_cutoff, ]
+  # set the NA to be 'unannotated' for the category mapping
+  category_mapping[is.na(category_mapping[[parent_column_mapping_table]]), parent_column_mapping_table] <- 'unannotated'
+  # add the ID to the pathway table
+  pathway_table_significant[['id']] <- apply(pathway_table_significant, 1, function(x) {
+    term <- x[term_column_pathways_table]
+    # seach for the R-HSA tag
+    search_result <- gregexpr('R-HSA-\\d+', term)
+    # get the subsetring
+    id <- substr(x[term_column_pathways_table], search_result[[1]][[1]], search_result[[1]][[1]] + attributes(search_result[[1]])$match.length)
+    return(id[[term_column_pathways_table]])
+  })
+  # now add the category to the pathway output
+  pathway_table_significant[['category']] <- category_mapping[match(pathway_table_significant[['id']], category_mapping[['id']]), parent_column_mapping_table]
+  # the ones that don't have a category
+  pathway_table_significant[!(pathway_table_significant[['id']] %in% category_mapping[['id']]), 'category'] <- 'unannotated'
+  # drop categories if we want
+  if (!is.null(drop_categories)) {
+    for (to_drop in drop_categories) {
+      # check what is dropped
+      dropped <- pathway_table_significant[pathway_table_significant[['category']] == to_drop, term_column_pathways_table]
+      print(paste('dropping category ', to_drop, ', containing ', paste(dropped, collapse = ','), sep = ''))
+      # and drop it
+      pathway_table_significant <- pathway_table_significant[pathway_table_significant[['category']] != to_drop, ]
+    }
+  }
+  # extract the genes per category
+  genes_per_category <- list()
+  # check each category
+  for (category in unique(pathway_table_significant[['category']])) {
+    # get the genes for that category
+    pathways_significant_genes <- pathway_table_significant[pathway_table_significant[['category']] == category, gene_column]
+    # then the genes
+    pathways_significant_genes <- strsplit(pathways_significant_genes, split = ';')
+    # and then reduce
+    pathways_significant_genes <- do.call('c', pathways_significant_genes)
+    # make them unique
+    pathways_significant_genes <-  unique(pathways_significant_genes)
+    # add the number of genes
+    genes_per_category[[category]] <- data.frame(
+      category = c(category),
+      ngenes = c(length(pathways_significant_genes))
+    )
+  }
+  # merge all
+  number_per_category <- do.call('rbind', genes_per_category)
+  # set better column names
+  colnames(number_per_category) <- c('category', 'number')
+  # turn into plot
+  p <- ggplot(number_per_category, aes(area = number, fill = category, label = category)) +
+    geom_treemap() +
+    geom_treemap_text(place = text_loc)
+  # use distinct colours if requested
+  if (use_distinct_colours) {
+    # get the unique possible assigments
+    possible_assignments <- unique(pathway_table_significant[['category']])
+    # get an equal amount of colours
+    possible_colours <- NULL
+    if(length(possible_assignments) > 74) {
+      possible_colours <- sample_tons_of_colors(length(possible_assignments), use_sampling = use_sampling, color_indices = color_indices)
+    }
+    else {
+      possible_colours <- sample_many_colours(length(possible_assignments), use_sampling = use_sampling, color_indices = color_indices)
+    }
+    # put into a list
+    colour_mapping <- as.list(possible_colours)
+    names(colour_mapping) <- possible_assignments
+    # add to plot
+    p <- p + scale_fill_manual(values = colour_mapping)
+  }
+  if(legendless){
+    p <- p + theme(legend.position = 'none')
+  }
+  if (paper_style) {
+    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  return(p)
+}
+
 
 ```
 
@@ -364,67 +934,163 @@ knitr::opts_chunk$set(echo = FALSE)
 # Main Code        #
 ####################
 
-mast_meta_output_loc_lfc01 <- '/groups/umcg-franke-scrna/tmp02/releases/blokland-2020/v1/differential_expression/MAST/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/rna/'
+# get the locations of the DE output
+mast_meta_output_loc_lfc01 <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/rna/'
+limma_output_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
 
 ```
 
-```{r setup, include=TRUE, fig.width=8, fig.height=8}
+```{r pathway_filter, include=FALSE}
+
+# this is the reactome ID for the immune system
+immune_system_reactome_id <- 'R-HSA-168256'
+# load the pathways
+pathways <- read.table('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment//ReactomePathways.tsv', sep='\t', quote = '')
+# subset to just human to speed up the search
+pathways <- pathways[pathways$V3 == 'Homo sapiens', ]
+# load the pathway mapping
+pathway_mappings <- read.table('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment//ReactomePathwaysRelation.tsv', sep = '\t')
+# get the filtered names
+filtered_names <- get_filtered_pathway_names(pathways, pathway_mappings, 'R-HSA-168256')
+filtered_ids <- get_filtered_pathway_names(pathways, pathway_mappings, 'R-HSA-168256', only_id = T)
+# get the top level human pathways
+pathways_to_top_level <- pathway_names_to_top_level(pathway_mappings = pathway_mappings, pathway_names = pathways)
+pathways_to_top_level[is.na(pathways_to_top_level[['top_parent']]), 'top_parent'] <- 'unannotated'
+# make a copy with more readable names
+pathways_to_top_level[['top_parent_readable']] <- apply(pathways_to_top_level, 1, function(x){split_string_with_max_length(x[['top_parent']])})
+```
+
+
+```{r mast_plot, include=TRUE, fig.width=7, fig.height=7}
+knitr::opts_chunk$set(echo = FALSE)
 
 # get the output
 output_per_comparison_up <- get_significant_genes(mast_meta_output_loc_lfc01, sig_pval = 1, only_positive = T)
-output_per_comparison_down <- get_significant_genes(mast_meta_output_loc_lfc01, sig_pval = 1, only_positive = T)
+output_per_comparison_down <- get_significant_genes(mast_meta_output_loc_lfc01, sig_pval = 1, only_negative  = T)
 
 # and the top genes
-genes_per_comparison_up <- max_genes_per_comparison_up <- get_max_lfc_genes(output_per_comparison_up, max = 10)
-genes_per_comparison_down <- max_genes_per_comparison_down <- get_max_lfc_genes(output_per_comparison_down, max = 10)
+genes_per_comparison_up <- get_max_lfc_genes(output_per_comparison_up)
+genes_per_comparison_down <- get_max_lfc_genes(output_per_comparison_down)
 # create merging groups
 merge_groups <- list(
   'monocyte' = c('monocyteUTBaseline', 'monocyteBaselinet24h', 'monocyteBaselinet8w')
 )
 # get the LFCs for those genes
-output_specific_genes_up <- merge_genes_into_table(output_per_comparison_up, genes_per_comparison_up, merge_groups)
+output_specific_genes_up <- merge_genes_into_table(output_per_comparison_up, genes_per_comparison_up, merge_groups, gene_column = NULL)
+output_specific_genes_down <- merge_genes_into_table(output_per_comparison_down, genes_per_comparison_down, merge_groups, gene_column = NULL)
+# and merge them
+output_specific_genes <- rbind(output_specific_genes_up, output_specific_genes_down)
 # make a table specific for the monocytes, with all comparisons agains monocytes
-mono_table <- rbind(data.frame(vs_timepoint = 't24h', gene = output_specific_genes_up[output_specific_genes_up[['comparison']] == 'monocyteBaselinet24h', 'gene'], avg_lfc=-1*output_specific_genes_up[output_specific_genes_up[['comparison']] == 'monocyteBaselinet24h', 'metafc']),
-                    data.frame(vs_timepoint = 't8w', gene = output_specific_genes_up[output_specific_genes_up[['comparison']] == 'monocyteBaselinet8w', 'gene'], avg_lfc=-1*output_specific_genes_up[output_specific_genes_up[['comparison']] == 'monocyteBaselinet8w', 'metafc']),
-                    data.frame(vs_timepoint = 'C', gene = output_specific_genes_up[output_specific_genes_up[['comparison']] == 'monocyteUTBaseline', 'gene'], avg_lfc=1*output_specific_genes_up[output_specific_genes_up[['comparison']] == 'monocyteUTBaseline', 'metafc']))
-
-# set the order we want to display at
-mono_x_order <- c('t24h', 't6-8w', 'C')
-# set the y order
-mono_y_order <- unique(mono_table[order(mono_table[['avg_lfc']]), 'gene'])
+mono_table <- rbind(data.frame(vs_timepoint = 't24h', gene = output_specific_genes[output_specific_genes[['comparison']] == 'monocyteBaselinet24h', 'gene'], avg_lfc=-1*output_specific_genes[output_specific_genes[['comparison']] == 'monocyteBaselinet24h', 'metafc']),
+                    data.frame(vs_timepoint = 't8w', gene = output_specific_genes[output_specific_genes[['comparison']] == 'monocyteBaselinet8w', 'gene'], avg_lfc=-1*output_specific_genes[output_specific_genes[['comparison']] == 'monocyteBaselinet8w', 'metafc']),
+                    data.frame(vs_timepoint = 'C', gene = output_specific_genes[output_specific_genes[['comparison']] == 'monocyteUTBaseline', 'gene'], avg_lfc=1*output_specific_genes[output_specific_genes[['comparison']] == 'monocyteUTBaseline', 'metafc']))
 # create a picture
-lfc_table_to_tile(mono_table, print_lfc_value = T, colour_ticks = T, x_order = mono_x_order, y_order = mono_y_order) + ggtitle('Monocytes') + ylab('Gene symbol') + xlab('Timepoint compared')
+lfc_table_to_tile(mono_table, print_lfc_value = T, colour_ticks = T) + ggtitle('top DE genes versus t0 in monocytes') + ylab('gene symbol') + xlab('timepoint compared')
 
-```
 
-```{r setup, include=TRUE, fig.width=8, fig.height=8}
-
-# get the output
-output_per_comparison_up <- get_significant_genes(mast_meta_output_loc_lfc01, sig_pval = 1, only_positive = T)
-output_per_comparison_down <- get_significant_genes(mast_meta_output_loc_lfc01, sig_pval = 1, only_positive = T)
-
-# and the top genes
-genes_per_comparison_up <- max_genes_per_comparison_up <- get_max_lfc_genes(output_per_comparison_up, max = 10)
-genes_per_comparison_down <- max_genes_per_comparison_down <- get_max_lfc_genes(output_per_comparison_down, max = 10)
 # create merging groups
 merge_groups <- list(
-  'NK' = c('NKUTBaseline', 'NKBaselinet24h', 'NKBaselinet8w')
+  'monocyte_C_t0' = c('monocyteUTBaseline'),
+  'monocyte_t24h_t0' = c('monocyteBaselinet24h'),
+  'monocyte_t8w_t0' = c('monocyteBaselinet8w')
 )
 # get the LFCs for those genes
 output_specific_genes_up <- merge_genes_into_table(output_per_comparison_up, genes_per_comparison_up, merge_groups)
-# make a table specific for the NKs, with all comparisons agains NKs
-NK_table <- rbind(data.frame(vs_timepoint = 't24h', gene = output_specific_genes_up[output_specific_genes_up[['comparison']] == 'NKBaselinet24h', 'gene'], avg_lfc=-1*output_specific_genes_up[output_specific_genes_up[['comparison']] == 'NKBaselinet24h', 'metafc']),
-                    data.frame(vs_timepoint = 't8w', gene = output_specific_genes_up[output_specific_genes_up[['comparison']] == 'NKBaselinet8w', 'gene'], avg_lfc=-1*output_specific_genes_up[output_specific_genes_up[['comparison']] == 'NKBaselinet8w', 'metafc']),
-                    data.frame(vs_timepoint = 'C', gene = output_specific_genes_up[output_specific_genes_up[['comparison']] == 'NKUTBaseline', 'gene'], avg_lfc=1*output_specific_genes_up[output_specific_genes_up[['comparison']] == 'NKUTBaseline', 'metafc']))
+output_specific_genes_down <- merge_genes_into_table(output_per_comparison_down, genes_per_comparison_down, merge_groups)
+# and merge them
+output_specific_genes <- rbind(output_specific_genes_up, output_specific_genes_down)
+# or per condition
+plot_grid(
+  lfc_table_to_tile(data.frame(vs_timepoint = 'C', gene = output_specific_genes[output_specific_genes[['comparison']] == 'monocyteUTBaseline', 'gene'], avg_lfc=-1*output_specific_genes[output_specific_genes[['comparison']] == 'monocyteUTBaseline', 'metafc']), print_lfc_value = T, legendless = T) + ggtitle('') + ylab('') + xlab(''),
+  lfc_table_to_tile(data.frame(vs_timepoint = 't24h', gene = output_specific_genes[output_specific_genes[['comparison']] == 'monocyteBaselinet24h', 'gene'], avg_lfc=-1*output_specific_genes[output_specific_genes[['comparison']] == 'monocyteBaselinet24h', 'metafc']), print_lfc_value = T, legendless = T) + ggtitle('') + ylab('') + xlab(''),
+  lfc_table_to_tile(data.frame(vs_timepoint = 't8w', gene = output_specific_genes[output_specific_genes[['comparison']] == 'monocyteBaselinet8w', 'gene'], avg_lfc=-1*output_specific_genes[output_specific_genes[['comparison']] == 'monocyteBaselinet8w', 'metafc']), print_lfc_value = T, legendless = T) + ggtitle(' ') + ylab('') + xlab(''),
+  get_legend(lfc_table_to_tile(data.frame(vs_timepoint = 'C', gene = output_specific_genes[output_specific_genes[['comparison']] == 'monocyteBaselinet8w', 'gene'], avg_lfc=-1*output_specific_genes[output_specific_genes[['comparison']] == 'monocyteBaselinet8w', 'metafc']))),
+  nrow = 1,
+  ncol = 4
+)
 
-# remove LFC below 0.1, as we did not test it
-NK_table <- NK_table[NK_table[['avg_lfc']] > 0.1 | NK_table[['avg_lfc']] < -0.1, ]
+```
 
-# set the order we want to display at
-NK_x_order <- c('t24h', 't6-8w', 'C')
-# set the y order
-NK_y_order <- unique(NK_table[order(NK_table[['avg_lfc']]), 'gene'])
+
+```{r limma_plot, include=TRUE, fig.width=7, fig.height=7}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get the output
+limma_output_per_comparison <- get_output_per_comparison(output_loc = limma_output_loc, de_method = 'limma', pval_cutoff = 1, pval_column = 'adj.P.Val', comparisons=c('UT_Baseline', 't24h_Baseline', 't8w_t24h', 't8w_Baseline'))
+
+# get the location of the pathway output
+pathway_output_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr_reactome_2023_lfc01/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+
+# get all output
+limma_both_enrichr_up <- get_pathways_per_celltype_condition(pathway_output_loc, pval_cutoff = 0.05, pval_column = 'Old.Adjusted.P.value', append = '_positive.tsv', cell_types = c('monocyte'))
+limma_both_enrichr_down <- get_pathways_per_celltype_condition(pathway_output_loc, pval_cutoff = 0.05, pval_column = 'Old.Adjusted.P.value', append = '_negative.tsv', cell_types = c('monocyte'))
+# merge the two
+limma_both_enrichr_up[['direction']] <- 'up'
+limma_both_enrichr_down[['direction']] <- 'down'
+limma_both_enrichr <- rbind(limma_both_enrichr_up, limma_both_enrichr_down)
+# add combination of conditions
+limma_both_enrichr[['comparison']] <- paste(limma_both_enrichr[['condition1']], limma_both_enrichr[['condition2']], sep = '_')
+
+# merge cell types
+limma_output_per_comparison <- do.call('rbind', limma_output_per_comparison)
+# add as a cell type comparison
+limma_output_per_comparison[['celltype_comparison']] <- paste(limma_output_per_comparison[['cell_type']], limma_output_per_comparison[['comparison']], sep = '_')
+
+# now subset de by pathway
+limma_output_per_comparison_filtered <- filter_de_by_pathways(limma_output_per_comparison, limma_both_enrichr, pval_column_pathways = 'Old.Adjusted.P.value')
+
+# make listed
+limma_output_listed <- list('monocyte_UT_Baseline' = limma_output_per_comparison_filtered[limma_output_per_comparison_filtered[['cell_type']] == 'monocyte' & limma_output_per_comparison_filtered[['comparison']] == 'UT_Baseline', ],
+       'monocyte_t24h_Baseline' = limma_output_per_comparison_filtered[limma_output_per_comparison_filtered[['cell_type']] == 'monocyte' & limma_output_per_comparison_filtered[['comparison']] == 't24h_Baseline', ],
+       'monocyte_t8w_t24h' = limma_output_per_comparison_filtered[limma_output_per_comparison_filtered[['cell_type']] == 'monocyte' & limma_output_per_comparison_filtered[['comparison']] == 't8w_t24h', ],
+       'monocyte_t8w_Baseline' = limma_output_per_comparison_filtered[limma_output_per_comparison_filtered[['cell_type']] == 'monocyte' & limma_output_per_comparison_filtered[['comparison']] == 't8w_Baseline', ])
+
+# get max LFC
+limma_output_per_comparison_max_up <- get_max_lfc_genes(limma_output_listed
+  , pval_column = 'adj.P.Val', sig_pval = 1, max = 5, only_positive = T, only_negative = F, lfc_column = 'logFC', gene_column = 'gene')
+limma_output_per_comparison_max_down <- get_max_lfc_genes(limma_output_listed, pval_column = 'adj.P.Val', sig_pval = 1, max = 5, only_positive = F, only_negative = T, lfc_column = 'logFC', gene_column = 'gene')
+
+# subset to the genes we are interested in
+mono_table <- limma_output_per_comparison[limma_output_per_comparison[['cell_type']] == 'monocyte' &
+                                          limma_output_per_comparison[['comparison']] %in% c('UT_Baseline', 't24h_Baseline', 't8w_t24h') &
+                                          limma_output_per_comparison[['gene']] %in% c(do.call('c', limma_output_per_comparison_max_up), do.call('c', limma_output_per_comparison_max_down)), ]
+# add the plottable numbers
+mono_table[['plot_number_lfc']] <- ''
+mono_table[mono_table[['adj.P.Val']] < 0.05, 'plot_number_lfc'] <- as.character(round(mono_table[mono_table[['adj.P.Val']] < 0.05, 'logFC'], digits = 2))
+
+
+
 # create a picture
-lfc_table_to_tile(NK_table, print_lfc_value = T, colour_ticks = T, x_order = NK_x_order, y_order = NK_y_order) + ggtitle('NKs') + ylab('Gene symbol') + xlab('Timepoint compared')
+lfc_table_to_tile(mono_table, print_lfc_value = T, colour_ticks = T, comparison_column = 'comparison', value_column = 'logFC', value_print_column = 'plot_number_lfc') + ggtitle('top DE genes versus t0 in monocytes') + ylab('gene symbol') + xlab('timepoint compared') + coord_flip()
 
+
+```
+
+```{r limma_plot, include=TRUE, fig.width=30, fig.height=20}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get the location of the pathway output
+pathway_output_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr_reactome_2023_lfc01/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+# get all output
+limma_both_enrichr_up <- get_pathways_per_celltype_condition(pathway_output_loc, pval_cutoff = 0.05, pval_column = 'Adjusted.P.value', append = '_positive.tsv', cell_types = c('monocyte'))
+limma_both_enrichr_down <- get_pathways_per_celltype_condition(pathway_output_loc, pval_cutoff = 0.05, pval_column = 'Adjusted.P.value', append = '_negative.tsv', cell_types = c('monocyte'))
+# merge the two
+limma_both_enrichr_up[['direction']] <- 'up'
+limma_both_enrichr_down[['direction']] <- 'down'
+limma_both_enrichr <- rbind(limma_both_enrichr_up, limma_both_enrichr_down)
+# add combination of conditions
+limma_both_enrichr[['comparison']] <- paste(limma_both_enrichr[['condition1']], limma_both_enrichr[['condition2']], sep = '_')
+
+# get the categories and colours
+category_colors <- as.list(sample_many_colours(n = length(unique(pathways_to_top_level[['top_parent_readable']])), color_indices = c(64:65, 8, 66:72, 9, 12, 46:48, 2, 13, 49:54, 5, 55:60)))
+names(category_colors) <- unique(pathways_to_top_level[['top_parent_readable']])
+
+
+# make the plot
+plot_grid(
+  plot_pathway_categories_celltype(limma_both_enrichr[limma_both_enrichr[['cell_type']] == 'monocyte' & limma_both_enrichr[['comparison']] == 'UT_Baseline', ], pathways_to_top_level, significance_column = 'Adjusted.P.value', parent_column_mapping_table = 'top_parent_readable', legendless = T) + scale_fill_manual(values = category_colors),
+  plot_pathway_categories_celltype(limma_both_enrichr[limma_both_enrichr[['cell_type']] == 'monocyte' & limma_both_enrichr[['comparison']] == 't24h_Baseline', ], pathways_to_top_level, significance_column = 'Adjusted.P.value', parent_column_mapping_table = 'top_parent_readable', legendless = T) + scale_fill_manual(values = category_colors),
+  plot_pathway_categories_celltype(limma_both_enrichr[limma_both_enrichr[['cell_type']] == 'monocyte' & limma_both_enrichr[['comparison']] == 't8w_t24h', ], pathways_to_top_level, significance_column = 'Adjusted.P.value', parent_column_mapping_table = 'top_parent_readable', legendless = T) + scale_fill_manual(values = category_colors),
+  ncol = 3
+)
 ```
