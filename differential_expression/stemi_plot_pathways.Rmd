@@ -102,11 +102,14 @@ label_dict <- function(){
   label_dict[['Baselinet24h']] <- 'Baseline-t24h'
   label_dict[['Baselinet8w']] <- 'Baseline-t8w'
   label_dict[['t24ht8w']] <- 't24h-t8w'
-  label_dict[['UTBaseline']] <- 'HC-t0'
-  label_dict[['UTt24h']] <- 'HC-t24h'
-  label_dict[['UTt8w']] <- 'HC-t8w'
+  label_dict[['UTBaseline']] <- 'C-t0'
+  label_dict[['UTt24h']] <- 'C-t24h'
+  label_dict[['UTt8w']] <- 'C-t8w'
   label_dict[['Baselinet24h']] <- 't0-t24h'
   label_dict[['Baselinet8w']] <- 't0-t8w'
+  label_dict[['t24hBaseline']] <- 't0-t24h'
+  label_dict[['t8wBaseline']] <- 't0-t8w'
+  label_dict[['t8wt24h']] <- 't24h-t8w'
   # conditions
   label_dict[['UT']] <- 'HC'
   label_dict[['Baseline']] <- 't0'
@@ -571,13 +574,43 @@ pathway_names_to_top_level <- function(pathway_mappings, pathway_names) {
     # get the name of this parent
     parent_name <- pathway_names[match(top_level, pathway_names[['V1']]), 'V2']
     # make dataframe
-    pathway_mapping_category <- data.frame(pathway = filtered_names, id = filtered_ids, top_parent = rep(parent_name, times = length(parent_name)))
+    pathway_mapping_category <- data.frame(pathway = filtered_names, id = filtered_ids, top_parent = rep(parent_name, times = length(parent_name)), top_id = rep(top_level, length(parent_name)))
+    # add the category itself as well
+    pathway_mapping_category <- rbind(pathway_mapping_category, data.frame(pathway = c(paste(parent_name, top_level)), id = c(top_level), top_parent = c(parent_name), top_id=c(top_level)))
     # add to list
     pathway_name_to_top_level[[top_level]] <- pathway_mapping_category
   }
   # merge lists
   pathways_to_top_parent <- do.call('rbind', pathway_name_to_top_level)
   return(pathways_to_top_parent)
+}
+
+
+add_reactome_id <- function(pathway_table, term_column_pathways_table='Term') {
+  # add the ID to the pathway table
+  pathway_table[['id']] <- apply(pathway_table, 1, function(x) {
+    term <- x[term_column_pathways_table]
+    # seach for the R-HSA tag
+    search_result <- gregexpr('R-HSA-\\d+', term)
+    # get the subsetring
+    id <- substr(x[term_column_pathways_table], search_result[[1]][[1]], search_result[[1]][[1]] + attributes(search_result[[1]])$match.length)
+    return(id[[term_column_pathways_table]])
+  })
+  return(pathway_table)
+}
+
+
+add_reactome_category <- function(pathway_table, category_mapping, term_column_pathways_table='Term', parent_column_mapping_table='top_parent') {
+  # set the NA to be 'unannotated' for the category mapping
+  if (nrow(category_mapping[is.na(category_mapping[[parent_column_mapping_table]]), ]) > 0) {
+    category_mapping[is.na(category_mapping[[parent_column_mapping_table]]), parent_column_mapping_table] <- 'unannotated'
+  }
+  pathway_table <- add_reactome_id(pathway_table, term_column_pathways_table)
+  # now add the category to the pathway output
+  pathway_table[['category']] <- category_mapping[match(pathway_table[['id']], category_mapping[['id']]), parent_column_mapping_table]
+  # the ones that don't have a category
+  pathway_table[!(pathway_table[['id']] %in% category_mapping[['id']]), 'category'] <- 'unannotated'
+  return(pathway_table)
 }
 
 
@@ -711,6 +744,142 @@ plot_pathway_categories_celltype <- function(pathway_table, category_mapping, si
   return(p)
 }
 
+
+plot_pathways_celltype_dots <- function(plot_frame, condition_column='condition', term_column='Term', significance_column='significance', set_size_column='Overlap', direction_column=NULL, set_size_limits=NULL, use_label_dict=T, pointless=F, legendless=F, paper_style=T, term_text_remove=' R-HSA-\\d+', convert_set_size=T) {
+  # use prettier labels if requested
+  if(use_label_dict){
+    plot_frame[[condition_column]] <- as.vector(unlist(label_dict()[plot_frame[[condition_column]]]))
+  }
+  # clean terms
+  if (!is.null(term_text_remove)) {
+    # remove some text
+    plot_frame[[term_column]] <- gsub(term_text_remove, '', as.character(plot_frame[[term_column]]))
+  }
+  # order by the significance
+  plot_frame[[term_column]] <- factor(plot_frame[[term_column]], levels = unique(plot_frame[order(plot_frame[[significance_column]]), term_column]))
+  
+  if (convert_set_size) {
+    # convert the set size
+    plot_frame[[set_size_column]] <- apply(plot_frame, 1, function(x){
+      # take the value
+      set_size_text <- x[[set_size_column]]
+      # split by the divider
+      numbers <- strsplit(set_size_text, split = '/')[[1]]
+      # calculate fraction
+      fraction <- as.numeric(numbers[1]) / as.numeric(numbers[2])
+      return(fraction)
+    }) 
+  }
+  # make up and down in different directions
+  if (!is.null(direction_column)) {
+    plot_frame[plot_frame[[direction_column]] == 'down', set_size_column] <- -1 * plot_frame[plot_frame[[direction_column]] == 'down', set_size_column]
+  }
+  # make plot
+  p <- ggplot(data = NULL, mapping = aes(x = plot_frame[[condition_column]], y = plot_frame[[term_column]], color = plot_frame[[set_size_column]], size = plot_frame[[significance_column]])) +
+    geom_point()
+  
+  # add labels
+  p <- p + xlab(condition_column)
+  p <- p + ylab(term_column)
+  p <- p + labs(color = set_size_column, size = significance_column)
+  
+  # get the limits if they don't exist
+  if (is.null(set_size_limits)) {
+    abs_max <- max(abs(plot_frame[[set_size_column]]))
+    set_size_limits <- c((-1*abs_max), abs_max)
+  }
+  
+  # add colour
+  p  <- p + scale_colour_gradient2(
+    low = 'darkblue',
+    mid = 'white',
+    high = 'darkred',
+    midpoint = 0,
+    space = "Lab",
+    na.value = "grey50",
+    guide = "colourbar",
+    aesthetics = "colour",
+    limits = set_size_limits
+  )
+  
+  if(pointless){
+    p <- p + theme(axis.text.x = element_blank(), 
+                   axis.ticks = element_blank())
+  }
+  if(legendless){
+    p <- p + theme(legend.position = 'none')
+  }
+  if (paper_style) {
+    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  return(p)
+}
+
+
+get_parents <- function(relation_table, starting_id){
+  # get all of the children of the starting ID
+  parents <- as.character(relation_table[relation_table$V2 == starting_id, 'V1'])
+  # these children are all family
+  family <- parents
+  # see if there were any parents
+  if(length(parents) > 0){
+    # if there were parent, we need to get their parents as well
+    for(parent in parents){
+      # get the grandparents and add these to the family
+      grand_parents <- get_parents(relation_table, parent)
+      family <- c(family, grand_parents)
+    }
+  }
+  return(family)
+}
+
+
+
+remove_all_parents <- function(pathway_table, pathway_mappings, term_column='Term') {
+  # add the ID as an explicit column
+  pathway_table <- add_reactome_id(pathway_table, term_column = term_column)
+  # get all complete ancestries for each pathway
+  pathway_table[['parents']] <- apply(pathway_table, 1, function(x){
+    full_ancestry <- get_parents(pathway_mappings, x[['id']])
+    return(paste(full_ancestry, collapse = ','))
+  })
+  # get all the ancestries
+  all_ids_string <- paste(pathway_table[['parents']], collapse = ',')
+  # now split all of them
+  all_ids <- strsplit(all_ids_string, split = ',')[[1]]
+  # filter the pathway table on that
+  pathway_table <- pathway_table[!(pathway_table[['id']] %in% all_ids),  ]
+  return(pathway_table)
+}
+
+
+remove_parent_per_celltype_conditions <- function(pathway_table, pathway_mappings, cell_type_column = 'cell_type', condition_1_column='condition1', condition_2_column='condition2', term_column='Term') {
+  # we'll store per combination
+  table_per_combination <- list()
+  # we'll check each cell type
+  for (cell_type in unique(pathway_table[[cell_type_column]])) {
+    # subset to that cell type
+    pathway_table_ct <- pathway_table[!is.na(pathway_table[[cell_type_column]]) & pathway_table[[cell_type_column]] == cell_type, ]
+    # check condition 1
+    for (condition_1 in unique(pathway_table_ct[[condition_1_column]])) {
+      # subset to condition
+      pathway_table_ct_c1 <- pathway_table_ct[!is.na(pathway_table_ct[[condition_1_column]]) & pathway_table_ct[[condition_1_column]] == condition_1, ]
+      # and check condition 2
+      for (condition_2 in unique(pathway_table_ct_c1[[condition_2_column]])) {
+        # subset to that condition
+        pathway_table_ct_c1_c2 <- pathway_table_ct_c1[!is.na(pathway_table_ct_c1[[condition_2_column]]) & pathway_table_ct_c1[[condition_2_column]] == condition_2, ]
+        # remove all parents
+        pathway_table_ct_c1_c2 <- remove_all_parents(pathway_table_ct_c1_c2, pathway_mappings, term_column = term_column)
+        # add to list
+        table_per_combination[[paste(cell_type, condition_1, condition_2, sep = '_')]] <- pathway_table_ct_c1_c2
+      }
+    }
+  }
+  # merge all together again
+  table_filtered <- do.call('rbind', table_per_combination)
+  return(table_filtered)
+}
+
 ```
 
 ```{r setup, include=FALSE}
@@ -720,7 +889,7 @@ knitr::opts_chunk$set(echo = FALSE)
 ####################
 
 # get the location of the pathway output
-pathway_output_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr_reactome_2023/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+pathway_output_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr_reactome_2023_lfc01/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
 enrichr_kegg_output_loc <-'/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr_kegg/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
 clusterprofiler_kegg_output_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/kegg/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/table/'
 
@@ -731,13 +900,14 @@ clusterprofiler_kegg_output_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blo
 # this is the reactome ID for the immune system
 immune_system_reactome_id <- 'R-HSA-168256'
 # load the pathways
-pathways <- read.table('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment//ReactomePathways.tsv', sep='\t')
+pathways <- read.table('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment//ReactomePathways.tsv', sep='\t', quote = '')
 # subset to just human to speed up the search
 pathways <- pathways[pathways$V3 == 'Homo sapiens', ]
 # load the pathway mapping
 pathway_mappings <- read.table('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment//ReactomePathwaysRelation.tsv', sep = '\t')
 # get the filtered names
-filtered_names <- get_filtered_pathway_names(pathways, pathway_mappings, 'R-HSA-168256', add_id = T)
+filtered_names <- c(get_filtered_pathway_names(pathways, pathway_mappings, 'R-HSA-168256', add_id = T), get_filtered_pathway_names(pathways, pathway_mappings, 'R-HSA-162582', add_id = T))
+filtered_ids <- c(get_filtered_pathway_names(pathways, pathway_mappings, 'R-HSA-168256', only_id = T), get_filtered_pathway_names(pathways, pathway_mappings, 'R-HSA-162582', only_id = T))
 # get the top level human pathways
 pathways_to_top_level <- pathway_names_to_top_level(pathway_mappings = pathway_mappings, pathway_names = pathways)
 pathways_to_top_level[is.na(pathways_to_top_level[['top_parent']]), 'top_parent'] <- 'unannotated'
@@ -756,8 +926,14 @@ limma_both_enrichr <- get_pathways_per_celltype_condition(pathway_output_loc, pv
 ```{r limma_enrichr_plots, include=TRUE, fig.width=10, fig.height=10}
 knitr::opts_chunk$set(echo = FALSE)
 
+# filter parents out
+limma_both_enrichr_positive_filtered <- remove_parent_per_celltype_conditions(limma_both_enrichr, pathway_mappings)
+
+# filter on IDs
+limma_both_enrichr_positive_filtered <- limma_both_enrichr_positive_filtered[limma_both_enrichr_positive_filtered$id %in% filtered_ids, ]
+
 # get all output
-limma_both_enrichr_baseline_vs_t24ht8w <- get_plotframe_per_celltype(limma_both_enrichr, reference = 'Baseline', compare_tos = c('t24h', 't8w'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value', filter_vector = filtered_names)
+limma_both_enrichr_baseline_vs_t24ht8w <- get_plotframe_per_celltype(limma_both_enrichr_positive_filtered, reference = 'Baseline', compare_tos = c('t24h', 't8w'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
 # make plots
 plot_pathways_celltype(limma_both_enrichr_baseline_vs_t24ht8w[['monocyte']], legendless = T, set_size_outside = T, significance_column = 'significance') + 
   labs(
@@ -773,11 +949,19 @@ plot_pathways_celltype(limma_both_enrichr_baseline_vs_t24ht8w[['monocyte']], leg
 knitr::opts_chunk$set(echo = FALSE)
 
 # get all output
-limma_both_enrichr_negative <- get_pathways_per_celltype_condition(pathway_output_loc, pval_cutoff = 0.05, pval_column = 'Old.Adjusted.P.value', append = '_negative.tsv', cell_types = c('monocyte'))
+limma_both_enrichr_negative <- get_pathways_per_celltype_condition(pathway_output_loc, pval_cutoff = 0.05, pval_column = 'Adjusted.P.value', append = '_negative.tsv', cell_types = c('monocyte'))
+
+# filter parents out
+limma_both_enrichr_negative_filtered <- remove_parent_per_celltype_conditions(limma_both_enrichr_negative, pathway_mappings)
+limma_both_enrichr_positive_filtered <- remove_parent_per_celltype_conditions(limma_both_enrichr, pathway_mappings)
+
+# filter on IDs
+limma_both_enrichr_negative_filtered <- limma_both_enrichr_negative_filtered[limma_both_enrichr_negative_filtered$id %in% filtered_ids, ]
+limma_both_enrichr_positive_filtered <- limma_both_enrichr_positive_filtered[limma_both_enrichr_positive_filtered$id %in% filtered_ids, ]
 
 # get all output
-limma_both_enrichr_ut_vs_baseline_down <- get_plotframe_per_celltype(limma_both_enrichr_negative, reference = 'Baseline', compare_tos = c('UT'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value', filter_vector = filtered_names)
-limma_both_enrichr_ut_vs_baseline_up <- get_plotframe_per_celltype(limma_both_enrichr, reference = 'Baseline', compare_tos = c('UT'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value', filter_vector = filtered_names)
+limma_both_enrichr_ut_vs_baseline_down <- get_plotframe_per_celltype(limma_both_enrichr_negative_filtered, reference = 'Baseline', compare_tos = c('UT'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+limma_both_enrichr_ut_vs_baseline_up <- get_plotframe_per_celltype(limma_both_enrichr_positive_filtered, reference = 'Baseline', compare_tos = c('UT'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
 limma_both_enrichr_ut_vs_baseline_down[['monocyte']][['condition']] <- 'down'
 limma_both_enrichr_ut_vs_baseline_up[['monocyte']][['condition']] <- 'up'
 limma_both_enrichr_ut_vs_baseline_down[['monocyte']][['significance']] <- -1 * limma_both_enrichr_ut_vs_baseline_down[['monocyte']][['significance']]
@@ -791,58 +975,230 @@ plot_pathways_celltype(rbind(limma_both_enrichr_ut_vs_baseline_down[['monocyte']
   ) + scale_fill_manual(values = list('up' = 'darkred', 'down' = 'lightblue'))
 
 ```
+```{r limma_enrichr_plots, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get all output
+limma_both_enrichr_baseline_vs_t24ht8w_unfiltered <- get_plotframe_per_celltype(limma_both_enrichr, reference = 'Baseline', compare_tos = c('t24h', 't8w'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+# add category (optional)
+limma_both_enrichr_baseline_vs_t24ht8w_unfiltered[['monocyte']] <- add_reactome_category(limma_both_enrichr_baseline_vs_t24ht8w_unfiltered[['monocyte']], pathways_to_top_level)
+# merge category and term
+limma_both_enrichr_baseline_vs_t24ht8w_unfiltered[['monocyte']][['category_term']] <- paste(limma_both_enrichr_baseline_vs_t24ht8w_unfiltered[['monocyte']][['category']], ':\n', limma_both_enrichr_baseline_vs_t24ht8w_unfiltered[['monocyte']][['Term']], sep = '')
+# make plots
+plot_pathways_celltype(limma_both_enrichr_baseline_vs_t24ht8w_unfiltered[['monocyte']], legendless = T, set_size_outside = T, significance_column = 'significance', term_column = 'category_term') + 
+  labs(
+    title = 'Monocyte enriched pathways compared to t0',
+    subtitle = '\tt8w\t\t\t\t\t\t\t\t\t\tt24h',
+    y = 'corrected -log10 p value',
+    x = 'REACTOME pathway'
+  )
+
+
+```
+
+```{r limma_dot_plots, include=TRUE, fig.width=10, fig.height=10}
+
+# filter parents out
+limma_both_enrichr_positive_filtered <- remove_parent_per_celltype_conditions(limma_both_enrichr, pathway_mappings)
+
+# filter on IDs
+limma_both_enrichr_positive_filtered <- limma_both_enrichr_positive_filtered[limma_both_enrichr_positive_filtered$id %in% filtered_ids, ]
+
+# get all output
+limma_both_enrichr_baseline_vs_t24ht8w <- get_plotframe_per_celltype(limma_both_enrichr_positive_filtered, reference = 'Baseline', compare_tos = c('t24h', 't8w'), term_column = 'Term', significance_column = 'Adjusted.P.value')
+
+# modify significance column
+limma_both_enrichr_baseline_vs_t24ht8w[['monocyte']][['significance']] <- abs(limma_both_enrichr_baseline_vs_t24ht8w[['monocyte']][['significance']])
+
+plot_pathways_celltype_dots(limma_both_enrichr_baseline_vs_t24ht8w[['monocyte']]) + ggtitle('top enriched pathways monocytes compared to t0')
+
+```
+
+
+```{r limma_enrichr_plots, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get all output
+limma_both_enrichr_negative <- get_pathways_per_celltype_condition(pathway_output_loc, pval_cutoff = 0.05, pval_column = 'Adjusted.P.value', append = '_negative.tsv', cell_types = c('monocyte'))
+
+# filter parents out
+limma_both_enrichr_negative_filtered <- remove_parent_per_celltype_conditions(limma_both_enrichr_negative, pathway_mappings)
+limma_both_enrichr_positive_filtered <- remove_parent_per_celltype_conditions(limma_both_enrichr, pathway_mappings)
+
+# filter on IDs
+limma_both_enrichr_negative_filtered <- limma_both_enrichr_negative_filtered[limma_both_enrichr_negative_filtered$id %in% filtered_ids, ]
+limma_both_enrichr_positive_filtered <- limma_both_enrichr_positive_filtered[limma_both_enrichr_positive_filtered$id %in% filtered_ids, ]
+
+# get all output
+limma_both_enrichr_ut_vs_baseline_down <- get_plotframe_per_celltype(limma_both_enrichr_negative_filtered, reference = 'Baseline', compare_tos = c('UT'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+limma_both_enrichr_ut_vs_baseline_up <- get_plotframe_per_celltype(limma_both_enrichr_positive_filtered, reference = 'Baseline', compare_tos = c('UT'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+limma_both_enrichr_ut_vs_baseline_down[['monocyte']][['condition']] <- 'down'
+limma_both_enrichr_ut_vs_baseline_up[['monocyte']][['condition']] <- 'up'
+
+plot_pathways_celltype_dots(rbind(limma_both_enrichr_ut_vs_baseline_up[['monocyte']], limma_both_enrichr_ut_vs_baseline_down[['monocyte']]), use_label_dict = F) + ggtitle('top enriched pathways monocytes compared C-t0')
+
+
+```
+
+```{r limma_dot_plots_all, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get pathways
+limma_both_enrichr <- get_pathways_per_celltype_condition(pathway_output_loc, pval_cutoff = 0.05, pval_column = 'Old.Adjusted.P.value', append = '_positive.tsv', cell_types = c('monocyte'))
+limma_both_enrichr_down <- get_pathways_per_celltype_condition(pathway_output_loc, pval_cutoff = 0.05, pval_column = 'Old.Adjusted.P.value', append = '_negative.tsv', cell_types = c('monocyte'))
+
+# filter parents out
+limma_both_enrichr_positive_filtered <- remove_parent_per_celltype_conditions(limma_both_enrichr, pathway_mappings)
+limma_both_enrichr_negative_filtered <- remove_parent_per_celltype_conditions(limma_both_enrichr_down, pathway_mappings)
+
+# filter on IDs
+limma_both_enrichr_positive_filtered <- limma_both_enrichr_positive_filtered[limma_both_enrichr_positive_filtered$id %in% filtered_ids, ]
+limma_both_enrichr_negative_filtered <- limma_both_enrichr_negative_filtered[limma_both_enrichr_negative_filtered$id %in% filtered_ids, ]
+
+
+# get positive ones
+limma_both_enrichr_ut_vs_baseline_up <- get_plotframe_per_celltype(limma_both_enrichr_positive_filtered, reference = 'Baseline', compare_tos = c('UT'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+limma_both_enrichr_baseline_vs_t24h_up <- get_plotframe_per_celltype(limma_both_enrichr_positive_filtered, reference = 'Baseline', compare_tos = c('t24h'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+limma_both_enrichr_baseline_vs_t8w_up <- get_plotframe_per_celltype(limma_both_enrichr_positive_filtered, reference = 'Baseline', compare_tos = c('t8w'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+limma_both_enrichr_t24h_vs_t8w_up <- get_plotframe_per_celltype(limma_both_enrichr_positive_filtered, reference = 't24h', compare_tos = c('t8w'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+# get the positive ones
+limma_both_enrichr_ut_vs_baseline_down <- get_plotframe_per_celltype(limma_both_enrichr_negative_filtered, reference = 'Baseline', compare_tos = c('UT'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+limma_both_enrichr_baseline_vs_t24h_down <- get_plotframe_per_celltype(limma_both_enrichr_negative_filtered, reference = 'Baseline', compare_tos = c('t24h'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+limma_both_enrichr_baseline_vs_t8w_down <- get_plotframe_per_celltype(limma_both_enrichr_negative_filtered, reference = 'Baseline', compare_tos = c('t8w'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+limma_both_enrichr_t24h_vs_t8w_down <- get_plotframe_per_celltype(limma_both_enrichr_negative_filtered, reference = 't24h', compare_tos = c('t8w'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+
+
+# get the IDs to include
+ids_all_comparisons <- unique(
+  c(
+    limma_both_enrichr_ut_vs_baseline_up[['monocyte']][['id']], 
+    limma_both_enrichr_baseline_vs_t24h_up[['monocyte']][['id']], 
+    limma_both_enrichr_baseline_vs_t8w_up[['monocyte']][['id']], 
+    limma_both_enrichr_t24h_vs_t8w_up[['monocyte']][['id']],
+    limma_both_enrichr_ut_vs_baseline_down[['monocyte']][['id']], 
+    limma_both_enrichr_baseline_vs_t24h_down[['monocyte']][['id']], 
+    limma_both_enrichr_baseline_vs_t8w_down[['monocyte']][['id']], 
+    limma_both_enrichr_t24h_vs_t8w_down[['monocyte']][['id']]
+    )
+  )
+
+# subset the pathways to ones we want
+limma_both_enrichr_mono_filtered <- limma_both_enrichr_positive_filtered[limma_both_enrichr_positive_filtered[['cell_type']] == 'monocyte' & limma_both_enrichr_positive_filtered[['id']] %in% ids_all_comparisons, ]
+# add log transformed p values
+limma_both_enrichr_mono_filtered[['significance']] <- limma_both_enrichr_mono_filtered[['Adjusted.P.value']]
+# make it so that the zero ones are the minimal possible value
+limma_both_enrichr_mono_filtered[limma_both_enrichr_mono_filtered[['significance']] == 0, 'significance'] <- .Machine$double.xmin
+# and log transform
+limma_both_enrichr_mono_filtered[['significance']] <- -log10(limma_both_enrichr_mono_filtered[['significance']])
+# add comparison
+limma_both_enrichr_mono_filtered[['comparison']] <- paste(limma_both_enrichr_mono_filtered[['condition1']], limma_both_enrichr_mono_filtered[['condition2']], sep = '')
+# make plot
+plot_pathways_celltype_dots(limma_both_enrichr_mono_filtered[limma_both_enrichr_mono_filtered$Adjusted.P.value < 0.05, ], condition_column = 'comparison', use_label_dict = T) + ggtitle('top enriched pathways monocytes')
+
+
+# subset the pathways to ones we want
+limma_both_enrichr_mono_filtered_down <- limma_both_enrichr_negative_filtered[limma_both_enrichr_negative_filtered[['cell_type']] == 'monocyte' & limma_both_enrichr_negative_filtered[['id']] %in% ids_all_comparisons, ]
+# add log transformed p values
+limma_both_enrichr_mono_filtered_down[['significance']] <- limma_both_enrichr_mono_filtered_down[['Adjusted.P.value']]
+# make it so that the zero ones are the minimal possible value
+limma_both_enrichr_mono_filtered_down[limma_both_enrichr_mono_filtered_down[['significance']] == 0, 'significance'] <- .Machine$double.xmin
+# and log transform
+limma_both_enrichr_mono_filtered_down[['significance']] <- -log10(limma_both_enrichr_mono_filtered_down[['significance']])
+# add comparison
+limma_both_enrichr_mono_filtered_down[['comparison']] <- paste(limma_both_enrichr_mono_filtered_down[['condition1']], limma_both_enrichr_mono_filtered_down[['condition2']], sep = '')
+
+# add direction
+limma_both_enrichr_mono_filtered_down[['direction']] <- 'down'
+limma_both_enrichr_mono_filtered_down[limma_both_enrichr_mono_filtered_down[['condition2']] != 'Baseline', 'direction'] <- 'up'
+limma_both_enrichr_mono_filtered[['direction']] <- 'up'
+limma_both_enrichr_mono_filtered[limma_both_enrichr_mono_filtered[['condition2']] != 'Baseline', 'direction'] <- 'down'
+
+# merge all
+limma_both_enrichr_mono_filtered_bidirectional <- rbind(limma_both_enrichr_mono_filtered_down, limma_both_enrichr_mono_filtered)
+
+# plot pathways
+plot_pathways_celltype_dots(limma_both_enrichr_mono_filtered_bidirectional[limma_both_enrichr_mono_filtered_bidirectional$Adjusted.P.value < 0.05, ], condition_column = 'comparison', use_label_dict = T, significance_column = 'significance', direction_column = 'direction') + ggtitle('top enriched pathways monocytes')
+```
+
+```{r limma_dot_plots_all, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get pathways
+mast_both_enrichr_positive <- get_pathways_per_celltype_condition('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr_reactome_2023_lfc01/MAST/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/rna/', pval_cutoff = 0.05, pval_column = 'Old.Adjusted.P.value', append = '_negative.tsv', cell_types = c('monocyte'), de_method = 'mast_seurat')
+# filter parents out
+mast_both_enrichr_positive_filtered <- remove_parent_per_celltype_conditions(mast_both_enrichr_positive, pathway_mappings)
+# filter on IDs
+mast_both_enrichr_positive_filtered <- mast_both_enrichr_positive_filtered[mast_both_enrichr_positive_filtered$id %in% filtered_ids, ]
+
+# get UT-Baseline
+mast_both_enrichr_ut_vs_baseline_up <- get_plotframe_per_celltype(mast_both_enrichr_positive_filtered, reference = 'Baseline', compare_tos = c('UT'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+mast_both_enrichr_baseline_vs_t24h_up <- get_plotframe_per_celltype(mast_both_enrichr_positive_filtered, reference = 't24h', compare_tos = c('Baseline'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+mast_both_enrichr_baseline_vs_t8w_up <- get_plotframe_per_celltype(mast_both_enrichr_positive_filtered, reference = 't8w', compare_tos = c('Baseline'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+mast_both_enrichr_t24h_vs_t8w_up <- get_plotframe_per_celltype(mast_both_enrichr_positive_filtered, reference = 't8w', compare_tos = c('t24h'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+
+# get pathways
+mast_both_enrichr_negative <- get_pathways_per_celltype_condition('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr_reactome_2023_lfc01/MAST/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/rna/', pval_cutoff = 0.05, pval_column = 'Old.Adjusted.P.value', append = '_positive.tsv', cell_types = c('monocyte'), de_method = 'mast_seurat')
+# filter parents out
+mast_both_enrichr_negative_filtered <- remove_parent_per_celltype_conditions(mast_both_enrichr_negative, pathway_mappings)
+# filter on IDs
+mast_both_enrichr_negative_filtered <- mast_both_enrichr_negative_filtered[mast_both_enrichr_negative_filtered$id %in% filtered_ids, ]
+
+# get UT-Baseline
+mast_both_enrichr_ut_vs_baseline_down <- get_plotframe_per_celltype(mast_both_enrichr_negative_filtered, reference = 'Baseline', compare_tos = c('UT'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+mast_both_enrichr_baseline_vs_t24h_down <- get_plotframe_per_celltype(mast_both_enrichr_negative_filtered, reference = 't24h', compare_tos = c('Baseline'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+mast_both_enrichr_baseline_vs_t8w_down <- get_plotframe_per_celltype(mast_both_enrichr_negative_filtered, reference = 't8w', compare_tos = c('Baseline'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+mast_both_enrichr_t24h_vs_t8w_down <- get_plotframe_per_celltype(mast_both_enrichr_negative_filtered, reference = 't8w', compare_tos = c('t24h'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+
+
+# get the IDs to include
+ids_all_comparisons <- unique(c(mast_both_enrichr_ut_vs_baseline_up[['monocyte']][['id']], mast_both_enrichr_baseline_vs_t24h_up[['monocyte']][['id']], mast_both_enrichr_baseline_vs_t8w_up[['monocyte']][['id']], mast_both_enrichr_t24h_vs_t8w_up[['monocyte']][['id']],
+                                mast_both_enrichr_ut_vs_baseline_down[['monocyte']][['id']], mast_both_enrichr_baseline_vs_t24h_down[['monocyte']][['id']], mast_both_enrichr_baseline_vs_t8w_down[['monocyte']][['id']], mast_both_enrichr_t24h_vs_t8w_down[['monocyte']][['id']]))
+
+# subset the pathways to ones we want
+mast_both_enrichr_positive_mono_filtered <- mast_both_enrichr_positive_filtered[mast_both_enrichr_positive_filtered[['cell_type']] == 'monocyte' & mast_both_enrichr_positive_filtered[['id']] %in% ids_all_comparisons, ]
+# add log transformed p values
+mast_both_enrichr_positive_mono_filtered[['significance']] <- mast_both_enrichr_positive_mono_filtered[['Adjusted.P.value']]
+# make it so that the zero ones are the minimal possible value
+mast_both_enrichr_positive_mono_filtered[mast_both_enrichr_mono_filtered[['significance']] == 0, 'significance'] <- .Machine$double.xmin
+# and log transform
+mast_both_enrichr_positive_mono_filtered[['significance']] <- -log10(mast_both_enrichr_positive_mono_filtered[['significance']])
+# add comparison
+mast_both_enrichr_positive_mono_filtered[['comparison']] <- paste(mast_both_enrichr_positive_mono_filtered[['condition1']], mast_both_enrichr_positive_mono_filtered[['condition2']], sep = '')
+
+# negative as well
+mast_both_enrichr_negative_mono_filtered <- mast_both_enrichr_negative_filtered[mast_both_enrichr_negative_filtered[['cell_type']] == 'monocyte' & mast_both_enrichr_negative_filtered[['id']] %in% ids_all_comparisons, ]
+mast_both_enrichr_negative_mono_filtered[['significance']] <- mast_both_enrichr_negative_mono_filtered[['Adjusted.P.value']]
+mast_both_enrichr_negative_mono_filtered[mast_both_enrichr_mono_filtered[['significance']] == 0, 'significance'] <- .Machine$double.xmin
+mast_both_enrichr_negative_mono_filtered[['significance']] <- -log10(mast_both_enrichr_negative_mono_filtered[['significance']])
+mast_both_enrichr_negative_mono_filtered[['comparison']] <- paste(mast_both_enrichr_negative_mono_filtered[['condition1']], mast_both_enrichr_negative_mono_filtered[['condition2']], sep = '')
+
+# add the direction
+mast_both_enrichr_negative_mono_filtered[['direction']] <- 'down'
+mast_both_enrichr_negative_mono_filtered[mast_both_enrichr_negative_mono_filtered[['comparison']] == 'UTBaseline', 'direction'] <- 'up'
+mast_both_enrichr_positive_mono_filtered[['direction']] <- 'up'
+mast_both_enrichr_positive_mono_filtered[mast_both_enrichr_positive_mono_filtered[['comparison']] == 'UTBaseline', 'direction'] <- 'down'
+mast_both_enrichr_mono_filtered <- rbind(mast_both_enrichr_negative_mono_filtered, mast_both_enrichr_positive_mono_filtered)
+
+# make plot
+plot_pathways_celltype_dots(mast_both_enrichr_mono_filtered[mast_both_enrichr_mono_filtered$Adjusted.P.value < 0.05 & mast_both_enrichr_mono_filtered$comparison %in% c('UTBaseline', 'Baselinet24h', 'Baselinet8w', 't24ht8w'), ], condition_column = 'comparison', use_label_dict = T, direction_column = 'direction') + ggtitle('top enriched pathways monocytes')
+
+```
 
 ```{r limma_category_plots, include=TRUE, fig.width=10, fig.height=10}
 knitr::opts_chunk$set(echo = FALSE)
 
 # create color list for categories
 category_colors <- as.list(sample_many_colours(n = length(unique(pathways_to_top_level[['top_parent_readable']])), color_indices = c(1:7, 9, 11, 14, 17, 18, 20:26, 31, 32, 36, 42, 53)))
-category_colors <- as.list(sample_many_colours(n = length(unique(pathways_to_top_level[['top_parent_readable']])), color_indices = c(64:65, 8, 66:72, 9, 12, 46:48, 2, 13, 49:54, 5)))
+category_colors <- as.list(sample_many_colours(n = length(unique(pathways_to_top_level[['top_parent_readable']])), color_indices = c(64:65, 8, 66:72, 9, 12, 46:48, 2, 13, 49:54, 5, 55:60)))
 
 names(category_colors) <- unique(pathways_to_top_level[['top_parent_readable']])
 
 plot_grid(
-  plot_pathway_categories_celltype(limma_both_enrichr[limma_both_enrichr$cell_type == 'monocyte' & limma_both_enrichr$condition2=='Baseline' & limma_both_enrichr$condition1 == 'UT', ], pathways_to_top_level, use_distinct_colours = T, legendless = T, drop_categories = c('unannotated'), parent_column_mapping_table = 'top_parent_readable') + ggtitle('pathway categories monocytes C vs t0') + scale_fill_manual(values = category_colors),
-  plot_pathway_categories_celltype(limma_both_enrichr[limma_both_enrichr$cell_type == 'monocyte' & limma_both_enrichr$condition2=='Baseline' & limma_both_enrichr$condition1 == 't24h', ], pathways_to_top_level, use_distinct_colours = T, legendless = T, drop_categories = c('unannotated'), parent_column_mapping_table = 'top_parent_readable') + ggtitle('pathway categories monocytes t0 vs t24h') + scale_fill_manual(values = category_colors),
-#  plot_pathway_categories_celltype(limma_both_enrichr[limma_both_enrichr$cell_type == 'monocyte' & limma_both_enrichr$condition2=='t24h' & limma_both_enrichr$condition1 == 't8w', ], pathways_to_top_level, use_distinct_colours = T, legendless = T, drop_categories = c('unannotated'), parent_column_mapping_table = 'top_parent_readable') + ggtitle('pathway categories monocytes t24h vs t8w') + scale_fill_manual(values = category_colors),
-  plot_pathway_categories_celltype(limma_both_enrichr[limma_both_enrichr$cell_type == 'monocyte' & limma_both_enrichr$condition2=='Baseline' & limma_both_enrichr$condition1 == 't8w', ], pathways_to_top_level, use_distinct_colours = T, legendless = T, drop_categories = c('unannotated'), parent_column_mapping_table = 'top_parent_readable') + ggtitle('pathway categories monocytes t0 vs t8w') + scale_fill_manual(values = category_colors),
+  plot_pathway_categories_celltype(limma_both_enrichr[limma_both_enrichr$cell_type == 'monocyte' & limma_both_enrichr$condition2=='Baseline' & limma_both_enrichr$condition1 == 'UT', ], pathways_to_top_level, use_distinct_colours = T, legendless = T, drop_categories = c('unannotated'), parent_column_mapping_table = 'top_parent_readable', text_loc = 'center') + ggtitle('pathway categories monocytes C vs t0') + scale_fill_manual(values = category_colors),
+  plot_pathway_categories_celltype(limma_both_enrichr[limma_both_enrichr$cell_type == 'monocyte' & limma_both_enrichr$condition2=='Baseline' & limma_both_enrichr$condition1 == 't24h', ], pathways_to_top_level, use_distinct_colours = T, legendless = T, drop_categories = c('unannotated'), parent_column_mapping_table = 'top_parent_readable', text_loc = 'center') + ggtitle('pathway categories monocytes t0 vs t24h') + scale_fill_manual(values = category_colors),
+#  plot_pathway_categories_celltype(limma_both_enrichr[limma_both_enrichr$cell_type == 'monocyte' & limma_both_enrichr$condition2=='t24h' & limma_both_enrichr$condition1 == 't8w', ], pathways_to_top_level, use_distinct_colours = T, legendless = T, drop_categories = c('unannotated'), parent_column_mapping_table = 'top_parent_readable', text_loc = 'center') + ggtitle('pathway categories monocytes t24h vs t8w') + scale_fill_manual(values = category_colors),
+  plot_pathway_categories_celltype(limma_both_enrichr[limma_both_enrichr$cell_type == 'monocyte' & limma_both_enrichr$condition2=='Baseline' & limma_both_enrichr$condition1 == 't8w', ], pathways_to_top_level, use_distinct_colours = T, legendless = T, drop_categories = c('unannotated'), parent_column_mapping_table = 'top_parent_readable', text_loc = 'center') + ggtitle('pathway categories monocytes t0 vs t8w') + scale_fill_manual(values = category_colors),
 ncol = 3
 )
-
-```
-
-```{r limma_kegg, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
-
-# get all output
-limma_both_enrichr_kegg_positive <- get_pathways_per_celltype_condition(enrichr_kegg_output_loc, pval_cutoff = 1.1, append = '_positive.tsv')
-
-```
-
-```{r limma_enrichr_plots, include=TRUE, fig.width=10, fig.height=10}
-knitr::opts_chunk$set(echo = FALSE)
-
-# get all output
-limma_both_enrichr_kegg_baseline_vs_t24ht8w_positive <- get_plotframe_per_celltype(limma_both_enrichr_kegg_positive, reference = 'Baseline', compare_tos = c('t24h', 't8w'), top_so_many = 10)
-# make plots
-plot_pathways_celltype(limma_both_enrichr_kegg_baseline_vs_t24ht8w_positive[['monocyte']], legendless = T, set_size_outside = T)
-
-```
-
-```{r limma_clusterprofiler, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
-
-# get all output
-limma_both_clusterprofiler_kegg_positive <- get_pathways_per_celltype_condition(clusterprofiler_kegg_output_loc, pval_cutoff = 1.1, pval_column = 'qvalue', direction_column='enrichmentScore', only_positive=T, only_negative=F)
-
-```
-
-```{r limma_clusterprofiler_plots, include=TRUE, fig.width=10, fig.height=10}
-knitr::opts_chunk$set(echo = FALSE)
-
-# get all output
-limma_both_clusterprofiler_kegg_baseline_vs_t24ht8w_positive <- get_plotframe_per_celltype(limma_both_clusterprofiler_kegg_positive[limma_both_clusterprofiler_kegg_positive$cell_type %in% c('monocyte'), ], reference = 'Baseline', compare_tos = c('t24h'), significance_column = 'qvalue', reference_column = 'condition2', compare_column = 'condition1', top_so_many = 10)
-# make plots
-plot_pathways_celltype(limma_both_clusterprofiler_kegg_baseline_vs_t24ht8w_positive[['monocyte']], legendless = T, set_size_outside = T, term_column = 'Description', set_size_column = 'enrichmentScore')
 
 ```
