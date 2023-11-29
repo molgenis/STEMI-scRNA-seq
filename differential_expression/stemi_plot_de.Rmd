@@ -46,8 +46,13 @@ label_dict <- function(){
   label_dict[['UTt8w']] <- 'HC-t8w'
   label_dict[['Baselinet24h']] <- 't0-t24h'
   label_dict[['Baselinet8w']] <- 't0-t8w'
+  label_dict[['BaselineUT']] <- 't0-C'
+  label_dict[['t24hBaseline']] <- 't24h-t0'
+  label_dict[['t8wBaseline']] <- 't8w-t0'
+  label_dict[['t8wt24h']] <- 't8w-t24h'
   # conditions
-  label_dict[['UT']] <- 'Controls'
+  label_dict[['UT']] <- 'C'
+  label_dict[['C']] <- 'C'
   label_dict[['Baseline']] <- 't0'
   label_dict[['t24h']] <- 't24h'
   label_dict[['t8w']] <- 't6-8w'
@@ -134,6 +139,7 @@ get_color_coding_dict <- function(){
   # set condition colors
   color_coding[["HC"]] <- "grey"
   color_coding[["C"]] <- "grey"
+  color_coding[["Controls"]] <- "grey"
   color_coding[["t0"]] <- "pink"
   color_coding[["t24h"]] <- "red"
   color_coding[["t8w"]] <- "purple"
@@ -148,6 +154,27 @@ get_color_coding_dict <- function(){
   color_coding[["DC"]] <- "#965EC8"
   color_coding[["CD4+ T"]] <- "#153057"
   color_coding[["CD8+ T"]] <- "#009DDB"
+  # up and down
+  color_coding[["Bulk up"]] <- "black"
+  color_coding[["CD4T up"]] <- "#153057"
+  color_coding[["CD8T up"]] <- "#009DDB"
+  color_coding[["monocyte up"]] <- "#EDBA1B"
+  color_coding[["NK up"]] <- "#E64B50"
+  color_coding[["B up"]] <- "#71BC4B"
+  color_coding[["DC up"]] <- "#965EC8"
+  color_coding[["CD4+ T up"]] <- "#153057"
+  color_coding[["CD8+ T up"]] <- "#009DDB"
+  # percentage of whitening 
+  pct_whitening=40
+  color_coding[["Bulk down"]] <- colorRampPalette(c(color_coding[["Bulk up"]], "white"))(100)[pct_whitening]
+  color_coding[["CD4T down"]] <- colorRampPalette(c(color_coding[["CD4T up"]], "white"))(100)[pct_whitening]
+  color_coding[["CD8T down"]] <- colorRampPalette(c(color_coding[["CD8T up"]], "white"))(100)[pct_whitening]
+  color_coding[["monocyte down"]] <- colorRampPalette(c(color_coding[["monocyte up"]], "white"))(100)[pct_whitening]
+  color_coding[["NK down"]] <- colorRampPalette(c(color_coding[["NK up"]], "white"))(100)[pct_whitening]
+  color_coding[["B down"]] <- colorRampPalette(c(color_coding[["B up"]], "white"))(100)[pct_whitening]
+  color_coding[["DC down"]] <- colorRampPalette(c(color_coding[["DC up"]], "white"))(100)[pct_whitening]
+  color_coding[["CD4+ T down"]] <- colorRampPalette(c(color_coding[["CD4+ T up"]], "white"))(100)[pct_whitening]
+  color_coding[["CD8+ T down"]] <- colorRampPalette(c(color_coding[["CD8+ T up"]], "white"))(100)[pct_whitening]
   # other cell type colors
   color_coding[["HSPC"]] <- "#009E94"
   color_coding[["platelet"]] <- "#9E1C00"
@@ -235,7 +262,7 @@ get_de_genes <- function(mast_output_loc, pval_column='metap_bonferroni', sig_pv
 
 de_genes_number_to_table <- function(mast_output_loc, pval_column='metap_bonferroni', sig_pval=0.05, max=NULL, max_by_pval=T, only_positive=F, only_negative=F, lfc_column='metafc', lfc_cutoff=NULL, to_ens=F, symbols.to.ensg.mapping='genes.tsv', cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), stims=c('UT', 'Baseline', 't24h', 't8w'), remove_na_cols=T, de_method='mast_seurat'){
   # get the DE genes
-  de_genes_per_ct <- get_de_genes(mast_output_loc, pval_column=pval_column, sig_pval=sig_pval, max=max, max_by_pval=max_by_pval, only_positive=only_positive, only_negative=only_negative, lfc_column=lfc_column, to_ens=to_ens, symbols.to.ensg.mapping=symbols.to.ensg.mapping, cell_types=cell_types, stims=stims, de_method=de_method, lfc_cutoff = lfc_cutoff)
+  de_genes_per_ct <- get_de_genes(mast_output_loc, pval_column=pval_column, sig_pval=sig_pval, max=max, max_by_pval=max_by_pval, only_positive=only_positive, only_negative=only_negative, lfc_column=lfc_column, to_ens=to_ens, symbols.to.ensg.mapping=symbols.to.ensg.mapping, cell_types=cell_types, stims=stims, de_method=de_method, lfc_cutoff=lfc_cutoff)
   # make all possible combinations of stims
   combs <- paste(rep(stims, each = length(stims)), stims, sep = '')
   # create matrix to store results
@@ -367,68 +394,96 @@ numbers_table_to_plot <- function(numbers_table, cols_include=NULL, use_label_di
 }
 
 
-get_de_genes <- function(mast_output_loc, pval_column='metap_bonferroni', sig_pval=0.05, max=NULL, max_by_pval=T, only_positive=F, only_negative=F, lfc_column='metafc', to_ens=F, symbols.to.ensg.mapping='genes.tsv', cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), stims=c('UT', 'Baseline', 't24h', 't8w')){
-  # set up per cell type
-  de_per_ct <- list()
-  # check each cell type
-  for(cell_type in cell_types){
-    # set up per stim combination
-    de_per_condition <- list()
-    # check each stim
-    for(stim in stims){
-      for(stim2 in stims){
-        try({
-          if(stim != stim2){
-            print(paste(cell_type, stim, stim2, sep = ' '))
-            # paste the filepath together
-            filepath <- paste(mast_output_loc, cell_type, stim,stim2, '.tsv', sep = '')
-            # read the file
-            # read the mast output
-            mast <- read.table(filepath, header=T)
-            # filter to only include the significant results
-            mast <- mast[mast[[pval_column]] <= 0.05, ]
-            # filter for only the positive lfc if required
-            if(only_positive){
-              mast <- mast[mast[[lfc_column]] < 0, ]
-            }
-            # filter for only the positive lfc if required
-            if(only_negative){
-              mast <- mast[mast[[lfc_column]] > 0, ]
-            }
-            # confine in some way if reporting a max number of genes
-            if(!is.null(max)){
-              # by p if required
-              if(max_by_pval){
-                mast <- mast[order(mast[[p_val_column]]), ]
-              }
-              # by lfc otherwise
-              else{
-                mast <- mast[order(mast[[lfc_column]], decreasing = T), ]
-              }
-              # subset to the number we requested if max was set
-              mast <- mast[1:max,]
-            }
-            # grab the genes from the column names
-            genes <- rownames(mast)
-            # convert the symbols to ensemble IDs
-            if (to_ens) {
-              mapping <- read.table(symbols.to.ensg.mapping, header = F, stringsAsFactors = F)
-              mapping$V2 <- gsub("_", "-", make.unique(mapping$V2))
-              genes <- mapping[match(genes, mapping$V2),"V1"]
-            }
-            # otherwise change the Seurat replacement back
-            else{
-              #genes <- gsub("-", "_", genes)
-            }
-            de_per_condition[[paste(stim, stim2, sep = '')]] <- genes
-          }
-        })
-      }
+wide_to_long_table <- function(wide_table) {
+  # turn into plottable dataframe
+  category_combinations_n <- length(unique(colnames(wide_table))) * length(unique(rownames(wide_table)))
+  # make new table
+  long_table <- data.frame(x = rep(NA, times = category_combinations_n), y = rep(NA, times = category_combinations_n), number = rep(NA, times = category_combinations_n))
+  # keep an index
+  i_new <- 1
+  # check each row
+  for (i_row in 1:nrow(wide_table)) {
+    # check each column
+    for (i_column in 1:ncol(wide_table)) {
+      # get the x, the row
+      x <- rownames(wide_table)[i_row]
+      # get the y, the column
+      y <- colnames(wide_table)[i_column]
+      # get the value
+      number <- wide_table[i_row, i_column]
+      # add in the new table
+      long_table[i_new, 'x'] <- x
+      long_table[i_new, 'y'] <- y
+      long_table[i_new, 'number'] <- number
+      # update new index
+      i_new <- i_new + 1
     }
-    de_per_ct[[cell_type]] <- de_per_condition
   }
-  return(de_per_ct)
+  return(long_table)
 }
+
+# get_de_genes <- function(mast_output_loc, pval_column='metap_bonferroni', sig_pval=0.05, max=NULL, max_by_pval=T, only_positive=F, only_negative=F, lfc_column='metafc', to_ens=F, symbols.to.ensg.mapping='genes.tsv', cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), stims=c('UT', 'Baseline', 't24h', 't8w')){
+#   # set up per cell type
+#   de_per_ct <- list()
+#   # check each cell type
+#   for(cell_type in cell_types){
+#     # set up per stim combination
+#     de_per_condition <- list()
+#     # check each stim
+#     for(stim in stims){
+#       for(stim2 in stims){
+#         try({
+#           if(stim != stim2){
+#             print(paste(cell_type, stim, stim2, sep = ' '))
+#             # paste the filepath together
+#             filepath <- paste(mast_output_loc, cell_type, stim,stim2, '.tsv', sep = '')
+#             # read the file
+#             # read the mast output
+#             mast <- read.table(filepath, header=T)
+#             # filter to only include the significant results
+#             mast <- mast[mast[[pval_column]] <= 0.05, ]
+#             # filter for only the positive lfc if required
+#             if(only_positive){
+#               mast <- mast[mast[[lfc_column]] < 0, ]
+#             }
+#             # filter for only the positive lfc if required
+#             if(only_negative){
+#               mast <- mast[mast[[lfc_column]] > 0, ]
+#             }
+#             # confine in some way if reporting a max number of genes
+#             if(!is.null(max)){
+#               # by p if required
+#               if(max_by_pval){
+#                 mast <- mast[order(mast[[p_val_column]]), ]
+#               }
+#               # by lfc otherwise
+#               else{
+#                 mast <- mast[order(mast[[lfc_column]], decreasing = T), ]
+#               }
+#               # subset to the number we requested if max was set
+#               mast <- mast[1:max,]
+#             }
+#             # grab the genes from the column names
+#             genes <- rownames(mast)
+#             # convert the symbols to ensemble IDs
+#             if (to_ens) {
+#               mapping <- read.table(symbols.to.ensg.mapping, header = F, stringsAsFactors = F)
+#               mapping$V2 <- gsub("_", "-", make.unique(mapping$V2))
+#               genes <- mapping[match(genes, mapping$V2),"V1"]
+#             }
+#             # otherwise change the Seurat replacement back
+#             else{
+#               #genes <- gsub("-", "_", genes)
+#             }
+#             de_per_condition[[paste(stim, stim2, sep = '')]] <- genes
+#           }
+#         })
+#       }
+#     }
+#     de_per_ct[[cell_type]] <- de_per_condition
+#   }
+#   return(de_per_ct)
+# }
 
 
 get_unique_de_genes_per_ct <- function(mast_output_loc, pval_column='metap_bonferroni', sig_pval=0.05, max=NULL, max_by_pval=T, only_positive=F, only_negative=F, lfc_column='metafc', to_ens=F, symbols.to.ensg.mapping='genes.tsv', cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), stims=c('UT', 'Baseline', 't24h', 't8w')){
@@ -754,6 +809,91 @@ plot_loose_overlap_cell_types <- function(mast_output_loc, cell_types=c('B', 'CD
   return(p)
 }
 
+
+plot_de_number_bars <- function(numbers_table, cell_type_column='cell_type', combination_column='combination', number_column='number', direction_column='direction', cell_types_include=NULL, combinations_include=NULL, grid_single=T, use_label_dict=T, pointless=F, legendless=F, paper_style=T, angle_x_labels=F, colour_top_label=T, use_colour_coding_dict=T){
+  numbers_table_to_do <- numbers_table
+  # filter if requested
+  if(!is.null(cell_types_include)){
+    numbers_table_to_do <- numbers_table_to_do[numbers_table_to_do[[cell_type_column]] %in% cell_types_include, ]
+  }
+  if (!is.null(combinations_include)) {
+    numbers_table_to_do <- numbers_table_to_do[numbers_table_to_do[[combination_column]] %in% combinations_include, ]
+  }
+  # use some better labels if requested
+  if (use_label_dict) {
+    numbers_table_to_do[[combination_column]] <- as.vector(unlist(label_dict()[as.character(numbers_table_to_do[[combination_column]])]))
+    numbers_table_to_do[[cell_type_column]] <- as.vector(unlist(label_dict()[as.character(numbers_table_to_do[[cell_type_column]])]))
+  }
+  # standardize some columns
+  numbers_table_to_do[['combination']] <- numbers_table_to_do[[combination_column]]
+  numbers_table_to_do[['cell_type']] <- numbers_table_to_do[[cell_type_column]]
+  numbers_table_to_do[['number']] <- numbers_table_to_do[[number_column]]
+  numbers_table_to_do[['cell_type_direction']] <- paste(numbers_table_to_do[['cell_type']], numbers_table_to_do[[direction_column]])
+  # make sure that up is always before down
+  ct_direction_unique <- unique(numbers_table_to_do[, c('cell_type', direction_column, 'cell_type_direction')])
+  ct_direction_unique[['direction_numeric']] <- as.numeric(as.factor(ct_direction_unique[[direction_column]]))
+  numbers_table_to_do[['cell_type_direction']] <- factor(numbers_table_to_do[['cell_type_direction']], levels = ct_direction_unique[order(ct_direction_unique[['cell_type']], ct_direction_unique[['direction_numeric']]), 'cell_type_direction'])
+  
+  # get the y limits
+  ct_condition <- unique(numbers_table_to_do[, c('cell_type', 'combination')])
+  ct_condition[['total']] <- apply(ct_condition, 1, function(x) {
+    return(sum(numbers_table_to_do[numbers_table_to_do[['cell_type']] == x['cell_type'] & numbers_table_to_do[['combination']] == x['combination'], 'number']))
+  })
+  
+  max_per_ct <- data.frame(cell_type = unique(numbers_table_to_do[['cell_type']]))
+  ylims <- c(0, (max(ct_condition[['total']])*1.1))
+
+  # initalize
+  p <- NULL
+  
+  # split if requested
+  if (!grid_single) {
+    p <- ggplot(data = numbers_table_to_do, mapping = aes(x = combination, y = number, fill = cell_type_direction)) + facet_grid(. ~ cell_type)
+  }
+  else {
+    p <- ggplot(data = numbers_table_to_do, mapping = aes(x = cell_type, y = number, fill = cell_type_direction))
+  }
+  # add to the plot
+  p <- p + 
+    geom_bar(stat = 'identity', position = 'stack') + 
+    ylim(ylims)
+  # add colours if requested
+  if (use_colour_coding_dict) {
+    p <- p + scale_fill_manual(name = paste(cell_type_column, 'direction'), values = get_color_coding_dict())
+  }
+  else {
+   # p <- p + scale_fill_manual(name = paste(cell_type_column, 'direction'))
+  }
+
+  # all our options
+  if(pointless){
+    p <- p + theme(axis.text.x=element_blank(), 
+                   axis.ticks = element_blank(),
+                   axis.title.x = element_blank())
+  }
+  if(legendless){
+    p <- p + theme(legend.position = 'none')
+  }
+  if(paper_style){
+    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  if(angle_x_labels){
+    p <- p + theme(axis.text.x = element_text(angle = 90))
+  }
+  if(colour_top_label){
+    striprt <- which( grepl('strip-r', p$layout$name) | grepl('strip-t', p$layout$name) )
+    fills <- unlist(get_color_coding_dict()[unique(numbers_table_to_do$cell_type)])
+    k <- 1
+    for (i in striprt) {
+      j <- which(grepl('rect', p$grobs[[i]]$grobs[[1]]$childrenOrder))
+      p$grobs[[i]]$grobs[[1]]$children[[j]]$gp$fill <- fills[k]
+      k <- k+1
+    }
+  }
+  return(p)
+  
+}
+
 ```
 
 ```{r setup, include=FALSE}
@@ -864,7 +1004,7 @@ knitr::opts_chunk$set(echo = FALSE)
 limma_output_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
 
 # get a table of the number of DE genes
-de_numbers_table_limma <- de_genes_number_to_table(limma_output_loc, de_method = 'limma', pval_column = 'p.bonferroni', lfc_column = 'logFC', lfc_cutoff = 1)
+de_numbers_table_limma <- de_genes_number_to_table(limma_output_loc, de_method = 'limma', pval_column = 'p.bonferroni', lfc_column = 'logFC', lfc_cutoff = 0.1)
 de_numbers_table_limma[is.na(de_numbers_table_limma)] <- 0
 
 ```
@@ -953,5 +1093,120 @@ plot_grid(
   ncol = 2
   #labels = c('a', 'b', 'c', 'd')
 )
+
+```
+
+```{r mast_lfc01_de_numbers, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get a table of the number of DE genes
+de_numbers_table_lfc01 <- de_genes_number_to_table(mast_meta_output_loc_lfc01, lfc_cutoff = 0.1)
+
+# modify so that the column names are a bit different against Baseline/t0
+de_numbers_table_vs_t0_lfc01 <- data.frame(t24h = de_numbers_table_lfc01[['Baselinet24h']], t8w = de_numbers_table_lfc01[['Baselinet8w']], UT = de_numbers_table_lfc01[['UTBaseline']])
+rownames(de_numbers_table_vs_t0_lfc01) <- rownames(de_numbers_table_lfc01)
+# plot the number of DE genes
+p_de_nrs_stemi_lfc01 <- numbers_table_to_plot(de_numbers_table_vs_t0_lfc01, use_groups_dict = F, cols_include = c('t24h', 't8w'), pointless = F, paper_style = T, title = 'Number of DE genes per cell type in STEMI over time', legendless = T, angle_x_labels = T) + xlab('timepoint versus STEMI t0')
+# only HC vs t0
+p_de_nrs_controls_lfc01 <- numbers_table_to_plot(de_numbers_table_vs_t0_lfc01, use_groups_dict = F, cols_include = c('UT'), pointless = F, title = 'Number of DE genes per cell type in Controls vs STEMI t0', legendless = T, paper_style = T) + xlab('timepoint versus STEMI t0')
+
+# show overlap of controls
+p_de_overlap_controls_lfc01 <- plot_loose_overlap_cell_types(mast_meta_output_loc_lfc01, condition_combinations = c('UTBaseline'), lfc_cutoff = 0.1)
+# show overlap of STEMI timepoints
+p_de_overlap_stemi_lfc01 <- plot_loose_overlap_cell_types(mast_meta_output_loc_lfc01, condition_combinations = c('Baselinet24h', 'Baselinet8w'), lfc_cutoff = 0.1)
+
+# plot as a panel
+plot_grid(
+  plot_grid(
+    plot_grid(
+      ggdraw() + draw_label('a', fontface = 'bold', x = 0, hjust = 0, size = 20),
+      ggdraw() + draw_label('number of DE genes per cell type in STEMI vs controls', fontface = 'bold', x = 0, hjust = 0),
+      nrow = 1,
+      rel_widths = c(0.1, 1)
+    ),
+    p_de_nrs_controls_lfc01 + ggtitle('') + xlab('versus STEMI t0'),
+    rel_heights = c(0.1, 1),
+    nrow = 2
+  ),
+  plot_grid(
+    plot_grid(
+      ggdraw() + draw_label('b', fontface = 'bold', x = 0, hjust = 0, size = 20),
+      ggdraw() + draw_label('overlap of DE genes per cell type in STEMI vs controls', fontface = 'bold', x = 0, hjust = 0),
+      nrow = 1,
+      rel_widths = c(0.1, 1)
+    ),
+    p_de_overlap_controls_lfc01 + ggtitle(''),
+    rel_heights = c(0.1, 1),
+    nrow = 2
+  ),
+  plot_grid(
+    plot_grid(
+      ggdraw() + draw_label('c', fontface = 'bold', x = 0, hjust = 0, size = 20),
+      ggdraw() + draw_label('number of DE genes per cell type in STEMI over time', fontface = 'bold', x = 0, hjust = 0),
+      nrow = 1,
+      rel_widths = c(0.1, 1)
+    ),
+    p_de_nrs_stemi_lfc01 + ggtitle(''),
+    rel_heights = c(0.1, 1),
+    nrow = 2
+  ),
+  plot_grid(
+    plot_grid(
+      ggdraw() + draw_label('d', fontface = 'bold', x = 0, hjust = 0, size = 20),
+      ggdraw() + draw_label('overlap of DE genes per cell type in STEMI over time', fontface = 'bold', x = 0, hjust = 0),
+      nrow = 1,
+      rel_widths = c(0.1, 1)
+    ),
+    p_de_overlap_stemi_lfc01 + ggtitle(''),
+    rel_heights = c(0.1, 1),
+    nrow = 2
+  ),
+  nrow = 2,
+  ncol = 2
+  #labels = c('a', 'b', 'c', 'd')
+)
+
+
+```
+
+```{r de_limma, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get the locations of the DE output
+limma_output_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+
+# get a table of the number of DE genes
+de_numbers_table_limma_up <- de_genes_number_to_table(limma_output_loc, de_method = 'limma', pval_column = 'p.bonferroni', lfc_column = 'logFC', lfc_cutoff = 0.1, only_positive = T)
+de_numbers_table_limma_up[is.na(de_numbers_table_limma_up)] <- 0
+de_numbers_table_limma_down <- de_genes_number_to_table(limma_output_loc, de_method = 'limma', pval_column = 'p.bonferroni', lfc_column = 'logFC', lfc_cutoff = 0.1, only_negative = T)
+de_numbers_table_limma_down[is.na(de_numbers_table_limma_down)] <- 0
+
+# turn into long tables
+de_numbers_table_limma_up_wide <- wide_to_long_table(de_numbers_table_limma_up)
+de_numbers_table_limma_down_wide <- wide_to_long_table(de_numbers_table_limma_down)
+
+# set column names
+colnames(de_numbers_table_limma_up_wide) <- c('cell_type', 'combination', 'number')
+colnames(de_numbers_table_limma_down_wide) <- c('cell_type', 'combination', 'number')
+
+
+# add new column
+de_numbers_table_limma_up_wide[['direction']] <- 'up'
+de_numbers_table_limma_down_wide[['direction']] <- 'down'
+
+# merge
+de_numbers_table_limma_wide <- rbind(de_numbers_table_limma_down_wide, de_numbers_table_limma_up_wide)
+# make the one against controls
+de_numbers_table_limma_wide_controls <- data.frame(cell_type = de_numbers_table_limma_wide[de_numbers_table_limma_wide$combination == 'UTBaseline', 'cell_type'],
+                                                   combination = rep('C', times = nrow(de_numbers_table_limma_wide[de_numbers_table_limma_wide$combination == 'UTBaseline', ])),
+                                                   number = de_numbers_table_limma_wide[de_numbers_table_limma_wide$combination == 'UTBaseline', 'number'],
+                                                   direction = de_numbers_table_limma_wide[de_numbers_table_limma_wide$combination == 'UTBaseline', 'direction'])
+plot_de_number_bars(de_numbers_table_limma_wide_controls, grid_single = F, use_label_dict = T, use_colour_coding_dict = T, angle_x_labels = T) + ylab('Number of DE genes') + xlab('Timepoint vs STEMI t0') + guides(fill = guide_legend(title = 'cell type direction'))
+# and the one against the others
+de_numbers_table_limma_wide_stemi <- de_numbers_table_limma_wide[de_numbers_table_limma_wide$combination %in% c('t24hBaseline', 't8wBaseline'), ]
+de_numbers_table_limma_wide_stemi[['against']] <- NA
+de_numbers_table_limma_wide_stemi[de_numbers_table_limma_wide_stemi$combination == 't24hBaseline', 'against'] <- 't24h'
+de_numbers_table_limma_wide_stemi[de_numbers_table_limma_wide_stemi$combination == 't8wBaseline', 'against'] <- 't8w'
+plot_de_number_bars(de_numbers_table_limma_wide_stemi, combination_column = 'against', grid_single = F, use_label_dict = T, use_colour_coding_dict = T, angle_x_labels = T) + ylab('Number of DE genes') + xlab('Timepoint vs STEMI t0') + guides(fill = guide_legend(title = 'cell type direction'))
 
 ```
