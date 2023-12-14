@@ -510,6 +510,10 @@ limma_full_niches_to_niche_output <- function(limma_output_loc, cell_types = c('
 nichenet_database_locs_base <- '/groups/umcg-franke-scrna/tmp01/external_datasets/nichenet/'
 ligand_target_matrix_loc <- paste(nichenet_database_locs_base, 'ligand_target_matrix_nsga2r_final.rds', sep = '')
 lr_network_loc <- paste(nichenet_database_locs_base, 'lr_network_human_21122021.rds', sep = '')
+ligand_target_matrix = readRDS(url("https://zenodo.org/record/7074291/files/ligand_target_matrix_nsga2r_final.rds"))
+lr_network = readRDS(url("https://zenodo.org/record/7074291/files/lr_network_human_21122021.rds"))
+lr_network = lr_network %>% dplyr::rename(ligand = from, receptor = to) %>% distinct(ligand, receptor)
+
 
 # location of the object
 objects_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/seurat/'
@@ -628,11 +632,11 @@ if (is.null(cell_types_of_interest)) {
 niches <- list()
 niches[[condition_1]] <- list(
   'sender' = paste(cell_types_of_interest, condition_1, sep = '_'),
-  'receiver' = paste(cell_types_of_interest, condition_1, sep = '_')
+  'receiver' = paste('monocyte', condition_1, sep = '_')
 )
 niches[[condition_2]] <- list(
   'sender' = paste(cell_types_of_interest, condition_2, sep = '_'),
-  'receiver' = paste(cell_types_of_interest, condition_2, sep = '_')
+  'receiver' = paste('monocyte', condition_2, sep = '_')
 )
 # convert symbols
 seurat_obj = alias_to_symbol_seurat(seurat_obj, organism = "human")
@@ -640,12 +644,14 @@ seurat_obj = alias_to_symbol_seurat(seurat_obj, organism = "human")
 DE_sender = calculate_niche_de(seurat_obj = seurat_obj %>% subset(features = lr_network$ligand %>% unique()), niches = niches, type = "sender", assay_oi = assay_oi, expression_pct=expression_pct, logfc_threshold=lfc_cutoff, test_use=test_use, latent_vars = latent_vars)
 DE_sender_ref <- DE_sender
 limma_full_notibble <- data.frame(limma_full_tibble)
-DE_sender = as_tibble(limma_full_tibble[limma_full_notibble[['sender']] %in% DE_sender_ref[['sender']] & limma_full_notibble[['sender_other_niche']] %in% DE_sender_ref[['sender_other_niche']], ])
+#DE_sender = as_tibble(limma_full_tibble[limma_full_notibble[['sender']] %in% DE_sender_ref[['sender']] & limma_full_notibble[['sender_other_niche']] %in% DE_sender_ref[['sender_other_niche']], ])
+DE_sender = as_tibble(limma_full_tibble[paste(limma_full_notibble[['sender']], limma_full_notibble[['sender_other_niche']]) %in% paste(DE_sender_ref[['sender']], DE_sender_ref[['sender_other_niche']]), ])
 # get the receiving niches
 DE_receiver = calculate_niche_de(seurat_obj = seurat_obj %>% subset(features = lr_network$receptor %>% unique()), niches = niches, type = "receiver", assay_oi = assay_oi, expression_pct=expression_pct, logfc_threshold=lfc_cutoff, test_use=test_use, latent_vars = latent_vars)
 DE_receiver_ref <- DE_receiver
 limma_full_as_receiver_notibble <- data.frame(limma_full_as_receiver)
-DE_receiver = as_tibble(limma_full_as_receiver_notibble[limma_full_as_receiver_notibble[['receiver']] %in% DE_receiver_ref[['receiver']] & limma_full_as_receiver_notibble[['receiver_other_niche']] %in% DE_receiver_ref[['receiver_other_niche']], ])
+#DE_receiver = as_tibble(limma_full_as_receiver_notibble[limma_full_as_receiver_notibble[['receiver']] %in% DE_receiver_ref[['receiver']] & limma_full_as_receiver_notibble[['receiver_other_niche']] %in% DE_receiver_ref[['receiver_other_niche']], ])
+DE_receiver = as_tibble(limma_full_as_receiver_notibble[paste(limma_full_as_receiver_notibble[['receiver']], limma_full_as_receiver_notibble[['receiver_other_niche']]) %in% paste(DE_receiver_ref[['receiver']], DE_receiver_ref[['receiver_other_niche']]), ])
 # remove infinite LFC, where the expression was zero in either conditions (relevant but computationally difficult to work with)
 DE_sender = DE_sender %>% mutate(avg_log2FC = ifelse(avg_log2FC == Inf, max(avg_log2FC[is.finite(avg_log2FC)]), ifelse(avg_log2FC == -Inf, min(avg_log2FC[is.finite(avg_log2FC)]), avg_log2FC)))
 DE_receiver = DE_receiver %>% mutate(avg_log2FC = ifelse(avg_log2FC == Inf, max(avg_log2FC[is.finite(avg_log2FC)]), ifelse(avg_log2FC == -Inf, min(avg_log2FC[is.finite(avg_log2FC)]), avg_log2FC)))
@@ -664,7 +670,8 @@ receiver_spatial_DE_processed = receiver_spatial_DE_processed %>% mutate(scaled_
 # calculate  niches
 DE_receiver_targets = calculate_niche_de_targets(seurat_obj = seurat_obj, niches = niches, lfc_cutoff = lfc_cutoff, expression_pct = expression_pct, assay_oi = assay_oi, test_use=test_use, latent_vars = latent_vars) 
 DE_receiver_targets_ref <- DE_receiver_targets
-DE_receiver = as_tibble(limma_full_as_receiver_notibble[limma_full_as_receiver_notibble[['receiver']] %in% DE_receiver_targets[['receiver']] & limma_full_as_receiver_notibble[['receiver_other_niche']] %in% DE_receiver_targets[['receiver_other_niche']], ])
+#DE_receiver = as_tibble(limma_full_as_receiver_notibble[limma_full_as_receiver_notibble[['receiver']] %in% DE_receiver_targets[['receiver']] & limma_full_as_receiver_notibble[['receiver_other_niche']] %in% DE_receiver_targets[['receiver_other_niche']], ])
+DE_receiver = as_tibble(limma_full_as_receiver_notibble[paste(limma_full_as_receiver_notibble[['receiver']], limma_full_as_receiver_notibble[['receiver_other_niche']]) %in% paste(DE_receiver_targets[['receiver']], DE_receiver_targets[['receiver_other_niche']]), ])
 
 DE_receiver_processed_targets = process_receiver_target_de(DE_receiver_targets = DE_receiver_targets, niches = niches, expression_pct = expression_pct, specificity_score = 'min_lfc')
 
