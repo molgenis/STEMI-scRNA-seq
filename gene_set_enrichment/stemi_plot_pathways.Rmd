@@ -745,19 +745,21 @@ plot_pathway_categories_celltype <- function(pathway_table, category_mapping, si
 }
 
 
-plot_pathways_celltype_dots <- function(plot_frame, condition_column='condition', term_column='Term', significance_column='significance', set_size_column='Overlap', direction_column=NULL, set_size_limits=NULL, use_label_dict=T, pointless=F, legendless=F, paper_style=T, term_text_remove=' R-HSA-\\d+', convert_set_size=T) {
+plot_pathways_celltype_dots <- function(plot_frame, condition_column='condition', term_column='Term', significance_column='significance', set_size_column='Overlap', direction_column=NULL, set_size_limits=NULL, use_label_dict=T, pointless=F, legendless=F, paper_style=T, term_text_remove=' R-HSA-\\d+', convert_set_size=T, condition_order=NULL, low_color='darkblue', mid_color='white', high_color='darkred', split_up_down=F) {
   # use prettier labels if requested
   if(use_label_dict){
     plot_frame[[condition_column]] <- as.vector(unlist(label_dict()[plot_frame[[condition_column]]]))
+  }
+  # order by condition column
+  if (!is.null(condition_order)) {
+    plot_frame[[condition_column]] <- factor(plot_frame[[condition_column]], levels = condition_order)
   }
   # clean terms
   if (!is.null(term_text_remove)) {
     # remove some text
     plot_frame[[term_column]] <- gsub(term_text_remove, '', as.character(plot_frame[[term_column]]))
   }
-  # order by the significance
-  plot_frame[[term_column]] <- factor(plot_frame[[term_column]], levels = unique(plot_frame[order(plot_frame[[significance_column]]), term_column]))
-  
+  # make the set size numeric from the characters, if they are not already
   if (convert_set_size) {
     # convert the set size
     plot_frame[[set_size_column]] <- apply(plot_frame, 1, function(x){
@@ -773,6 +775,30 @@ plot_pathways_celltype_dots <- function(plot_frame, condition_column='condition'
   # make up and down in different directions
   if (!is.null(direction_column)) {
     plot_frame[plot_frame[[direction_column]] == 'down', set_size_column] <- -1 * plot_frame[plot_frame[[direction_column]] == 'down', set_size_column]
+  }
+  # order by the significance
+  plot_frame[[term_column]] <- factor(plot_frame[[term_column]], levels = rev(unique(plot_frame[order(plot_frame[[condition_column]], plot_frame[[set_size_column]]), term_column])))
+  # split up and down first
+  if (split_up_down) {
+    # we'll save the terms
+    terms_present_up <- c()
+    terms_present_down <- c()
+    # get per condition
+    for (condition in plot_frame[[condition_column]]) {
+      terms_up <- as.character(plot_frame[plot_frame[[condition_column]] == condition & plot_frame[[direction_column]] == 'up', term_column])
+      terms_down <- as.character(plot_frame[plot_frame[[condition_column]] == condition & plot_frame[[direction_column]] == 'down', term_column])
+      terms_present_up <- c(terms_present_up, terms_up)
+      terms_present_down <- c(terms_present_down, terms_down)
+    }
+    # now deduplicate them
+    terms_present_up <- terms_present_up[!duplicated(terms_present_up)]
+    terms_present_down <- terms_present_down[!duplicated(terms_present_down)]
+    # merge them
+    terms_all <- c(terms_present_up, terms_present_down)
+    # and remove duplicates again
+    terms_all <- terms_all[!duplicated(terms_all)]
+    # set the levels now
+    plot_frame[[term_column]] <- factor(plot_frame[[term_column]], levels = rev(terms_all))
   }
   # make plot
   p <- ggplot(data = NULL, mapping = aes(x = plot_frame[[condition_column]], y = plot_frame[[term_column]], color = plot_frame[[set_size_column]], size = plot_frame[[significance_column]])) +
@@ -791,9 +817,9 @@ plot_pathways_celltype_dots <- function(plot_frame, condition_column='condition'
   
   # add colour
   p  <- p + scale_colour_gradient2(
-    low = 'darkblue',
-    mid = 'white',
-    high = 'darkred',
+    low = low_color,
+    mid = mid_color,
+    high = high_color,
     midpoint = 0,
     space = "Lab",
     na.value = "grey50",
@@ -1159,7 +1185,7 @@ mast_both_enrichr_positive_mono_filtered <- mast_both_enrichr_positive_filtered[
 # add log transformed p values
 mast_both_enrichr_positive_mono_filtered[['significance']] <- mast_both_enrichr_positive_mono_filtered[['Adjusted.P.value']]
 # make it so that the zero ones are the minimal possible value
-mast_both_enrichr_positive_mono_filtered[mast_both_enrichr_mono_filtered[['significance']] == 0, 'significance'] <- .Machine$double.xmin
+mast_both_enrichr_positive_mono_filtered[mast_both_enrichr_positive_mono_filtered[['significance']] == 0, 'significance'] <- .Machine$double.xmin
 # and log transform
 mast_both_enrichr_positive_mono_filtered[['significance']] <- -log10(mast_both_enrichr_positive_mono_filtered[['significance']])
 # add comparison
@@ -1168,7 +1194,7 @@ mast_both_enrichr_positive_mono_filtered[['comparison']] <- paste(mast_both_enri
 # negative as well
 mast_both_enrichr_negative_mono_filtered <- mast_both_enrichr_negative_filtered[mast_both_enrichr_negative_filtered[['cell_type']] == 'monocyte' & mast_both_enrichr_negative_filtered[['id']] %in% ids_all_comparisons, ]
 mast_both_enrichr_negative_mono_filtered[['significance']] <- mast_both_enrichr_negative_mono_filtered[['Adjusted.P.value']]
-mast_both_enrichr_negative_mono_filtered[mast_both_enrichr_mono_filtered[['significance']] == 0, 'significance'] <- .Machine$double.xmin
+mast_both_enrichr_negative_mono_filtered[mast_both_enrichr_negative_mono_filtered[['significance']] == 0, 'significance'] <- .Machine$double.xmin
 mast_both_enrichr_negative_mono_filtered[['significance']] <- -log10(mast_both_enrichr_negative_mono_filtered[['significance']])
 mast_both_enrichr_negative_mono_filtered[['comparison']] <- paste(mast_both_enrichr_negative_mono_filtered[['condition1']], mast_both_enrichr_negative_mono_filtered[['condition2']], sep = '')
 
@@ -1180,7 +1206,7 @@ mast_both_enrichr_positive_mono_filtered[mast_both_enrichr_positive_mono_filtere
 mast_both_enrichr_mono_filtered <- rbind(mast_both_enrichr_negative_mono_filtered, mast_both_enrichr_positive_mono_filtered)
 
 # make plot
-plot_pathways_celltype_dots(mast_both_enrichr_mono_filtered[mast_both_enrichr_mono_filtered$Adjusted.P.value < 0.05 & mast_both_enrichr_mono_filtered$comparison %in% c('UTBaseline', 'Baselinet24h', 'Baselinet8w', 't24ht8w'), ], condition_column = 'comparison', use_label_dict = T, direction_column = 'direction') + ggtitle('top enriched pathways monocytes')
+plot_pathways_celltype_dots(mast_both_enrichr_mono_filtered[mast_both_enrichr_mono_filtered$Adjusted.P.value < 0.05 & mast_both_enrichr_mono_filtered$comparison %in% c('UTBaseline', 'Baselinet24h', 'Baselinet8w', 't24ht8w'), ], condition_column = 'comparison', use_label_dict = T, direction_column = 'direction', condition_order = c('C-t0', 't0-t24h', 't0-t8w', 't24h-t8w'), split_up_down = T, low_color='darkgreen', mid_color='yellow', high_color='darkorange') + ggtitle('top enriched pathways monocytes')
 
 ```
 

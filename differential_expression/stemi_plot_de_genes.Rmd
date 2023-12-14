@@ -25,7 +25,7 @@ library(ggplot2)
 library(cowplot)
 library(treemapify)
 library(RColorBrewer)
-
+library(ggdendro)
 
 
 ```
@@ -803,7 +803,7 @@ lfc_table_to_tile <- function(lfc_table, gene_column='gene', comparison_column='
   # make the plot
   p <- ggplot(data = NULL, aes(x = lfc_table[[comparison_column]], y = lfc_table[[gene_column]], fill = lfc_table[[value_column]])) + geom_tile() + coord_equal()
   # set the gradient equally from zero in both directions
-  p <- p + scale_fill_gradientn(colours = c('blue', 'white', 'red'),  limits = (c(-1 * max_abs_lfc, max_abs_lfc)), name = 'average\nLFC')
+  p <- p + scale_fill_gradientn(colours = c('darkblue', 'white', 'darkred'),  limits = (c(-1 * max_abs_lfc, max_abs_lfc)), name = 'average\nLFC')
   # add the values of the LFC if requested
   if (print_lfc_value) {
     if (is.null(value_print_column)) {
@@ -1064,6 +1064,45 @@ mono_table[mono_table[['adj.P.Val']] < 0.05, 'plot_number_lfc'] <- as.character(
 lfc_table_to_tile(mono_table, print_lfc_value = T, colour_ticks = T, comparison_column = 'comparison', value_column = 'logFC', value_print_column = 'plot_number_lfc') + ggtitle('top DE genes versus t0 in monocytes') + ylab('gene symbol') + xlab('timepoint compared') + coord_flip()
 
 
+```
+
+```{r limma_dendro, include=TRUE, fig.width=7, fig.height=7}
+knitr::opts_chunk$set(echo = FALSE)
+
+# take the genes in the data
+genes_mono <- unique(mono_table[['gene']])
+# create table
+mono_wide <- data.frame(UT_Baseline = mono_table[mono_table[['comparison']] == 'UT_Baseline', ][match(genes_mono, mono_table[mono_table[['comparison']] == 'UT_Baseline', 'gene']), 'logFC'],
+                        t24h_Baseline = mono_table[mono_table[['comparison']] == 't24h_Baseline', ][match(genes_mono, mono_table[mono_table[['comparison']] == 't24h_Baseline', 'gene']), 'logFC'],
+                        t8w_t24h = mono_table[mono_table[['comparison']] == 't8w_t24h', ][match(genes_mono, mono_table[mono_table[['comparison']] == 't8w_t24h', 'gene']), 'logFC'])
+rownames(mono_wide) <- genes_mono
+# do ggdendro hierarchial clustering and create the dendogram
+mono_model <- hclust(dist(mono_wide), "ave")
+mono_dhc <- as.dendrogram(mono_model)
+# get the data from the dendogram
+mono_ddata <- dendro_data(mono_dhc, type = "rectangle")
+# plot the dendogram
+mono_dendro_p <- ggplot(segment(mono_ddata)) + 
+  geom_segment(aes(x = x, y = y, xend = xend, yend = yend)) + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white")) + 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
+  
+# extract the gene order
+mono_dendro_gene_order <- mono_ddata$labels$label
+# set ordered genes
+mono_table[['dendro_ordered_genes']] <- factor(mono_table[['gene']], levels = rev(mono_dendro_gene_order))
+
+# create a picture
+plot_grid(
+  mono_dendro_p + ggtitle('top DE genes versus t0 in monocytes'),
+  lfc_table_to_tile(mono_table, gene_column = 'dendro_ordered_genes', print_lfc_value = T, colour_ticks = T, comparison_column = 'comparison', value_column = 'logFC', value_print_column = 'plot_number_lfc', x_order = rev(c('C-t0', 't0-t24h', 't24h-t8w'))) + ylab('gene symbol') + xlab('timepoint compared') + coord_flip(),
+  nrow = 2
+)
 ```
 
 ```{r limma_plot, include=TRUE, fig.width=30, fig.height=20}
