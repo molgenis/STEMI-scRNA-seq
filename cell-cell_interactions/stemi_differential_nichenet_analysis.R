@@ -333,6 +333,7 @@ do_differential_nichenet <- function(seurat_obj, celltype_column, condition_colu
       'sender' = paste(cell_types_of_interest, condition_2, sep = '_'),
       'receiver' = paste(cell_type, condition_2, sep = '_')
     )
+    try({
     # convert symbols
     seurat_obj = alias_to_symbol_seurat(seurat_obj, organism = "human")
     # get the sending niches
@@ -419,7 +420,7 @@ do_differential_nichenet <- function(seurat_obj, celltype_column, condition_colu
     # get output and priorization
     output = list(DE_sender_receiver = DE_sender_receiver, ligand_scaled_receptor_expression_fraction_df = ligand_scaled_receptor_expression_fraction_df, sender_spatial_DE_processed = sender_spatial_DE_processed, receiver_spatial_DE_processed = receiver_spatial_DE_processed,
                   ligand_activities_targets = ligand_activities_targets, DE_receiver_processed_targets = DE_receiver_processed_targets, exprs_tbl_ligand = exprs_tbl_ligand,  exprs_tbl_receptor = exprs_tbl_receptor, exprs_tbl_target = exprs_tbl_target)
-    try({
+    
       prioritization_tables = get_prioritization_tables(output, prioritizing_weights)
       prioritization_tables_all[[cell_type]] <- prioritization_tables
     })
@@ -624,23 +625,23 @@ colnames(limma_full_as_receiver) <- c('gene', 'p_val', 'avg_log2FC', 'pct.1', 'p
 limma_full_as_receiver_notibble <- data.frame(limma_full_as_receiver)
 
 # do prioritization of t0 vs t8w
-# prio_t0_t8w <- do_differential_nichenet(cardio_integrated, 'cell_type_lowerres', 'timepoint.final', 't8w', 'Baseline', test_use='negbinom', pseudobulk=T, cell_types_of_interest = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), include_chem='chem', donor_latent=T, expression_pct=0, lfc_cutoff=0)
-# prio_t0_t24h <- do_differential_nichenet(cardio_integrated, 'cell_type_lowerres', 'timepoint.final', 't24h', 'Baseline', test_use='negbinom', pseudobulk=T, cell_types_of_interest = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), include_chem='chem', donor_latent=T, expression_pct=0, lfc_cutoff=0)
-# prio_t24h_8w <- do_differential_nichenet(cardio_integrated, 'cell_type_lowerres', 'timepoint.final', 't8w', 't24h', test_use='negbinom', pseudobulk=T, cell_types_of_interest = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), include_chem='chem', donor_latent=T, expression_pct=0, lfc_cutoff=0)
-# prio_c_t0 <- do_differential_nichenet(cardio_integrated, 'cell_type_lowerres', 'timepoint.final', 'Baseline', 'UT', test_use='negbinom', pseudobulk=T, cell_types_of_interest = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), include_chem='chem', donor_latent=T, expression_pct=0, lfc_cutoff=0)
-# saveRDS(prio_t0_t8w, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/stemi_nichenet_de_prio_t0_t8w.rds')
-# saveRDS(prio_t0_t24h, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/stemi_nichenet_de_prio_t0_t24h.rds')
-# saveRDS(prio_t24h_8w, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/stemi_nichenet_de_prio_prio_t24h_8w.rds')
-# saveRDS(prio_c_t0, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/stemi_nichenet_de_prio_c_t0.rds')
+prio_t0_t24h <- do_differential_nichenet(cardio_integrated, 'cell_type_lowerres', 'timepoint.final', 't24h', 'Baseline', test_use='negbinom', pseudobulk=T, cell_types_of_interest = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), include_chem='chem', donor_latent=T, expression_pct=0, lfc_cutoff=0)
+saveRDS(prio_t0_t24h, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/stemi_nichenet_de_prio_t0_t24h.rds')
+prio_t24h_8w <- do_differential_nichenet(cardio_integrated, 'cell_type_lowerres', 'timepoint.final', 't8w', 't24h', test_use='negbinom', pseudobulk=T, cell_types_of_interest = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), include_chem='chem', donor_latent=T, expression_pct=0, lfc_cutoff=0)
+saveRDS(prio_t24h_8w, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/stemi_nichenet_de_prio_prio_t24h_8w.rds')
+dprio_t0_t8w <- do_differential_nichenet(cardio_integrated, 'cell_type_lowerres', 'timepoint.final', 't8w', 'Baseline', test_use='negbinom', pseudobulk=T, cell_types_of_interest = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), include_chem='chem', donor_latent=T, expression_pct=0, lfc_cutoff=0)
+saveRDS(prio_t0_t8w, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/stemi_nichenet_de_prio_t0_t8w.rds')
+prio_c_t0 <- do_differential_nichenet(cardio_integrated, 'cell_type_lowerres', 'timepoint.final', 'Baseline', 'UT', test_use='negbinom', pseudobulk=T, cell_types_of_interest = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), include_chem='chem', donor_latent=T, expression_pct=0, lfc_cutoff=0)
+saveRDS(prio_c_t0, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/stemi_nichenet_de_prio_c_t0.rds')
 # 
-# prio_t0_t24h_v3 <- do_differential_nichenet(cardio_integrated[, cardio_integrated@meta.data[['chem']] == 'V3'], 'cell_type_lowerres', 'timepoint.final', 't24h', 'Baseline', test_use='DESeq2', pseudobulk=T, cell_types_of_interest = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), expression_pct=0, lfc_cutoff=0)
-# saveRDS(prio_t0_t24h_v3, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/stemi_nichenet_de_prio_t0_t24h_v3.rds')
-# prio_t24h_8w_v3 <- do_differential_nichenet(cardio_integrated[, cardio_integrated@meta.data[['chem']] == 'V3'], 'cell_type_lowerres', 'timepoint.final', 't8w', 't24h', test_use='DESeq2', pseudobulk=T, cell_types_of_interest = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), expression_pct=0, lfc_cutoff=0)
-# saveRDS(prio_c_t0_v3, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/stemi_nichenet_de_prio_c_t0_v3.rds')
-# prio_t0_t8w_v3 <- do_differential_nichenet(cardio_integrated[, cardio_integrated@meta.data[['chem']] == 'V3'], 'cell_type_lowerres', 'timepoint.final', 't8w', 'Baseline', test_use='DESeq2', pseudobulk=T, cell_types_of_interest = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), expression_pct=0, lfc_cutoff=0)
-# saveRDS(prio_t0_t8w_v3, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/stemi_nichenet_de_prio_t0_t8w_v3.rds')
-# prio_c_t0_v3 <- do_differential_nichenet(cardio_integrated[, cardio_integrated@meta.data[['chem']] == 'V3'], 'cell_type_lowerres', 'timepoint.final', 'Baseline', 'UT', test_use='DESeq2', pseudobulk=T, cell_types_of_interest = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), expression_pct=0, lfc_cutoff=0)
-# saveRDS(prio_t24h_8w_v3, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/stemi_nichenet_de_prio_prio_t24h_8w_v3.rds')
+prio_t0_t24h_v3 <- do_differential_nichenet(cardio_integrated[, cardio_integrated@meta.data[['chem']] == 'V3'], 'cell_type_lowerres', 'timepoint.final', 't24h', 'Baseline', test_use='DESeq2', pseudobulk=T, cell_types_of_interest = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), expression_pct=0.1, lfc_cutoff=0.1)
+saveRDS(prio_t0_t24h_v3, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/stemi_nichenet_de_prio_t0_t24h_v3.rds')
+prio_t24h_8w_v3 <- do_differential_nichenet(cardio_integrated[, cardio_integrated@meta.data[['chem']] == 'V3'], 'cell_type_lowerres', 'timepoint.final', 't8w', 't24h', test_use='DESeq2', pseudobulk=T, cell_types_of_interest = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), expression_pct=0.1, lfc_cutoff=0.1)
+saveRDS(prio_t24h_8w_v3, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/stemi_nichenet_de_prio_c_t0_v3.rds')
+prio_t0_t8w_v3 <- do_differential_nichenet(cardio_integrated[, cardio_integrated@meta.data[['chem']] == 'V3'], 'cell_type_lowerres', 'timepoint.final', 't8w', 'Baseline', test_use='DESeq2', pseudobulk=T, cell_types_of_interest = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), expression_pct=0.1, lfc_cutoff=0.1)
+saveRDS(prio_t0_t8w_v3, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/stemi_nichenet_de_prio_t0_t8w_v3.rds')
+prio_c_t0_v3 <- do_differential_nichenet(cardio_integrated[, cardio_integrated@meta.data[['chem']] == 'V3'], 'cell_type_lowerres', 'timepoint.final', 'Baseline', 'UT', test_use='DESeq2', pseudobulk=T, cell_types_of_interest = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), expression_pct=0.1, lfc_cutoff=0.1)
+saveRDS(prio_c_t0_v3, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/stemi_nichenet_de_prio_prio_t24h_8w_v3.rds')
 # 
 # prio_t0_t24h_v2 <- do_differential_nichenet(cardio_integrated[, cardio_integrated@meta.data[['chem']] == 'V2'], 'cell_type_lowerres', 'timepoint.final', 't24h', 'Baseline', test_use='DESeq2', pseudobulk=T, cell_types_of_interest = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), expression_pct=0, lfc_cutoff=0)
 # saveRDS(prio_t0_t24h_v2, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/stemi_nichenet_de_prio_t0_t24h_v2.rds')
