@@ -13,6 +13,7 @@
 library(Seurat)
 library(nichenetr)
 library(tidyverse)
+library(r2r)
 
 
 ####################
@@ -318,54 +319,54 @@ do_differential_nichenet <- function(seurat_obj, celltype_column, condition_colu
     # setting to all if not supplied
     cell_types_of_interest <- unique(seurat_obj@meta.data[[celltype_column]])
   }
-  # get the niches list
-  niches <- list()
-  niches[[condition_1]] <- list(
-    'sender' = paste(cell_types_of_interest, condition_1, sep = '_'),
-    'receiver' = paste(cell_types_of_interest, condition_1, sep = '_')
-  )
-  niches[[condition_2]] <- list(
-    'sender' = paste(cell_types_of_interest, condition_2, sep = '_'),
-    'receiver' = paste(cell_types_of_interest, condition_2, sep = '_')
-  )
-  # convert symbols
-  seurat_obj = alias_to_symbol_seurat(seurat_obj, organism = "human")
-  # get the sending niches
-  DE_sender = calculate_niche_de(seurat_obj = seurat_obj %>% subset(features = lr_network$ligand %>% unique()), niches = niches, type = "sender", assay_oi = assay_oi, expression_pct=expression_pct, logfc_threshold=lfc_cutoff, test_use=test_use, latent_vars = latent_vars)
-  # get the receiving niches
-  DE_receiver = calculate_niche_de(seurat_obj = seurat_obj %>% subset(features = lr_network$receptor %>% unique()), niches = niches, type = "receiver", assay_oi = assay_oi, expression_pct=expression_pct, logfc_threshold=lfc_cutoff, test_use=test_use, latent_vars = latent_vars)
-  # remove infinite LFC, where the expression was zero in either conditions (relevant but computationally difficult to work with)
-  DE_sender = DE_sender %>% mutate(avg_log2FC = ifelse(avg_log2FC == Inf, max(avg_log2FC[is.finite(avg_log2FC)]), ifelse(avg_log2FC == -Inf, min(avg_log2FC[is.finite(avg_log2FC)]), avg_log2FC)))
-  DE_receiver = DE_receiver %>% mutate(avg_log2FC = ifelse(avg_log2FC == Inf, max(avg_log2FC[is.finite(avg_log2FC)]), ifelse(avg_log2FC == -Inf, min(avg_log2FC[is.finite(avg_log2FC)]), avg_log2FC)))
-  # process DE output
-  DE_sender_processed = process_niche_de(DE_table = DE_sender, niches = niches, expression_pct = expression_pct, type = "sender")
-  DE_receiver_processed = process_niche_de(DE_table = DE_receiver, niches = niches, expression_pct = expression_pct, type = "receiver")
-  # combine the sender and receiver
-  DE_sender_receiver = combine_sender_receiver_de(DE_sender_processed, DE_receiver_processed, lr_network, specificity_score = specificity_score_LR_pairs)
-  # mock the spatial info, we don't have this, and spatial info doesn't say much in blood
-  spatial_info = tibble(celltype_region_oi = NA, celltype_other_region = NA) %>% mutate(niche =  niches %>% names() %>% head(1), celltype_type = "sender")
-  sender_spatial_DE_processed = get_non_spatial_de(niches = niches, spatial_info = spatial_info, type = "sender", lr_network = lr_network)
-  sender_spatial_DE_processed = sender_spatial_DE_processed %>% mutate(scaled_ligand_score_spatial = scale_quantile_adapted(ligand_score_spatial))
-  receiver_spatial_DE_processed = get_non_spatial_de(niches = niches, spatial_info = spatial_info, type = "receiver", lr_network = lr_network)
-  receiver_spatial_DE_processed = receiver_spatial_DE_processed %>% mutate(scaled_receptor_score_spatial = scale_quantile_adapted(receptor_score_spatial))
-  
-  # calculate  niches
-  DE_receiver_targets = calculate_niche_de_targets(seurat_obj = seurat_obj, niches = niches, lfc_cutoff = lfc_cutoff, expression_pct = expression_pct, assay_oi = assay_oi, test_use=test_use, latent_vars = latent_vars) 
-  DE_receiver_processed_targets = process_receiver_target_de(DE_receiver_targets = DE_receiver_targets, niches = niches, expression_pct = expression_pct, specificity_score = 'min_lfc')
-  
-  print('fetching gene sets')
-  # get background set
-  background = DE_receiver_processed_targets  %>% pull(target) %>% unique()
-  # get the gene sets
-  geneset_niche1 = DE_receiver_processed_targets %>% filter(receiver == niches[[1]]$receiver & target_score >= lfc_cutoff & target_significant == 1 & target_present == 1) %>% pull(target) %>% unique()
-  geneset_niche2 = DE_receiver_processed_targets %>% filter(receiver == niches[[2]]$receiver & target_score >= lfc_cutoff & target_significant == 1 & target_present == 1) %>% pull(target) %>% unique()
-  # filtering for unmappable names
-  geneset_niche1 %>% setdiff(rownames(ligand_target_matrix))
-  geneset_niche2 %>% setdiff(rownames(ligand_target_matrix))
   # save per cell type
   prioritization_tables_all <- list()
   # do each cell type
   for (cell_type in cell_types_of_interest) {
+    # get the niches list
+    niches <- list()
+    niches[[condition_1]] <- list(
+      'sender' = paste(cell_types_of_interest, condition_1, sep = '_'),
+      'receiver' = paste(cell_type, condition_1, sep = '_')
+    )
+    niches[[condition_2]] <- list(
+      'sender' = paste(cell_types_of_interest, condition_2, sep = '_'),
+      'receiver' = paste(cell_type, condition_2, sep = '_')
+    )
+    # convert symbols
+    seurat_obj = alias_to_symbol_seurat(seurat_obj, organism = "human")
+    # get the sending niches
+    DE_sender = calculate_niche_de(seurat_obj = seurat_obj %>% subset(features = lr_network$ligand %>% unique()), niches = niches, type = "sender", assay_oi = assay_oi, expression_pct=expression_pct, logfc_threshold=lfc_cutoff, test_use=test_use, latent_vars = latent_vars)
+    # get the receiving niches
+    DE_receiver = calculate_niche_de(seurat_obj = seurat_obj %>% subset(features = lr_network$receptor %>% unique()), niches = niches, type = "receiver", assay_oi = assay_oi, expression_pct=expression_pct, logfc_threshold=lfc_cutoff, test_use=test_use, latent_vars = latent_vars)
+    # remove infinite LFC, where the expression was zero in either conditions (relevant but computationally difficult to work with)
+    DE_sender = DE_sender %>% mutate(avg_log2FC = ifelse(avg_log2FC == Inf, max(avg_log2FC[is.finite(avg_log2FC)]), ifelse(avg_log2FC == -Inf, min(avg_log2FC[is.finite(avg_log2FC)]), avg_log2FC)))
+    DE_receiver = DE_receiver %>% mutate(avg_log2FC = ifelse(avg_log2FC == Inf, max(avg_log2FC[is.finite(avg_log2FC)]), ifelse(avg_log2FC == -Inf, min(avg_log2FC[is.finite(avg_log2FC)]), avg_log2FC)))
+    # process DE output
+    DE_sender_processed = process_niche_de(DE_table = DE_sender, niches = niches, expression_pct = expression_pct, type = "sender")
+    DE_receiver_processed = process_niche_de(DE_table = DE_receiver, niches = niches, expression_pct = expression_pct, type = "receiver")
+    # combine the sender and receiver
+    DE_sender_receiver = combine_sender_receiver_de(DE_sender_processed, DE_receiver_processed, lr_network, specificity_score = specificity_score_LR_pairs)
+    # mock the spatial info, we don't have this, and spatial info doesn't say much in blood
+    spatial_info = tibble(celltype_region_oi = NA, celltype_other_region = NA) %>% mutate(niche =  niches %>% names() %>% head(1), celltype_type = "sender")
+    sender_spatial_DE_processed = get_non_spatial_de(niches = niches, spatial_info = spatial_info, type = "sender", lr_network = lr_network)
+    sender_spatial_DE_processed = sender_spatial_DE_processed %>% mutate(scaled_ligand_score_spatial = scale_quantile_adapted(ligand_score_spatial))
+    receiver_spatial_DE_processed = get_non_spatial_de(niches = niches, spatial_info = spatial_info, type = "receiver", lr_network = lr_network)
+    receiver_spatial_DE_processed = receiver_spatial_DE_processed %>% mutate(scaled_receptor_score_spatial = scale_quantile_adapted(receptor_score_spatial))
+  
+    # calculate  niches
+    DE_receiver_targets = calculate_niche_de_targets(seurat_obj = seurat_obj, niches = niches, lfc_cutoff = lfc_cutoff, expression_pct = expression_pct, assay_oi = assay_oi, test_use=test_use, latent_vars = latent_vars) 
+    DE_receiver_processed_targets = process_receiver_target_de(DE_receiver_targets = DE_receiver_targets, niches = niches, expression_pct = expression_pct, specificity_score = 'min_lfc')
+  
+    print('fetching gene sets')
+    # get background set
+    background = DE_receiver_processed_targets  %>% pull(target) %>% unique()
+    # get the gene sets
+    geneset_niche1 = DE_receiver_processed_targets %>% filter(receiver == niches[[1]]$receiver & target_score >= lfc_cutoff & target_significant == 1 & target_present == 1) %>% pull(target) %>% unique()
+    geneset_niche2 = DE_receiver_processed_targets %>% filter(receiver == niches[[2]]$receiver & target_score >= lfc_cutoff & target_significant == 1 & target_present == 1) %>% pull(target) %>% unique()
+    # filtering for unmappable names
+    geneset_niche1 %>% setdiff(rownames(ligand_target_matrix))
+    geneset_niche2 %>% setdiff(rownames(ligand_target_matrix))
     # create the geneset lists, 
     niche_geneset_list = list(
       condition_1 = list(
@@ -462,7 +463,7 @@ limma_to_niche_output <- function(limma_output_loc, cell_types = c('B', 'CD4T', 
 }
 
 
-limma_full_niches_to_niche_output <- function(limma_output_loc, cell_types = c('B', 'CD4T', 'CD8T', 'DC', 'NK', 'monocyte'), niches=c('Baseline', 't24h', 't8w'), prepend='celltype_condition.', append='.tsv.gz', pval_column='', pval_cutoff=0.05, logfc_threshold=0.1) {
+limma_full_niches_to_niche_output <- function(limma_output_loc, cell_types = c('B', 'CD4T', 'CD8T', 'DC', 'NK', 'monocyte'), niches=c('Baseline', 't24h', 't8w'), prepend='celltype_condition.', append='.tsv.gz', pval_column='', pval_cutoff=0.05, logfc_threshold=0.1, pct_list=NULL, pct_hashmap=NULL) {
   # we'll save it in a list
   de_per_niche_combo <- list()
   # check each cell type
@@ -485,6 +486,13 @@ limma_full_niches_to_niche_output <- function(limma_output_loc, cell_types = c('
               nn_de_table[nn_de_table[[pval_column]] < pval_cutoff, ]
               # if there is anything left, add to the list
               if (nrow(nn_de_table) > 0) {
+                # add the pct if requested
+                if (!is.null(pct_list)) {
+                  nn_de_table <- add_pct_to_limma_full(nn_de_table, pct_list)
+                }
+                else if(!is.null(pct_hashmap)) {
+                  nn_de_table <- add_pct_to_limma_full(nn_de_table, pct_hashmap)
+                }
                 de_per_niche_combo[[paste(ct1, ct2, niche1, niche2)]] <- nn_de_table
                 # flip the table and do the same
                 nn_de_table_opposite <- data.frame(gene = nn_de_table[['gene']], p_val = nn_de_table[['p_val']], avg_log2FC = (-1 * nn_de_table[['avg_log2FC']]), pct.1 = nn_de_table[['pct.1']], pct.2 = nn_de_table[['pct.2']], p_val_adj = nn_de_table[['p_val_adj']], sender = nn_de_table[['sender_other_niche']], sender_other_niche = nn_de_table[['sender']])
@@ -502,6 +510,68 @@ limma_full_niches_to_niche_output <- function(limma_output_loc, cell_types = c('
   return(as_tibble(de_per_niche_combo_all))
 }
 
+
+add_pct_to_limma_full <- function(limma_full, pct_list) {
+  # check each entry in the table
+  for (i in 1:nrow(limma_full)) {
+    # get the gene
+    gene <- limma_full[i, 'gene']
+    # get the receivers
+    receiver1 <- limma_full[i, 'sender']
+    receiver2 <- limma_full[i, 'sender_other_niche']
+    # get the pcts
+    pct1 <- pct_list[[receiver1]][[gene]] / 100
+    pct2 <- pct_list[[receiver2]][[gene]] / 100
+    # add the pcts
+    limma_full[i, 'pct.1'] <- pct1
+    limma_full[i, 'pct.2'] <- pct2
+  }
+  return(limma_full)
+}
+
+
+pct_table_to_lists <- function(pct_table) {
+  # save per niche
+  pct_per_niche <- list()
+  # check each row
+  for (i in 1 : nrow(pct_table)) {
+    # extract the pct
+    pct <- pct_table[i, 'pct.exp']
+    # extract the gene
+    feature <- as.character(pct_table[i, 'features.plot'])
+    # get the niche
+    niche <- as.character(pct_table[i, 'id'])
+    # check if the niche is there
+    if (!(niche %in% names(pct_per_niche))) {
+      pct_per_niche[[niche]] <- list()
+    }
+    # save per feature
+    pct_per_niche[[niche]][[feature]] <- pct
+  }
+  return(pct_per_niche)
+}
+
+
+pct_table_to_r2r <- function(pct_table) {
+  # create the hashmap
+  m <- hashmap()
+  # check each row
+  for (i in 1 : nrow(pct_table)) {
+    # extract the pct
+    pct <- pct_table[i, 'pct.exp']
+    # extract the gene
+    feature <- as.character(pct_table[i, 'features.plot'])
+    # get the niche
+    niche <- as.character(pct_table[i, 'id'])
+    # add key if doesn't exist
+    if (!(has_key(m, niche))) {
+      m[[niche]] <- hashmap()
+    }
+    m[[niche]][[feature]] <- pct
+  }
+  return(m)
+}
+
 ####################
 # Main Code        #
 ####################
@@ -510,9 +580,11 @@ limma_full_niches_to_niche_output <- function(limma_output_loc, cell_types = c('
 nichenet_database_locs_base <- '/groups/umcg-franke-scrna/tmp01/external_datasets/nichenet/'
 ligand_target_matrix_loc <- paste(nichenet_database_locs_base, 'ligand_target_matrix_nsga2r_final.rds', sep = '')
 lr_network_loc <- paste(nichenet_database_locs_base, 'lr_network_human_21122021.rds', sep = '')
-ligand_target_matrix = readRDS(url("https://zenodo.org/record/7074291/files/ligand_target_matrix_nsga2r_final.rds"))
-lr_network = readRDS(url("https://zenodo.org/record/7074291/files/lr_network_human_21122021.rds"))
-lr_network = lr_network %>% dplyr::rename(ligand = from, receptor = to) %>% distinct(ligand, receptor)
+# ligand_target_matrix = readRDS(url("https://zenodo.org/record/7074291/files/ligand_target_matrix_nsga2r_final.rds"))
+# lr_network = readRDS(url("https://zenodo.org/record/7074291/files/lr_network_human_21122021.rds"))
+# lr_network = lr_network %>% dplyr::rename(ligand = from, receptor = to) %>% distinct(ligand, receptor)
+
+
 
 
 # location of the object
@@ -524,9 +596,19 @@ cardio_integrated <- readRDS(cardio_integrated_loc)
 cardio_integrated <- UpdateSeuratObject(cardio_integrated)
 DefaultAssay(cardio_integrated) <- 'SCT'
 
+# we need to calculate the percentage of expression as well
+cardio_integrated@meta.data[['ct_cond']] <- paste(cardio_integrated@meta.data[['cell_type_lowerres']], cardio_integrated@meta.data[['timepoint.final']], sep = '_')
+# now calculate the pct
+cardio_dummy_dp <- DotPlot(cardio_integrated, group.by = 'ct_cond', features = rownames(cardio_integrated@assays$SCT@counts), assay = 'SCT')
+cardio_pct <- cardio_dummy_dp$data
+#cardio_pct_listed <- pct_table_to_lists(cardio_pct)
+#saveRDS(cardio_pct_listed, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/stemi_pct_reference.rds')
+#cardio_pct_listed <- readRDS('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/stemi_pct_reference.rds')
+cardio_pct_hm <- pct_table_to_r2r(cardio_pct)
+
 # read the databases
 ligand_target_matrix <- readRDS(ligand_target_matrix_loc)
-lr_network_loc <- readRDS(lr_network_loc)
+lr_network <- readRDS(lr_network_loc)
 lr_network = lr_network %>% dplyr::rename(ligand = from, receptor = to) %>% distinct(ligand, receptor)
 
 # limma output
@@ -534,9 +616,12 @@ limma_output_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/d
 limma_full_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/limma_de/'
 # get as tibble
 limma_output_tibble <- limma_to_niche_output(limma_output_loc)
-limma_full_tibble <- limma_full_niches_to_niche_output(limma_full_loc)
+limma_full_tibble <- limma_full_niches_to_niche_output(limma_full_loc, pct_hashmap = cardio_pct_hm)
+limma_full_notibble <- data.frame(limma_full_tibble)
+#limma_full_notibble <- add_pct_to_limma_full(limma_full_notibble, pct_list = cardio_pct_listed)
 limma_full_as_receiver <- limma_full_tibble
 colnames(limma_full_as_receiver) <- c('gene', 'p_val', 'avg_log2FC', 'pct.1', 'pct.2', 'p_val_adj', 'receiver', 'receiver_other_niche')
+limma_full_as_receiver_notibble <- data.frame(limma_full_as_receiver)
 
 # do prioritization of t0 vs t8w
 # prio_t0_t8w <- do_differential_nichenet(cardio_integrated, 'cell_type_lowerres', 'timepoint.final', 't8w', 'Baseline', test_use='negbinom', pseudobulk=T, cell_types_of_interest = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), include_chem='chem', donor_latent=T, expression_pct=0, lfc_cutoff=0)
@@ -628,66 +713,66 @@ if (is.null(cell_types_of_interest)) {
   # setting to all if not supplied
   cell_types_of_interest <- unique(seurat_obj@meta.data[[celltype_column]])
 }
-# get the niches list
-niches <- list()
-niches[[condition_1]] <- list(
-  'sender' = paste(cell_types_of_interest, condition_1, sep = '_'),
-  'receiver' = paste('monocyte', condition_1, sep = '_')
-)
-niches[[condition_2]] <- list(
-  'sender' = paste(cell_types_of_interest, condition_2, sep = '_'),
-  'receiver' = paste('monocyte', condition_2, sep = '_')
-)
-# convert symbols
-seurat_obj = alias_to_symbol_seurat(seurat_obj, organism = "human")
-# get the sending niches
-DE_sender = calculate_niche_de(seurat_obj = seurat_obj %>% subset(features = lr_network$ligand %>% unique()), niches = niches, type = "sender", assay_oi = assay_oi, expression_pct=expression_pct, logfc_threshold=lfc_cutoff, test_use=test_use, latent_vars = latent_vars)
-DE_sender_ref <- DE_sender
-limma_full_notibble <- data.frame(limma_full_tibble)
-#DE_sender = as_tibble(limma_full_tibble[limma_full_notibble[['sender']] %in% DE_sender_ref[['sender']] & limma_full_notibble[['sender_other_niche']] %in% DE_sender_ref[['sender_other_niche']], ])
-DE_sender = as_tibble(limma_full_tibble[paste(limma_full_notibble[['sender']], limma_full_notibble[['sender_other_niche']]) %in% paste(DE_sender_ref[['sender']], DE_sender_ref[['sender_other_niche']]), ])
-# get the receiving niches
-DE_receiver = calculate_niche_de(seurat_obj = seurat_obj %>% subset(features = lr_network$receptor %>% unique()), niches = niches, type = "receiver", assay_oi = assay_oi, expression_pct=expression_pct, logfc_threshold=lfc_cutoff, test_use=test_use, latent_vars = latent_vars)
-DE_receiver_ref <- DE_receiver
-limma_full_as_receiver_notibble <- data.frame(limma_full_as_receiver)
-#DE_receiver = as_tibble(limma_full_as_receiver_notibble[limma_full_as_receiver_notibble[['receiver']] %in% DE_receiver_ref[['receiver']] & limma_full_as_receiver_notibble[['receiver_other_niche']] %in% DE_receiver_ref[['receiver_other_niche']], ])
-DE_receiver = as_tibble(limma_full_as_receiver_notibble[paste(limma_full_as_receiver_notibble[['receiver']], limma_full_as_receiver_notibble[['receiver_other_niche']]) %in% paste(DE_receiver_ref[['receiver']], DE_receiver_ref[['receiver_other_niche']]), ])
-# remove infinite LFC, where the expression was zero in either conditions (relevant but computationally difficult to work with)
-DE_sender = DE_sender %>% mutate(avg_log2FC = ifelse(avg_log2FC == Inf, max(avg_log2FC[is.finite(avg_log2FC)]), ifelse(avg_log2FC == -Inf, min(avg_log2FC[is.finite(avg_log2FC)]), avg_log2FC)))
-DE_receiver = DE_receiver %>% mutate(avg_log2FC = ifelse(avg_log2FC == Inf, max(avg_log2FC[is.finite(avg_log2FC)]), ifelse(avg_log2FC == -Inf, min(avg_log2FC[is.finite(avg_log2FC)]), avg_log2FC)))
-# process DE output
-DE_sender_processed = process_niche_de(DE_table = DE_sender, niches = niches, expression_pct = expression_pct, type = "sender")
-DE_receiver_processed = process_niche_de(DE_table = DE_receiver, niches = niches, expression_pct = expression_pct, type = "receiver")
-# combine the sender and receiver
-DE_sender_receiver = combine_sender_receiver_de(DE_sender_processed, DE_receiver_processed, lr_network, specificity_score = specificity_score_LR_pairs)
-# mock the spatial info, we don't have this, and spatial info doesn't say much in blood
-spatial_info = tibble(celltype_region_oi = NA, celltype_other_region = NA) %>% mutate(niche =  niches %>% names() %>% head(1), celltype_type = "sender")
-sender_spatial_DE_processed = get_non_spatial_de(niches = niches, spatial_info = spatial_info, type = "sender", lr_network = lr_network)
-sender_spatial_DE_processed = sender_spatial_DE_processed %>% mutate(scaled_ligand_score_spatial = scale_quantile_adapted(ligand_score_spatial))
-receiver_spatial_DE_processed = get_non_spatial_de(niches = niches, spatial_info = spatial_info, type = "receiver", lr_network = lr_network)
-receiver_spatial_DE_processed = receiver_spatial_DE_processed %>% mutate(scaled_receptor_score_spatial = scale_quantile_adapted(receptor_score_spatial))
+for (cell_type in cell_types_of_interest) {
+  # save per cell type
+  prioritization_tables_all <- list()
+  # get the niches list
+  niches <- list()
+  niches[[condition_1]] <- list(
+    'sender' = paste(cell_types_of_interest, condition_1, sep = '_'),
+    'receiver' = paste(cell_type, condition_1, sep = '_')
+  )
+  niches[[condition_2]] <- list(
+    'sender' = paste(cell_types_of_interest, condition_2, sep = '_'),
+    'receiver' = paste(cell_type, condition_2, sep = '_')
+  )
+  # convert symbols
+  seurat_obj = alias_to_symbol_seurat(seurat_obj, organism = "human")
+  # get the sending niches
+  DE_sender = as_tibble(limma_full_notibble[limma_full_notibble[['sender']] != paste(cell_type, condition_1, sep = '_') & 
+                                              limma_full_notibble[['sender']] != paste(cell_type, condition_2, sep = '_') &
+                                              limma_full_notibble[['sender_other_niche']] != paste(cell_type, condition_1, sep = '_') &
+                                              limma_full_notibble[['sender_other_niche']] != paste(cell_type, condition_1, sep = '_'), ])
+  
+  # get the receiving niches
+  DE_receiver = as_tibble(limma_full_as_receiver_notibble[((limma_full_as_receiver_notibble[['receiver']] == paste(cell_type, condition_1, sep = '_') &
+                                                             limma_full_as_receiver_notibble[['receiver_other_niche']] == paste(cell_type, condition_2, sep = '_')) |
+                                                            (limma_full_as_receiver_notibble[['receiver']] == paste(cell_type, condition_2, sep = '_') &
+                                                               limma_full_as_receiver_notibble[['receiver_other_niche']] == paste(cell_type, condition_1, sep = '_'))) &
+                                                            limma_full_as_receiver_notibble[['gene']] %in% lr_network$receptor, ])
+  # remove infinite LFC, where the expression was zero in either conditions (relevant but computationally difficult to work with)
+  DE_sender = DE_sender %>% mutate(avg_log2FC = ifelse(avg_log2FC == Inf, max(avg_log2FC[is.finite(avg_log2FC)]), ifelse(avg_log2FC == -Inf, min(avg_log2FC[is.finite(avg_log2FC)]), avg_log2FC)))
+  DE_receiver = DE_receiver %>% mutate(avg_log2FC = ifelse(avg_log2FC == Inf, max(avg_log2FC[is.finite(avg_log2FC)]), ifelse(avg_log2FC == -Inf, min(avg_log2FC[is.finite(avg_log2FC)]), avg_log2FC)))
+  # process DE output
+  DE_sender_processed = process_niche_de(DE_table = DE_sender, niches = niches, expression_pct = expression_pct, type = "sender")
+  DE_receiver_processed = process_niche_de(DE_table = DE_receiver, niches = niches, expression_pct = expression_pct, type = "receiver")
+  # combine the sender and receiver
+  DE_sender_receiver = combine_sender_receiver_de(DE_sender_processed, DE_receiver_processed, lr_network, specificity_score = specificity_score_LR_pairs)
+  # mock the spatial info, we don't have this, and spatial info doesn't say much in blood
+  spatial_info = tibble(celltype_region_oi = NA, celltype_other_region = NA) %>% mutate(niche =  niches %>% names() %>% head(1), celltype_type = "sender")
+  sender_spatial_DE_processed = get_non_spatial_de(niches = niches, spatial_info = spatial_info, type = "sender", lr_network = lr_network)
+  sender_spatial_DE_processed = sender_spatial_DE_processed %>% mutate(scaled_ligand_score_spatial = scale_quantile_adapted(ligand_score_spatial))
+  receiver_spatial_DE_processed = get_non_spatial_de(niches = niches, spatial_info = spatial_info, type = "receiver", lr_network = lr_network)
+  receiver_spatial_DE_processed = receiver_spatial_DE_processed %>% mutate(scaled_receptor_score_spatial = scale_quantile_adapted(receptor_score_spatial))
 
-# calculate  niches
-DE_receiver_targets = calculate_niche_de_targets(seurat_obj = seurat_obj, niches = niches, lfc_cutoff = lfc_cutoff, expression_pct = expression_pct, assay_oi = assay_oi, test_use=test_use, latent_vars = latent_vars) 
-DE_receiver_targets_ref <- DE_receiver_targets
-#DE_receiver = as_tibble(limma_full_as_receiver_notibble[limma_full_as_receiver_notibble[['receiver']] %in% DE_receiver_targets[['receiver']] & limma_full_as_receiver_notibble[['receiver_other_niche']] %in% DE_receiver_targets[['receiver_other_niche']], ])
-DE_receiver = as_tibble(limma_full_as_receiver_notibble[paste(limma_full_as_receiver_notibble[['receiver']], limma_full_as_receiver_notibble[['receiver_other_niche']]) %in% paste(DE_receiver_targets[['receiver']], DE_receiver_targets[['receiver_other_niche']]), ])
+  # calculate  niches
+  DE_receiver_targets = as_tibble(limma_full_as_receiver_notibble[((limma_full_as_receiver_notibble[['receiver']] == paste(cell_type, condition_1, sep = '_') &
+                                                                      limma_full_as_receiver_notibble[['receiver_other_niche']] == paste(cell_type, condition_2, sep = '_')) |
+                                                                     (limma_full_as_receiver_notibble[['receiver']] == paste(cell_type, condition_2, sep = '_') &
+                                                                        limma_full_as_receiver_notibble[['receiver_other_niche']] == paste(cell_type, condition_1, sep = '_'))), ])
 
-DE_receiver_processed_targets = process_receiver_target_de(DE_receiver_targets = DE_receiver_targets, niches = niches, expression_pct = expression_pct, specificity_score = 'min_lfc')
+  DE_receiver_processed_targets = process_receiver_target_de(DE_receiver_targets = DE_receiver_targets, niches = niches, expression_pct = expression_pct, specificity_score = 'min_lfc')
 
-print('fetching gene sets')
-# get background set
-background = DE_receiver_processed_targets  %>% pull(target) %>% unique()
-# get the gene sets
-geneset_niche1 = DE_receiver_processed_targets %>% filter(receiver == niches[[1]]$receiver & target_score >= lfc_cutoff & target_significant == 1 & target_present == 1) %>% pull(target) %>% unique()
-geneset_niche2 = DE_receiver_processed_targets %>% filter(receiver == niches[[2]]$receiver & target_score >= lfc_cutoff & target_significant == 1 & target_present == 1) %>% pull(target) %>% unique()
-# filtering for unmappable names
-geneset_niche1 %>% setdiff(rownames(ligand_target_matrix))
-geneset_niche2 %>% setdiff(rownames(ligand_target_matrix))
-# save per cell type
-prioritization_tables_all <- list()
-# do each cell type
-for (cell_type in c('monocyte')) {
+  print('fetching gene sets')
+  # get background set
+  background = DE_receiver_processed_targets  %>% pull(target) %>% unique()
+  # get the gene sets
+  geneset_niche1 = DE_receiver_processed_targets %>% filter(receiver == niches[[1]]$receiver & target_score >= lfc_cutoff & target_significant == 1 & target_present == 1) %>% pull(target) %>% unique()
+  geneset_niche2 = DE_receiver_processed_targets %>% filter(receiver == niches[[2]]$receiver & target_score >= lfc_cutoff & target_significant == 1 & target_present == 1) %>% pull(target) %>% unique()
+  # filtering for unmappable names
+  geneset_niche1 %>% setdiff(rownames(ligand_target_matrix))
+  geneset_niche2 %>% setdiff(rownames(ligand_target_matrix))
+
   # create the geneset lists, 
   niche_geneset_list = list(
     condition_1 = list(
@@ -699,33 +784,35 @@ for (cell_type in c('monocyte')) {
       "geneset" = geneset_niche2 ,
       "background" = background)
   )
-  print('fetching ligand activity targets')
-  # now get the ligand-target activities
-  ligand_activities_targets = get_ligand_activities_targets(niche_geneset_list = niche_geneset_list, ligand_target_matrix = ligand_target_matrix, top_n_target = top_n_target)
   
-  print('fetching features of interest')
-  # get the features we aare going to use
-  features_oi = union(lr_network$ligand, lr_network$receptor) %>% union(ligand_activities_targets$target) %>% setdiff(NA)
-  # use the Seurat dotplot function to get the expression across the idents
-  dotplot = suppressWarnings(Seurat::DotPlot(seurat_obj %>% subset(idents = niches %>% unlist() %>% unique()), features = features_oi, assay = assay_oi))
-  exprs_tbl = dotplot$data %>% as_tibble()
-  exprs_tbl = exprs_tbl %>% rename(celltype = id, gene = features.plot, expression = avg.exp, expression_scaled = avg.exp.scaled, fraction = pct.exp) %>%
-    mutate(fraction = fraction/100) %>% as_tibble() %>% select(celltype, gene, expression, expression_scaled, fraction) %>% distinct() %>% arrange(gene) %>% mutate(gene = as.character(gene))
-  exprs_tbl_ligand = exprs_tbl %>% filter(gene %in% lr_network$ligand) %>% rename(sender = celltype, ligand = gene, ligand_expression = expression, ligand_expression_scaled = expression_scaled, ligand_fraction = fraction) 
-  exprs_tbl_receptor = exprs_tbl %>% filter(gene %in% lr_network$receptor) %>% rename(receiver = celltype, receptor = gene, receptor_expression = expression, receptor_expression_scaled = expression_scaled, receptor_fraction = fraction)
-  exprs_tbl_target = exprs_tbl %>% filter(gene %in% ligand_activities_targets$target) %>% rename(receiver = celltype, target = gene, target_expression = expression, target_expression_scaled = expression_scaled, target_fraction = fraction)
-  exprs_tbl_ligand = exprs_tbl_ligand %>%  mutate(scaled_ligand_expression_scaled = scale_quantile_adapted(ligand_expression_scaled)) %>% mutate(ligand_fraction_adapted = ligand_fraction) %>% mutate_cond(ligand_fraction >= expression_pct, ligand_fraction_adapted = expression_pct)  %>% mutate(scaled_ligand_fraction_adapted = scale_quantile_adapted(ligand_fraction_adapted))
-  exprs_tbl_receptor = exprs_tbl_receptor %>% mutate(scaled_receptor_expression_scaled = scale_quantile_adapted(receptor_expression_scaled))  %>% mutate(receptor_fraction_adapted = receptor_fraction) %>% mutate_cond(receptor_fraction >= expression_pct, receptor_fraction_adapted = expression_pct)  %>% mutate(scaled_receptor_fraction_adapted = scale_quantile_adapted(receptor_fraction_adapted))
+  try({
+    print('fetching ligand activity targets')
+    # now get the ligand-target activities
+    ligand_activities_targets = get_ligand_activities_targets(niche_geneset_list = niche_geneset_list, ligand_target_matrix = ligand_target_matrix, top_n_target = top_n_target)
   
-  print('scoreing L-R interactions')
-  # score ligand-receptor interactions based on expression strength of the receptor
-  exprs_sender_receiver = lr_network %>% 
-    inner_join(exprs_tbl_ligand, by = c("ligand")) %>% 
-    inner_join(exprs_tbl_receptor, by = c("receptor")) %>% inner_join(DE_sender_receiver %>% distinct(niche, sender, receiver))
-  ligand_scaled_receptor_expression_fraction_df = exprs_sender_receiver %>% group_by(ligand, receiver) %>% mutate(rank_receptor_expression = dense_rank(receptor_expression), rank_receptor_fraction  = dense_rank(receptor_fraction)) %>% mutate(ligand_scaled_receptor_expression_fraction = 0.5*( (rank_receptor_fraction / max(rank_receptor_fraction)) + ((rank_receptor_expression / max(rank_receptor_expression))) ) )  %>% distinct(ligand, receptor, receiver, ligand_scaled_receptor_expression_fraction) %>% distinct() %>% ungroup()
+    print('fetching features of interest')
+    # get the features we aare going to use
+    features_oi = union(lr_network$ligand, lr_network$receptor) %>% union(ligand_activities_targets$target) %>% setdiff(NA)
+    # use the Seurat dotplot function to get the expression across the idents
+    dotplot = suppressWarnings(Seurat::DotPlot(seurat_obj %>% subset(idents = niches %>% unlist() %>% unique()), features = features_oi, assay = assay_oi))
+    exprs_tbl = dotplot$data %>% as_tibble()
+    exprs_tbl = exprs_tbl %>% rename(celltype = id, gene = features.plot, expression = avg.exp, expression_scaled = avg.exp.scaled, fraction = pct.exp) %>%
+      mutate(fraction = fraction/100) %>% as_tibble() %>% select(celltype, gene, expression, expression_scaled, fraction) %>% distinct() %>% arrange(gene) %>% mutate(gene = as.character(gene))
+    exprs_tbl_ligand = exprs_tbl %>% filter(gene %in% lr_network$ligand) %>% rename(sender = celltype, ligand = gene, ligand_expression = expression, ligand_expression_scaled = expression_scaled, ligand_fraction = fraction) 
+    exprs_tbl_receptor = exprs_tbl %>% filter(gene %in% lr_network$receptor) %>% rename(receiver = celltype, receptor = gene, receptor_expression = expression, receptor_expression_scaled = expression_scaled, receptor_fraction = fraction)
+    exprs_tbl_target = exprs_tbl %>% filter(gene %in% ligand_activities_targets$target) %>% rename(receiver = celltype, target = gene, target_expression = expression, target_expression_scaled = expression_scaled, target_fraction = fraction)
+    exprs_tbl_ligand = exprs_tbl_ligand %>%  mutate(scaled_ligand_expression_scaled = scale_quantile_adapted(ligand_expression_scaled)) %>% mutate(ligand_fraction_adapted = ligand_fraction) %>% mutate_cond(ligand_fraction >= expression_pct, ligand_fraction_adapted = expression_pct)  %>% mutate(scaled_ligand_fraction_adapted = scale_quantile_adapted(ligand_fraction_adapted))
+    exprs_tbl_receptor = exprs_tbl_receptor %>% mutate(scaled_receptor_expression_scaled = scale_quantile_adapted(receptor_expression_scaled))  %>% mutate(receptor_fraction_adapted = receptor_fraction) %>% mutate_cond(receptor_fraction >= expression_pct, receptor_fraction_adapted = expression_pct)  %>% mutate(scaled_receptor_fraction_adapted = scale_quantile_adapted(receptor_fraction_adapted))
   
-  # weight different variables for the prioritization
-  prioritizing_weights = c("scaled_ligand_score" = 5,
+    print('scoreing L-R interactions')
+    # score ligand-receptor interactions based on expression strength of the receptor
+    exprs_sender_receiver = lr_network %>% 
+      inner_join(exprs_tbl_ligand, by = c("ligand")) %>% 
+      inner_join(exprs_tbl_receptor, by = c("receptor")) %>% inner_join(DE_sender_receiver %>% distinct(niche, sender, receiver))
+    ligand_scaled_receptor_expression_fraction_df = exprs_sender_receiver %>% group_by(ligand, receiver) %>% mutate(rank_receptor_expression = dense_rank(receptor_expression), rank_receptor_fraction  = dense_rank(receptor_fraction)) %>% mutate(ligand_scaled_receptor_expression_fraction = 0.5*( (rank_receptor_fraction / max(rank_receptor_fraction)) + ((rank_receptor_expression / max(rank_receptor_expression))) ) )  %>% distinct(ligand, receptor, receiver, ligand_scaled_receptor_expression_fraction) %>% distinct() %>% ungroup()
+  
+    # weight different variables for the prioritization
+    prioritizing_weights = c("scaled_ligand_score" = 5,
                            "scaled_ligand_expression_scaled" = 1,
                            "ligand_fraction" = 1,
                            "scaled_ligand_score_spatial" = 0, 
@@ -737,10 +824,10 @@ for (cell_type in c('monocyte')) {
                            "scaled_activity" = 0,
                            "scaled_activity_normalized" = 1)
   
-  # get output and priorization
-  output = list(DE_sender_receiver = DE_sender_receiver, ligand_scaled_receptor_expression_fraction_df = ligand_scaled_receptor_expression_fraction_df, sender_spatial_DE_processed = sender_spatial_DE_processed, receiver_spatial_DE_processed = receiver_spatial_DE_processed,
+    # get output and priorization
+    output = list(DE_sender_receiver = DE_sender_receiver, ligand_scaled_receptor_expression_fraction_df = ligand_scaled_receptor_expression_fraction_df, sender_spatial_DE_processed = sender_spatial_DE_processed, receiver_spatial_DE_processed = receiver_spatial_DE_processed,
                 ligand_activities_targets = ligand_activities_targets, DE_receiver_processed_targets = DE_receiver_processed_targets, exprs_tbl_ligand = exprs_tbl_ligand,  exprs_tbl_receptor = exprs_tbl_receptor, exprs_tbl_target = exprs_tbl_target)
-  try({
+  
     prioritization_tables = get_prioritization_tables(output, prioritizing_weights)
     prioritization_tables_all[[cell_type]] <- prioritization_tables
   })
