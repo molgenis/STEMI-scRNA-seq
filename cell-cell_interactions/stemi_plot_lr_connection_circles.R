@@ -19,6 +19,52 @@ library(cowplot)
 ####################
 
 
+get_de_output_mast <- function(de_output_loc, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), condition_combinations=c('Baselinet24h', 't24ht8w'), pval_column='metap_bonferroni', pval_cutoff=0.05, lfc_column='metafc', lfc_cutoff=0.25) {
+  # save in a big list
+  all_data_list <- list()
+  # store the colnames
+  common_colnames <- NULL
+  # check each cell type
+  for (cell_type in cell_types) {
+    # check each combination
+    for (combination in condition_combinations) {
+      # paste together the full path
+      full_mast_path <- paste(de_output_loc, '/', cell_type, combination, '.tsv', sep = '')
+      if (file.exists(full_mast_path)) {
+        # read the table
+        full_mast_output <- read.table(full_mast_path, row.names = 1, sep = '\t', header = T)
+        if (nrow(full_mast_output)) {
+          # filter for significance
+          full_mast_output <- full_mast_output[full_mast_output[[pval_column]] < pval_cutoff &
+                                                 full_mast_output[[lfc_column]] < lfc_cutoff, ]
+          if (nrow(full_mast_output) > 0) {
+            # add cell type and combination
+            full_mast_output <- cbind(data.frame(gene = rownames(full_mast_output), combination = rep(combination, times = nrow(full_mast_output)), cell_type = rep(cell_type, times = nrow(full_mast_output))), full_mast_output)
+            # add to the list
+            all_data_list[[paste(cell_type, combination)]] <- full_mast_output
+            # store column names
+            if (is.null(common_colnames)) {
+              common_colnames <- colnames(full_mast_output)
+            }
+            else {
+              common_colnames <- intersect(common_colnames, colnames(full_mast_output))
+            }
+          }
+        }
+      }
+    }
+  }
+  # do filtering for common colnames
+  for (ct_comb in names(all_data_list)) {
+    # use only common colnames
+    all_data_list[[ct_comb]] <- all_data_list[[ct_comb]][, common_colnames]
+  }
+  # combine everything
+  all_data <- do.call('rbind', all_data_list)
+  return(all_data)
+}
+
+
 interactions_to_numbers <- function(interactions_per_ct_list, by_receptor=T, cutoff=0.05, split_sender_and_receiver=F) {
   # get the total number of connections per cell type
   interaction_numbers <- get_interaction_numbers(interactions_per_ct_list, by_receptor, cutoff)
@@ -1163,27 +1209,9 @@ interactions_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/c
 interactions_Baseline_t24h_loc <- paste(interactions_loc, 'limma_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds', sep = '')
 interactions_t24h_t8w_loc <- paste(interactions_loc, 'limma_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds', sep = '')
 
-
 # read object
 interactions_Baseline_t24h <- readRDS(interactions_Baseline_t24h_loc)
 interactions_t24h_t8w <- readRDS(interactions_t24h_t8w_loc)
-
-# setup four plot tiles
-par(mfrow=c(1,2))
-interactions_to_circle(interactions_Baseline_t24h, plot_title = title('Cell communication changes \nbetween t0 and t24h'), by_receptor = T, split_sender_and_receiver = T, order_size = T, start_degree = 180)
-interactions_to_circle(interactions_t24h_t8w, plot_title = title('Cell communication changes \nbetween t24h and t8w'), by_receptor = T, split_sender_and_receiver = T, order_size = T, start_degree = 180)
-par(mfrow=c(1,1))
-
-# get the numbers as well
-nr_interactions_Baseline_t24h <- interactions_to_numbers(interactions_Baseline_t24h)
-nr_interactions_t24h_t8w <- interactions_to_numbers(interactions_t24h_t8w)
-nr_interactions_Baseline_t24h[['comparison']] <- 't0_t24h'
-nr_interactions_t24h_t8w[['comparison']] <- 't0_t8w'
-nr_interactions <- rbind(
-  nr_interactions_Baseline_t24h,
-  nr_interactions_t24h_t8w,
-)
-
 
 # get the L-R and L-T links
 links_Baseline_t24h <- summarize_nichenet_results(interactions_Baseline_t24h)
@@ -1202,5 +1230,98 @@ links_t24h_t8w <- cbind(data.frame(comparison = rep('t24h_t8w')), links_t24h_t8w
 nlinks_Baseline_t24h <- links_to_numbers(links_Baseline_t24h)
 nlinks_t24h_t8w <- links_to_numbers(links_t24h_t8w)
 # into plot
-interactions_to_circle(NULL, plot_title = title('Cell communication changes \nbetween t0 and t24h'), by_receptor = T, split_sender_and_receiver = T, order_size = T, start_degree = 180, interaction_links = links_Baseline_t24h)
-interactions_to_circle(NULL, plot_title = title('Cell communication changes \nbetween t24 and t8w'), by_receptor = T, split_sender_and_receiver = T, order_size = T, start_degree = 180, interaction_links = links_t24h_t8w)
+interactions_to_circle(NULL, plot_title = title('Cell communication changes \nbetween t0 and t24h'), by_receptor = T, split_sender_and_receiver = T, order_size = T, start_degree = 180, interaction_links = links_Baseline_t24h[links_Baseline_t24h[['type']] == 'receptor', ])
+interactions_to_circle(NULL, plot_title = title('Cell communication changes \nbetween t24 and t8w'), by_receptor = T, split_sender_and_receiver = T, order_size = T, start_degree = 180, interaction_links = links_t24h_t8w[links_t24h_t8w[['type']] == 'receptor', ])
+
+# merge links
+links_limma <- rbind(links_Baseline_t24h, links_t24h_t8w)
+
+# write the links
+write.table(links_limma, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/stemi_nichenet_connections.csv', row.names = F, col.names = T, quote = F, sep = ';')
+
+
+# read previous data
+interactions_Baseline_t24h_v2_loc <- paste(interactions_loc, 'v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds', sep = '')
+interactions_t24h_t8w_v2_loc <- paste(interactions_loc, 'v2_t24h_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds', sep = '')
+interactions_Baseline_t24h_v3_loc <- paste(interactions_loc, 'v3_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds', sep = '')
+interactions_t24h_t8w_v3_loc <- paste(interactions_loc, 'v3_t24h_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds', sep = '')
+# read object
+interactions_Baseline_t24h_v2 <- readRDS(interactions_Baseline_t24h_v2_loc)
+interactions_t24h_t8w_v2 <- readRDS(interactions_t24h_t8w_v2_loc)
+interactions_Baseline_t24h_v3 <- readRDS(interactions_Baseline_t24h_v3_loc)
+interactions_t24h_t8w_v3 <- readRDS(interactions_t24h_t8w_v3_loc)
+# get the L-R and L-T links
+links_Baseline_t24h_v3 <- summarize_nichenet_results(interactions_Baseline_t24h_v3)
+links_Baseline_t24h_v2 <- summarize_nichenet_results(interactions_Baseline_t24h_v2)
+links_t24h_t8w_v3 <- summarize_nichenet_results(interactions_t24h_t8w_v3)
+links_t24h_t8w_v2 <- summarize_nichenet_results(interactions_t24h_t8w_v2)
+# remove empty entries
+links_Baseline_t24h_v3 <- links_Baseline_t24h_v3[links_Baseline_t24h_v3[['strength']] > 0, ]
+links_Baseline_t24h_v2 <- links_Baseline_t24h_v2[links_Baseline_t24h_v2[['strength']] > 0, ]
+links_t24h_t8w_v3 <- links_t24h_t8w_v3[links_t24h_t8w_v3[['strength']] > 0, ]
+links_t24h_t8w_v2 <- links_t24h_t8w_v2[links_t24h_t8w_v2[['strength']] > 0, ]
+# filter
+links_Baseline_t24h_v3 <- filter_ligand_table_on_common_ligands(links_Baseline_t24h_v3)
+links_Baseline_t24h_v2 <- filter_ligand_table_on_common_ligands(links_Baseline_t24h_v2)
+links_t24h_t8w_v3 <- filter_ligand_table_on_common_ligands(links_t24h_t8w_v3)
+links_t24h_t8w_v2 <- filter_ligand_table_on_common_ligands(links_t24h_t8w_v2)
+# add combination
+links_Baseline_t24h_v3 <- cbind(data.frame(chem = rep('v3'), comparison = rep('Baseline_t24h')), links_Baseline_t24h_v3)
+links_Baseline_t24h_v2 <- cbind(data.frame(chem = rep('v2'), comparison = rep('Baseline_t24h')), links_Baseline_t24h_v2)
+links_t24h_t8w_v3 <- cbind(data.frame(chem = rep('v3'), comparison = rep('t24h_t8w')), links_t24h_t8w_v3)
+links_t24h_t8w_v2 <- cbind(data.frame(chem = rep('v2'), comparison = rep('t24h_t8w')), links_t24h_t8w_v2)
+# merge timepoints together
+mast_links_Baseline_t24h <- rbind(links_Baseline_t24h_v2, links_Baseline_t24h_v3)
+mast_links_t24h_t8w <- rbind(links_t24h_t8w_v2, links_t24h_t8w_v3)
+
+# compare old and new
+mast_links_Baseline_t24h[['combination']] <- paste(mast_links_Baseline_t24h[['sender']], mast_links_Baseline_t24h[['receiver']], mast_links_Baseline_t24h[['ligand']], mast_links_Baseline_t24h[['link']])
+links_Baseline_t24h[['combination']] <- paste(links_Baseline_t24h[['sender']], links_Baseline_t24h[['receiver']], links_Baseline_t24h[['ligand']], links_Baseline_t24h[['link']])
+mast_links_t24h_t8w[['combination']] <- paste(mast_links_t24h_t8w[['sender']], mast_links_t24h_t8w[['receiver']], mast_links_t24h_t8w[['ligand']], mast_links_t24h_t8w[['link']])
+links_t24h_t8w[['combination']] <- paste(links_t24h_t8w[['sender']], links_t24h_t8w[['receiver']], links_t24h_t8w[['ligand']], links_t24h_t8w[['link']])
+# and specifically v3
+links_Baseline_t24h_v3[['combination']] <- paste(links_Baseline_t24h_v3[['sender']], links_Baseline_t24h_v3[['receiver']], links_Baseline_t24h_v3[['ligand']], links_Baseline_t24h_v3[['link']])
+links_Baseline_t24h[['combination']] <- paste(links_Baseline_t24h[['sender']], links_Baseline_t24h[['receiver']], links_Baseline_t24h[['ligand']], links_Baseline_t24h[['link']])
+links_t24h_t8w_v3[['combination']] <- paste(links_t24h_t8w_v3[['sender']], links_t24h_t8w_v3[['receiver']], links_t24h_t8w_v3[['ligand']], links_t24h_t8w_v3[['link']])
+links_t24h_t8w[['combination']] <- paste(links_t24h_t8w[['sender']], links_t24h_t8w[['receiver']], links_t24h_t8w[['ligand']], links_t24h_t8w[['link']])
+# plot all
+plot_grid(
+  ggVennDiagram(x = list('MAST' = unique(mast_links_Baseline_t24h[mast_links_Baseline_t24h$type == 'receptor', 'combination']), 'limma' = unique(links_Baseline_t24h[links_Baseline_t24h$type == 'receptor', 'combination']))) + ggtitle('LR t0-t24h MAST v2+v3 vs limma'),
+  ggVennDiagram(x = list('MAST' = unique(mast_links_t24h_t8w[mast_links_t24h_t8w$type == 'receptor', 'combination']), 'limma' = unique(links_t24h_t8w[links_t24h_t8w$type == 'receptor', 'combination']))) + ggtitle('LR t24h-t8w MAST v2+v3 vs limma'),
+  ggVennDiagram(x = list('MAST' = unique(links_Baseline_t24h_v3[links_Baseline_t24h_v3$type == 'receptor', 'combination']), 'limma' = unique(links_Baseline_t24h[links_Baseline_t24h$type == 'receptor', 'combination']))) + ggtitle('LR t0-t24h MAST v3 vs limma'),
+  ggVennDiagram(x = list('MAST' = unique(links_t24h_t8w_v3[links_t24h_t8w_v3$type == 'receptor', 'combination']), 'limma' = unique(links_t24h_t8w[links_t24h_t8w$type == 'receptor', 'combination']))) + ggtitle('LR t24h-t8w MAST v3 vs limma')
+)
+
+# get all mast data
+all_data_mast <- get_de_output_mast('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/MAST/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/rna/')
+# add a column that denotes the cell type and the gene
+all_data_mast[['receiver_target']] <- paste(all_data_mast[['cell_type']], all_data_mast[['gene']])
+# filter the LT matrix
+links_Baseline_t24h_targets <- links_Baseline_t24h[links_Baseline_t24h[['type']] == 'target', ]
+# add a column of the cell type and target
+links_Baseline_t24h_targets[['receiver_target']] <- paste(links_Baseline_t24h_targets[['receiver']], links_Baseline_t24h_targets[['link']])
+# now subset for targets that are in the DE table
+links_Baseline_t24h_targets <- links_Baseline_t24h_targets[links_Baseline_t24h_targets[['receiver_target']] %in% all_data_mast[all_data_mast[['combination']] == 'Baselinet24h', 'receiver_target'], ]
+# remove column
+links_Baseline_t24h_targets[['receiver_target']] <- NULL
+# remake the table
+links_Baseline_t24h_filtered <- rbind(links_Baseline_t24h_targets, links_Baseline_t24h[links_Baseline_t24h[['type']] == 'receptor', ])
+# and refilter
+links_Baseline_t24h_filtered <- filter_ligand_table_on_common_ligands(links_Baseline_t24h_filtered)
+ggVennDiagram(x = list('MAST' = unique(links_Baseline_t24h_filtered[links_Baseline_t24h_filtered$type == 'receptor', 'combination']), 'limma' = unique(links_Baseline_t24h[links_Baseline_t24h$type == 'receptor', 'combination']))) + ggtitle('LR t0-t24h MAST v2+v3 vs limma')
+# (stemi_lr_t0_t24h_overlap_lfc025)
+
+# filter the LT matrix
+links_t24h_t8w_targets <- links_t24h_t8w[links_t24h_t8w[['type']] == 'target', ]
+# add a column of the cell type and target
+links_t24h_t8w_targets[['receiver_target']] <- paste(links_t24h_t8w_targets[['receiver']], links_t24h_t8w_targets[['link']])
+# now subset for targets that are in the DE table
+links_t24h_t8w_targets <- links_t24h_t8w_targets[links_t24h_t8w_targets[['receiver_target']] %in% all_data_mast[all_data_mast[['combination']] == 'Baselinet24h', 'receiver_target'], ]
+# remove column
+links_t24h_t8w_targets[['receiver_target']] <- NULL
+# remake the table
+links_t24h_t8w_filtered <- rbind(links_t24h_t8w_targets, links_t24h_t8w[links_t24h_t8w[['type']] == 'receptor', ])
+# and refilter
+links_t24h_t8w_filtered <- filter_ligand_table_on_common_ligands(links_t24h_t8w_filtered)
+ggVennDiagram(x = list('MAST' = unique(links_t24h_t8w_filtered[links_t24h_t8w_filtered$type == 'receptor', 'combination']), 'limma' = unique(links_t24h_t8w[links_t24h_t8w$type == 'receptor', 'combination']))) + ggtitle('LR t24h-t8w MAST v2+v3 vs limma')
+

@@ -696,10 +696,10 @@ knitr::opts_chunk$set(echo = FALSE)
 ####################
 
 # read Baseline vs 24h
-v2_Baseline_vs_t24h_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds'
-v2_Baseline_vs_t24h_perct_omni_unweighted <- readRDS(v2_Baseline_vs_t24h_perct_omni_unweighted_loc)
-v3_Baseline_vs_t24h_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds'
-v3_Baseline_vs_t24h_perct_omni_unweighted <- readRDS(v3_Baseline_vs_t24h_perct_omni_unweighted_loc)
+v2_t24h_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v2_t24h_vs_t8w_nichenet_onlymajors_perct_omni_unweighted.rds'
+v2_t24h_vs_t8w_perct_omni_unweighted <- readRDS(v2_t24h_vs_t8w_perct_omni_unweighted_loc)
+v3_t24h_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v3_t24h_vs_t8w_nichenet_onlymajors_perct_omni_unweighted.rds'
+v3_t24h_vs_t8w_perct_omni_unweighted <- readRDS(v3_t24h_vs_t8w_perct_omni_unweighted_loc)
 # read Baseline vs 24h
 v2_Baseline_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds'
 v2_Baseline_vs_t8w_perct_omni_unweighted <- readRDS(v2_Baseline_vs_t8w_perct_omni_unweighted_loc)
@@ -715,17 +715,17 @@ v3_t24h_vs_t8w_perct_omni_unweighted <- readRDS(v3_t24h_vs_t8w_perct_omni_unweig
 ```{r, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 # get interactions for each set
-lr_v2_Baseline_vs_t24h_perct_omni_unweighted <- data.table(get_significant_interactions(v2_Baseline_vs_t24h_perct_omni_unweighted, 'ligand_receptor_network'))
-lr_v3_Baseline_vs_t24h_perct_omni_unweighted <- data.table(get_significant_interactions(v3_Baseline_vs_t24h_perct_omni_unweighted, 'ligand_receptor_network'))
+lr_v2_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v2_t24h_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+lr_v3_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v3_t24h_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
 lr_v2_Baseline_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v2_Baseline_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
 lr_v3_Baseline_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v3_Baseline_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
 lr_v2_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v2_t24h_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
 lr_v3_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v3_t24h_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
 # set the column name of the iteraction to be different for each set
-lr_v2_Baseline_vs_t24h_perct_omni_unweighted[['v2_Baseline_vs_t24h']] <- lr_v2_Baseline_vs_t24h_perct_omni_unweighted[['interaction']]
-lr_v2_Baseline_vs_t24h_perct_omni_unweighted[['interaction']] <- NULL
-lr_v3_Baseline_vs_t24h_perct_omni_unweighted[['v3_Baseline_vs_t24h']] <- lr_v3_Baseline_vs_t24h_perct_omni_unweighted[['interaction']]
-lr_v3_Baseline_vs_t24h_perct_omni_unweighted[['interaction']] <- NULL
+lr_v2_t24h_vs_t8w_perct_omni_unweighted[['v2_t24h_vs_t8w']] <- lr_v2_t24h_vs_t8w_perct_omni_unweighted[['interaction']]
+lr_v2_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+lr_v3_t24h_vs_t8w_perct_omni_unweighted[['v3_t24h_vs_t8w']] <- lr_v3_t24h_vs_t8w_perct_omni_unweighted[['interaction']]
+lr_v3_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
 lr_v2_Baseline_vs_t8w_perct_omni_unweighted[['v2_Baseline_vs_t8w']] <- lr_v2_Baseline_vs_t8w_perct_omni_unweighted[['interaction']]
 lr_v2_Baseline_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
 lr_v3_Baseline_vs_t8w_perct_omni_unweighted[['v3_Baseline_vs_t8w']] <- lr_v3_Baseline_vs_t8w_perct_omni_unweighted[['interaction']]
@@ -735,7 +735,7 @@ lr_v2_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
 lr_v3_t24h_vs_t8w_perct_omni_unweighted[['v3_t24h_vs_t8w']] <- lr_v3_t24h_vs_t8w_perct_omni_unweighted[['interaction']]
 lr_v3_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
 # merge all of them
-lr_all <- merge(lr_v2_Baseline_vs_t24h_perct_omni_unweighted, lr_v3_Baseline_vs_t24h_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
+lr_all <- merge(lr_v2_t24h_vs_t8w_perct_omni_unweighted, lr_v3_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
 lr_all <- merge(lr_all, lr_v2_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
 lr_all <- merge(lr_all, lr_v3_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
 lr_all <- merge(lr_all, lr_v2_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'receptor'), all = T)
@@ -745,17 +745,17 @@ lr_all <- merge(lr_all, lr_v3_t24h_vs_t8w_perct_omni_unweighted, by = c('receive
 ```{r, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 # get interactions for each set
-lt_v2_Baseline_vs_t24h_perct_omni_unweighted <- data.table(get_significant_interactions(v2_Baseline_vs_t24h_perct_omni_unweighted, 'ligand_target'))
-lt_v3_Baseline_vs_t24h_perct_omni_unweighted <- data.table(get_significant_interactions(v3_Baseline_vs_t24h_perct_omni_unweighted, 'ligand_target'))
+lt_v2_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v2_t24h_vs_t8w_perct_omni_unweighted, 'ligand_target'))
+lt_v3_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v3_t24h_vs_t8w_perct_omni_unweighted, 'ligand_target'))
 lt_v2_Baseline_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v2_Baseline_vs_t8w_perct_omni_unweighted, 'ligand_target'))
 lt_v3_Baseline_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v3_Baseline_vs_t8w_perct_omni_unweighted, 'ligand_target'))
 lt_v2_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v2_t24h_vs_t8w_perct_omni_unweighted, 'ligand_target'))
 lt_v3_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(v3_t24h_vs_t8w_perct_omni_unweighted, 'ligand_target'))
 # set the column name of the iteraction to be different for each set
-lt_v2_Baseline_vs_t24h_perct_omni_unweighted[['v2_Baseline_vs_t24h']] <- lt_v2_Baseline_vs_t24h_perct_omni_unweighted[['interaction']]
-lt_v2_Baseline_vs_t24h_perct_omni_unweighted[['interaction']] <- NULL
-lt_v3_Baseline_vs_t24h_perct_omni_unweighted[['v3_Baseline_vs_t24h']] <- lt_v3_Baseline_vs_t24h_perct_omni_unweighted[['interaction']]
-lt_v3_Baseline_vs_t24h_perct_omni_unweighted[['interaction']] <- NULL
+lt_v2_t24h_vs_t8w_perct_omni_unweighted[['v2_t24h_vs_t8w']] <- lt_v2_t24h_vs_t8w_perct_omni_unweighted[['interaction']]
+lt_v2_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
+lt_v3_t24h_vs_t8w_perct_omni_unweighted[['v3_t24h_vs_t8w']] <- lt_v3_t24h_vs_t8w_perct_omni_unweighted[['interaction']]
+lt_v3_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
 lt_v2_Baseline_vs_t8w_perct_omni_unweighted[['v2_Baseline_vs_t8w']] <- lt_v2_Baseline_vs_t8w_perct_omni_unweighted[['interaction']]
 lt_v2_Baseline_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
 lt_v3_Baseline_vs_t8w_perct_omni_unweighted[['v3_Baseline_vs_t8w']] <- lt_v3_Baseline_vs_t8w_perct_omni_unweighted[['interaction']]
@@ -765,7 +765,7 @@ lt_v2_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
 lt_v3_t24h_vs_t8w_perct_omni_unweighted[['v3_t24h_vs_t8w']] <- lt_v3_t24h_vs_t8w_perct_omni_unweighted[['interaction']]
 lt_v3_t24h_vs_t8w_perct_omni_unweighted[['interaction']] <- NULL
 # merge all of them
-lt_all <- merge(lt_v2_Baseline_vs_t24h_perct_omni_unweighted, lt_v3_Baseline_vs_t24h_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'target'), all = T)
+lt_all <- merge(lt_v2_t24h_vs_t8w_perct_omni_unweighted, lt_v3_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'target'), all = T)
 lt_all <- merge(lt_all, lt_v2_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'target'), all = T)
 lt_all <- merge(lt_all, lt_v3_Baseline_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'target'), all = T)
 lt_all <- merge(lt_all, lt_v2_t24h_vs_t8w_perct_omni_unweighted, by = c('receiver', 'sender', 'ligand', 'target'), all = T)
@@ -777,10 +777,10 @@ colnames(lt_all) <- gsub('receptor', 'target', colnames(lt_all))
 ```{r, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 # get the lr table, subsetted by ligands with a downstream effect
-lr_filtered_Baseline_t24h_v3 <- filter_lr_by_lt_ligands(data.frame(lt_v3_Baseline_vs_t24h_perct_omni_unweighted), lr_connections = data.frame(lr_v3_Baseline_vs_t24h_perct_omni_unweighted), target_interaction_column = 'v3_Baseline_vs_t24h', receptor_interaction_column = 'v3_Baseline_vs_t24h')
+lr_filtered_Baseline_t24h_v3 <- filter_lr_by_lt_ligands(data.frame(lt_v3_t24h_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v3_t24h_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_t24h_vs_t8w', receptor_interaction_column = 'v3_t24h_vs_t8w')
 lr_filtered_Baseline_t8w_v3 <- filter_lr_by_lt_ligands(data.frame(lt_v3_Baseline_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v3_Baseline_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_Baseline_vs_t8w', receptor_interaction_column = 'v3_Baseline_vs_t8w')
 lr_filtered_t24h_t8w_v3 <- filter_lr_by_lt_ligands(data.frame(lt_v3_t24h_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v3_t24h_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_t24h_vs_t8w', receptor_interaction_column = 'v3_t24h_vs_t8w')
-lr_filtered_Baseline_t24h_v2 <- filter_lr_by_lt_ligands(data.frame(lt_v2_Baseline_vs_t24h_perct_omni_unweighted), lr_connections = data.frame(lr_v2_Baseline_vs_t24h_perct_omni_unweighted), target_interaction_column = 'v2_Baseline_vs_t24h', receptor_interaction_column = 'v2_Baseline_vs_t24h')
+lr_filtered_Baseline_t24h_v2 <- filter_lr_by_lt_ligands(data.frame(lt_v2_t24h_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v2_t24h_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v2_t24h_vs_t8w', receptor_interaction_column = 'v2_t24h_vs_t8w')
 lr_filtered_Baseline_t8w_v2 <- filter_lr_by_lt_ligands(data.frame(lt_v2_Baseline_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v2_Baseline_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v2_Baseline_vs_t8w', receptor_interaction_column = 'v2_Baseline_vs_t8w')
 lr_filtered_t24h_t8w_v2 <- filter_lr_by_lt_ligands(data.frame(lt_v2_t24h_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v2_t24h_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v2_t24h_vs_t8w', receptor_interaction_column = 'v2_t24h_vs_t8w')
 # merge all of them
@@ -793,8 +793,8 @@ lr_filtered_all <- merge(lr_filtered_all, lr_filtered_t24h_t8w_v3, by = c('recei
 
 ```{r, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
-r_vs_t_v3_Baseline_vs_t24h_perct_omni_unweighted <- check_ligand_receptor_and_target_numbers(lt_connections = data.frame(lt_v3_Baseline_vs_t24h_perct_omni_unweighted), lr_connections = data.frame(lr_v3_Baseline_vs_t24h_perct_omni_unweighted), target_interaction_column = 'v3_Baseline_vs_t24h', receptor_interaction_column = 'v3_Baseline_vs_t24h')
-ligand_connection_numbers_v3_Baseline_vs_t24h_perct_omni_unweighted <- ligand_numbers_to_interactions(r_vs_t_v3_Baseline_vs_t24h_perct_omni_unweighted)
+r_vs_t_v3_t24h_vs_t8w_perct_omni_unweighted <- check_ligand_receptor_and_target_numbers(lt_connections = data.frame(lt_v3_t24h_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v3_t24h_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_t24h_vs_t8w', receptor_interaction_column = 'v3_t24h_vs_t8w')
+ligand_connection_numbers_v3_t24h_vs_t8w_perct_omni_unweighted <- ligand_numbers_to_interactions(r_vs_t_v3_t24h_vs_t8w_perct_omni_unweighted)
 r_vs_t_v3_Baseline_vs_t8w_perct_omni_unweighted <- check_ligand_receptor_and_target_numbers(lt_connections = data.frame(lt_v3_Baseline_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lt_v3_Baseline_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_Baseline_vs_t8w', receptor_interaction_column = 'v3_Baseline_vs_t8w')
 ligand_connection_numbers_v3_Baseline_vs_t8w_perct_omni_unweighted <- ligand_numbers_to_interactions(r_vs_t_v3_Baseline_vs_t8w_perct_omni_unweighted)
 r_vs_t_v3_t24h_vs_t8w_perct_omni_unweighted <- check_ligand_receptor_and_target_numbers(lr_connections = data.frame(lr_v3_t24h_vs_t8w_perct_omni_unweighted), lt_connections = data.frame(lt_v3_t24h_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_t24h_vs_t8w', receptor_interaction_column = 'v3_t24h_vs_t8w')
@@ -804,7 +804,7 @@ ligand_connection_numbers_v3_t24h_vs_t8w_perct_omni_unweighted <- ligand_numbers
 ```{r, include=FALSE, fig.width=4, fig.height=4}
 knitr::opts_chunk$set(echo = FALSE)
 # now based on the downstream genes
-downstream_gene_nrs_Baseline_vs_t24h <- get_distinct_downstream_gene_numbers(lt_connections = data.frame(lt_v3_Baseline_vs_t24h_perct_omni_unweighted), lr_connections = data.frame(lr_v3_Baseline_vs_t24h_perct_omni_unweighted), target_interaction_column = 'v3_Baseline_vs_t24h', receptor_interaction_column = 'v3_Baseline_vs_t24h')
+downstream_gene_nrs_t24h_vs_t8w <- get_distinct_downstream_gene_numbers(lt_connections = data.frame(lt_v3_t24h_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v3_t24h_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_t24h_vs_t8w', receptor_interaction_column = 'v3_t24h_vs_t8w')
 downstream_gene_nrs_Baseline_vs_t8w <- get_distinct_downstream_gene_numbers(lt_connections = data.frame(lt_v3_Baseline_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v3_Baseline_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_Baseline_vs_t8w', receptor_interaction_column = 'v3_Baseline_vs_t8w')
 downstream_gene_nrs_t24h_vs_t8w <- get_distinct_downstream_gene_numbers(lt_connections = data.frame(lt_v3_t24h_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v3_t24h_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_t24h_vs_t8w', receptor_interaction_column = 'v3_t24h_vs_t8w')
 ```
@@ -812,7 +812,7 @@ downstream_gene_nrs_t24h_vs_t8w <- get_distinct_downstream_gene_numbers(lt_conne
 ```{r, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 # now based on the combinations of ligand and downstream genes
-lt_nrs_Baseline_vs_t24h <- ligand_target_numbers_to_interactions(lt_connections = data.frame(lt_v3_Baseline_vs_t24h_perct_omni_unweighted), lr_connections = data.frame(lr_v3_Baseline_vs_t24h_perct_omni_unweighted), target_interaction_column = 'v3_Baseline_vs_t24h', receptor_interaction_column = 'v3_Baseline_vs_t24h')
+lt_nrs_t24h_vs_t8w <- ligand_target_numbers_to_interactions(lt_connections = data.frame(lt_v3_t24h_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v3_t24h_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_t24h_vs_t8w', receptor_interaction_column = 'v3_t24h_vs_t8w')
 lt_nrs_Baseline_vs_t8w <- ligand_target_numbers_to_interactions(lt_connections = data.frame(lt_v3_Baseline_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v3_Baseline_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_Baseline_vs_t8w', receptor_interaction_column = 'v3_Baseline_vs_t8w')
 lt_nrs_t24h_vs_t8w <- ligand_target_numbers_to_interactions(lt_connections = data.frame(lt_v3_t24h_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_v3_t24h_vs_t8w_perct_omni_unweighted), target_interaction_column = 'v3_t24h_vs_t8w', receptor_interaction_column = 'v3_t24h_vs_t8w')
 ```
@@ -820,7 +820,7 @@ lt_nrs_t24h_vs_t8w <- ligand_target_numbers_to_interactions(lt_connections = dat
 ```{r, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 # now based on the combinations of ligand and receptor
-lr_nrs_Baseline_vs_t24h <- ligand_receptor_numbers_to_interactions(r_vs_t_v3_Baseline_vs_t24h_perct_omni_unweighted)
+lr_nrs_t24h_vs_t8w <- ligand_receptor_numbers_to_interactions(r_vs_t_v3_t24h_vs_t8w_perct_omni_unweighted)
 lr_nrs_Baseline_vs_t8w <- ligand_receptor_numbers_to_interactions(r_vs_t_v3_Baseline_vs_t8w_perct_omni_unweighted)
 lr_nrs_t24h_vs_t8w <- ligand_receptor_numbers_to_interactions(r_vs_t_v3_t24h_vs_t8w_perct_omni_unweighted)
 ```
@@ -831,7 +831,7 @@ knitr::opts_chunk$set(echo = FALSE)
 interactions_to_sankey_from_tables(
   list('Baseline-t24h' = list('timepoint1' = 'Baseline',
                               'timepoint2' = 't24h',
-                              'table' = lr_nrs_Baseline_vs_t24h),
+                              'table' = lr_nrs_t24h_vs_t8w),
        't24h-t8w' = list('timepoint1' = 't24h',
                          'timepoint2' = 't8w',
                          'table' = lr_nrs_t24h_vs_t8w)
@@ -846,7 +846,7 @@ knitr::opts_chunk$set(echo = FALSE)
 interactions_to_sankey_from_tables(
   list('Baseline-t24h' = list('timepoint1' = 'Baseline',
                               'timepoint2' = 't24h',
-                              'table' = lr_nrs_Baseline_vs_t24h),
+                              'table' = lr_nrs_t24h_vs_t8w),
        't24h-t8w' = list('timepoint1' = 't24h',
                          'timepoint2' = 't8w',
                          'table' = lr_nrs_t24h_vs_t8w)
@@ -860,7 +860,7 @@ interactions_to_sankey_from_tables(
 knitr::opts_chunk$set(echo = FALSE)
 
 plot_grid(
-  interactions_to_bars(lr_nrs_Baseline_vs_t24h, legendless = T) + ylim(c(0, 400)),
+  interactions_to_bars(lr_nrs_t24h_vs_t8w, legendless = T) + ylim(c(0, 400)),
   interactions_to_bars(lr_nrs_t24h_vs_t8w, legendless = T) + ylim(c(0, 400)) + ylab(''),
   get_legend(interactions_to_bars(lr_nrs_t24h_vs_t8w)),
   nrow = 1,
@@ -903,7 +903,7 @@ plot_grid(
         rel_widths = c(0.1, 1)
       ),
       # actual panel a
-      interactions_to_bars(lr_nrs_Baseline_vs_t24h, legendless = T) + ylim(c(0, 400)) + ggtitle(''),
+      interactions_to_bars(lr_nrs_t24h_vs_t8w, legendless = T) + ylim(c(0, 400)) + ggtitle(''),
       # settings
       rel_heights = c(0.1, 1),
       nrow = 2
@@ -966,5 +966,46 @@ plot_grid(
   ncol = 1,
   nrow = 2
 )
+
+```
+
+
+```{r, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+# read Baseline vs 24h
+t24h_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/limma_t24h_vs_t8w_nichenet_onlymajors_perct_omni_unweighted.rds'
+t24h_vs_t8w_perct_omni_unweighted <- readRDS(t24h_vs_t8w_perct_omni_unweighted_loc)
+
+# get targets and ligands
+lt_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(t24h_vs_t8w_perct_omni_unweighted, 'ligand_target'))
+lr_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(t24h_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+
+# get the lr table, subsetted by ligands with a downstream effect
+lr_filtered_Baseline_t24h <- filter_lr_by_lt_ligands(data.frame(lt_t24h_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_t24h_vs_t8w_perct_omni_unweighted), target_interaction_column = 'interaction', receptor_interaction_column = 'interaction')
+
+# now get the pairs
+lr_overlap_received_Baseline_t24h <- lr_pairs_per_celtype(lr_filtered_Baseline_t24h, celltype_column = 'receiver')
+lr_pairs_to_upset(lr_overlap_received_Baseline_t24h)
+grid.text("LR-sharedness per receiving celltype t0-t24h",x = 0.65, y=0.95, gp=gpar(fontsize=15))
+#stemi_lr_overlap_limma_t0_t24h
+```
+
+```{r, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+# read Baseline vs 24h
+t24h_vs_t8w_perct_omni_unweighted_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/limma_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds'
+t24h_vs_t8w_perct_omni_unweighted <- readRDS(t24h_vs_t8w_perct_omni_unweighted_loc)
+
+# get targets and ligands
+lt_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(t24h_vs_t8w_perct_omni_unweighted, 'ligand_target'))
+lr_t24h_vs_t8w_perct_omni_unweighted <- data.table(get_significant_interactions(t24h_vs_t8w_perct_omni_unweighted, 'ligand_receptor_network'))
+
+# get the lr table, subsetted by ligands with a downstream effect
+lr_filtered_t24h_t8w <- filter_lr_by_lt_ligands(data.frame(lt_t24h_vs_t8w_perct_omni_unweighted), lr_connections = data.frame(lr_t24h_vs_t8w_perct_omni_unweighted), target_interaction_column = 'interaction', receptor_interaction_column = 'interaction')
+
+# now get the pairs
+lr_overlap_received_t24h_t8w <- lr_pairs_per_celtype(lr_filtered_t24h_t8w, celltype_column = 'receiver')
+lr_pairs_to_upset(lr_overlap_received_t24h_t8w)
+grid.text("LR-sharedness per receiving celltype t24h-t8w",x = 0.65, y=0.95, gp=gpar(fontsize=15))
 
 ```
