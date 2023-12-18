@@ -1,0 +1,1230 @@
+---
+title: "stemi_plot_pathways"
+output: html_document
+date: "2023-10-25"
+---
+```{r header, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Roy Oelen
+# Name: stemi_plot_pathways.Rmd
+# Function:
+############################################################################################################################
+```
+
+```{r libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# libraries        #
+####################
+library(ggplot2)
+library(cowplot)
+library(RColorBrewer)
+library(treemapify) # not in container
+
+```
+
+```{r functions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+####################
+# Functions        #
+####################
+
+
+get_color_coding_dict <- function(){
+  # set the condition colors
+  color_coding <- list()
+  color_coding[["UTBaseline"]] <- "khaki2"
+  color_coding[["UTt24h"]] <- "khaki4"
+  color_coding[["UTt8w"]] <- "paleturquoise1"
+  color_coding[["Baselinet24h"]] <- "paleturquoise3"
+  color_coding[["Baselinet8w"]] <- "rosybrown1"
+  color_coding[["t24ht8w"]] <- "rosybrown3"
+  color_coding[["UT\nBaseline"]] <- "khaki2"
+  color_coding[["UT\nt24h"]] <- "khaki4"
+  color_coding[["UT\nt8w"]] <- "paleturquoise1"
+  color_coding[["Baseline\nt24h"]] <- "paleturquoise3"
+  color_coding[["Baseline\nt8w"]] <- "rosybrown1"
+  color_coding[["t24h\nt8w"]] <- "rosybrown3"
+  color_coding[["UT-Baseline"]] <- "khaki2"
+  color_coding[["UT-t24h"]] <- "khaki4"
+  color_coding[["UT-t8w"]] <- "paleturquoise1"
+  color_coding[["Baseline-t24h"]] <- "paleturquoise3"
+  color_coding[["Baseline-t8w"]] <- "rosybrown1"
+  color_coding[["t24h-t8w"]] <- "rosybrown3"
+  color_coding[["UT-t0"]] <- "khaki2"
+  color_coding[["UT-t24h"]] <- "khaki4"
+  color_coding[["UT-t8w"]] <- "paleturquoise1"
+  color_coding[["HC-t0"]] <- "khaki2"
+  color_coding[["t0-HC"]] <- "khaki2"
+  color_coding[["HC-t24h"]] <- "khaki4"
+  color_coding[["t24h-HC"]] <- "khaki4"
+  color_coding[["HC-t8w"]] <- "paleturquoise1"
+  color_coding[["t8w-HC"]] <- "paleturquoise1"
+  color_coding[["t0-t24h"]] <- "#FF6066" #"paleturquoise3"
+  color_coding[["t24h-t0"]] <- "#FF6066" #"paleturquoise3"
+  color_coding[["t0-t8w"]] <- "#C060A6" #"rosybrown1"
+  color_coding[["t8w-t0"]] <- "#C060A6" #"rosybrown1"
+  color_coding[["t24h-t8w"]] <- "#C00040" #"rosybrown3"
+  color_coding[["t8w-t24h"]] <- "#C00040" #"rosybrown3"
+  # set condition colors
+  color_coding[["HC"]] <- "grey"
+  color_coding[["t0"]] <- "pink"
+  color_coding[["t24h"]] <- "red"
+  color_coding[["t8w"]] <- "purple"
+  # set the cell type colors
+  color_coding[["Bulk"]] <- "black"
+  color_coding[["CD4T"]] <- "#153057"
+  color_coding[["CD8T"]] <- "#009DDB"
+  color_coding[["monocyte"]] <- "#EDBA1B"
+  color_coding[["NK"]] <- "#E64B50"
+  color_coding[["B"]] <- "#71BC4B"
+  color_coding[["DC"]] <- "#965EC8"
+  color_coding[["CD4+ T"]] <- "#153057"
+  color_coding[["CD8+ T"]] <- "#009DDB"
+  # other cell type colors
+  color_coding[["HSPC"]] <- "#009E94"
+  color_coding[["platelet"]] <- "#9E1C00"
+  color_coding[["plasmablast"]] <- "#DB8E00"
+  color_coding[["other T"]] <- "#FF63B6"
+  return(color_coding)
+}
+
+
+label_dict <- function(){
+  label_dict <- list()
+  # condition combinations
+  label_dict[['UTBaseline']] <- 'UT-Baseline'
+  label_dict[['UTt24h']] <- 'UT-t24h'
+  label_dict[['UTt8w']] <- 'UT-t8w'
+  label_dict[['Baselinet24h']] <- 'Baseline-t24h'
+  label_dict[['Baselinet8w']] <- 'Baseline-t8w'
+  label_dict[['t24ht8w']] <- 't24h-t8w'
+  label_dict[['UTBaseline']] <- 'C-t0'
+  label_dict[['UTt24h']] <- 'C-t24h'
+  label_dict[['UTt8w']] <- 'C-t8w'
+  label_dict[['Baselinet24h']] <- 't0-t24h'
+  label_dict[['Baselinet8w']] <- 't0-t8w'
+  label_dict[['t24hBaseline']] <- 't0-t24h'
+  label_dict[['t8wBaseline']] <- 't0-t8w'
+  label_dict[['t8wt24h']] <- 't24h-t8w'
+  # conditions
+  label_dict[['UT']] <- 'HC'
+  label_dict[['Baseline']] <- 't0'
+  label_dict[['t24h']] <- 't24h'
+  label_dict[['t8w']] <- 't8w'
+  # major cell types
+  label_dict[["Bulk"]] <- "bulk-like"
+  label_dict[["CD4T"]] <- "CD4+ T"
+  label_dict[["CD8T"]] <- "CD8+ T"
+  label_dict[["monocyte"]] <- "monocyte"
+  label_dict[["NK"]] <- "NK"
+  label_dict[["B"]] <- "B"
+  label_dict[["DC"]] <- "DC"
+  label_dict[["HSPC"]] <- "HSPC"
+  label_dict[["plasmablast"]] <- "plasmablast"
+  label_dict[["platelet"]] <- "platelet"
+  label_dict[["T_other"]] <- "other T"
+  # minor cell types
+  label_dict[["CD4_TCM"]] <- "CD4 TCM"
+  label_dict[["Treg"]] <- "T regulatory"
+  label_dict[["CD4_Naive"]] <- "CD4 naive"
+  label_dict[["CD4_CTL"]] <- "CD4 CTL"
+  label_dict[["CD8_TEM"]] <- "CD8 TEM"
+  label_dict[["cMono"]] <- "cMono"
+  label_dict[["CD8_TCM"]] <- "CD8 TCM"
+  label_dict[["ncMono"]] <- "ncMono"
+  label_dict[["cDC2"]] <- "cDC2"
+  label_dict[["B_intermediate"]] <- "B intermediate"
+  label_dict[["NKdim"]] <- "NK dim"
+  label_dict[["pDC"]] <- "pDC"
+  label_dict[["ASDC"]] <- "ASDC"
+  label_dict[["CD8_Naive"]] <- "CD8 naive"
+  label_dict[["MAIT"]] <- "MAIT"
+  label_dict[["CD8_Proliferating"]] <- "CD8 proliferating"
+  label_dict[["CD4_TEM"]] <- "CD4 TEM"
+  label_dict[["B_memory"]] <- "B memory"
+  label_dict[["NKbright"]] <- "NK bright"
+  label_dict[["B_naive"]] <- "B naive"
+  label_dict[["gdT"]] <- "gamma delta T"
+  label_dict[["CD4_Proliferating"]] <- "CD4 proliferating"
+  label_dict[["NK_Proliferating"]] <- "NK proliferating"
+  label_dict[["cDC1"]] <- "cDC1"
+  label_dict[["ILC"]] <- "ILC"
+  label_dict[["dnT"]] <- "double negative T"
+  return(label_dict)
+}
+
+
+text_color_dict <- function(){
+  text_color_dict <- list()
+  # set the cell type colors
+  text_color_dict[["Bulk"]] <- "#000000ff"
+  text_color_dict[["CD4T"]] <- "#000000ff"
+  text_color_dict[["CD8T"]] <- "#000000ff"
+  text_color_dict[["monocyte"]] <- "#ffffffff"
+  text_color_dict[["NK"]] <- "#000000ff"
+  text_color_dict[["B"]] <- "#fffffff"
+  text_color_dict[["DC"]] <- "#000000ff"
+  text_color_dict[["CD4+ T"]] <- "#000000ff"
+  text_color_dict[["CD8+ T"]] <- "#000000ff"
+  # other cell type colors
+  text_color_dict[["HSPC"]] <- "#000000ff"
+  text_color_dict[["platelet"]] <- "#000000ff"
+  text_color_dict[["plasmablast"]] <- "#000000ff"
+  text_color_dict[["other T"]] <- "#000000ff"
+  return(text_color_dict)
+}
+
+
+#' get a vector of as distinct possible colours
+#' 
+#' @param number_of_colours how many colours to return
+#' @param use_sampling whether or not to randomly extract the colours instead of grabbing the first n colours
+#' @param color_indices (optional, not used by default) if specific colours are needed, supply the indices of the colours here. Use 'get_available_colours_grid' to get the colours and their indices
+#' @returns a vector of colours
+#' 
+sample_many_colours <- function(number_of_colours, use_sampling=F, color_indices=NULL) {
+  # get all colours from the 'quality' palettes
+  quality_colour_palettes <- brewer.pal.info[brewer.pal.info[['category']] == 'qual', ]
+  # save each palette
+  colours_per_palette <- list()
+  # apply over each palette
+  for (i in 1:nrow(quality_colour_palettes)) {
+    # get the name of the palette
+    palette_name <- rownames(quality_colour_palettes)[i]
+    # get the number of colours in the palette
+    palette_max_colours <- quality_colour_palettes[i, 'maxcolors']
+    # use brewer.pal to get all colours
+    colours_palette <- brewer.pal(palette_max_colours, palette_name)
+    # put result in the list
+    colours_per_palette[[palette_name]] <- colours_palette
+  }
+  # merge all palettes
+  all_colours <- do.call('c', colours_per_palette)
+  # randomly get colours from the palette
+  max_possible_colours <- length(all_colours)
+  if (is.null(number_of_colours)) {
+    message('no number of colors supplied, assuming color indices have been')
+  }
+  else if (number_of_colours > max_possible_colours) {
+    message(paste('requesting more colours than is possible: ', as.character(number_of_colours), ' vs ', max_possible_colours, ', returning max possible', sep = ''))
+    number_of_colours <- max_possible_colours
+  }
+  colours_to_return <- NULL
+  # specific colours we like (the indices)
+  if (!is.null(color_indices)) {
+    colours_to_return <- all_colours[color_indices]
+  }
+  # or use sampling
+  else if (use_sampling) {
+    colours_to_return <- sample(all_colours, number_of_colours)
+  }
+  # or the first x colours
+  else {
+    colours_to_return <- all_colours[1 : number_of_colours]
+  }
+  return(colours_to_return)
+}
+
+#' get a vector of as distinct possible colours, but with more possibilities ()
+#' 
+#' @param number_of_colours how many colours to return
+#' @param use_sampling whether or not to randomly extract the colours instead of grabbing the first n colours
+#' @param color_indices (optional, not used by default) if specific colours are needed, supply the indices of the colours here. Use 'get_available_colours_grid' to get the colours and their indices
+#' @returns a vector of colours
+#' 
+sample_tons_of_colors <- function(number_of_colours, use_sampling=F, color_indices=NULL) {
+  # get colours available to device
+  all_colours <- grDevices::colors()
+  # remove gray
+  all_colours <- all_colours[grep('gr(a|e)y', all_colours, invert = T)]
+  # check how many are possible
+  max_possible_colours <- length(all_colours)
+  if (is.null(number_of_colours)) {
+    message('no number of colors supplied, assuming color indices have been')
+  }
+  else if (number_of_colours > max_possible_colours) {
+    message(paste('requesting more colours than is possible: ', as.character(number_of_colours), ' vs ', max_possible_colours, ', returning max possible', sep = ''))
+    number_of_colours <- max_possible_colours
+  }
+  colours_to_return <- NULL
+  # specific colours we like (the indices)
+  if (!is.null(color_indices)) {
+    colours_to_return <- all_colours[color_indices]
+  }
+  # or use sampling
+  else if (use_sampling) {
+    colours_to_return <- sample(all_colours, number_of_colours)
+  }
+  # or the first x colours
+  else {
+    colours_to_return <- all_colours[1 : number_of_colours]
+  }
+  return(colours_to_return)
+}
+
+
+#' get a grid showing the available colours and their indices
+#' 
+#' @param many use the 'many' method to get the colours
+#' @param tons use the 'tons' method to get the colours
+#' @returns a ggplot grid showing the available colours and their indices
+#' 
+get_available_colours_grid <- function(many=T, tons=F) {
+  colours_possible <- NULL
+  # get from the many method
+  if (many) {
+    # ask for unreasonable amount
+    colours_possible <- sample_many_colours(1000)
+  }
+  else if(tons) {
+    colours_possible <- sample_tons_of_colors(1000)
+  }
+  # get how many colours we actually have
+  available_colours <- length(colours_possible)
+  # we need to put that into a square grid, so we need to get the square root, to know how many rows and columns
+  nrow_and_ncol <- sqrt(available_colours)
+  # and we need to round that up of course
+  nrow_and_ncol <- ceiling(nrow_and_ncol)
+  # so we'll have a total number of blocks
+  total_cells <- nrow_and_ncol * nrow_and_ncol
+  # let's see how many colours we are off from that number of cells
+  cells_no_colour_number <- total_cells - available_colours
+  # we will just add white for those
+  cells_no_colour <- rep('white', times = cells_no_colour_number)
+  # add that to the colours we have
+  colours_possible <- c(colours_possible, cells_no_colour)
+  # create each combination of x and y
+  indices_grid <- expand.grid(as.character(1 : nrow_and_ncol), as.character(1 : nrow_and_ncol))
+  # add the index and colour name
+  indices_grid[['index_colour']] <- paste(c(1:total_cells), colours_possible, sep = '\n')
+  # make mapping of colours
+  colours_to_use <- as.list(colours_possible)
+  names(colours_to_use) <- indices_grid[['index_colour']]
+  # now plot
+  p <- ggplot(data = indices_grid, mapping = aes(x = Var1, y = Var2, fill = index_colour)) + 
+    geom_tile() + 
+    geom_text(aes(label=index_colour)) + 
+    scale_fill_manual(values = colours_to_use) + 
+    theme(legend.position = 'none')
+  return(p)
+}
+
+
+
+get_pathways_per_celltype_condition <- function(pathway_output_loc, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), conditions=c('UT', 'Baseline', 't24h', 't8w'), de_method='limma', append='.tsv', pval_column='Adjusted.P.value', pval_cutoff=0.05, direction_column='enrichmentScore', only_positive=F, only_negative=F) {
+  # we will save everything in a list first
+  output_per_ct_and_comb <- list()
+  # we will check each cell type
+  for (cell_type in cell_types) {
+    # and each condition
+    for (condition_1 in conditions) {
+      # against each other condition
+      for (condition_2 in conditions) {
+        # we'll paste the full path together
+        path_to_output <- NULL
+        if ('limma' == de_method) {
+          path_to_output <- paste(pathway_output_loc, '/', cell_type, '_timepoint.final.', condition_1, '_', condition_2, append, sep = '')
+        }
+        else{
+          path_to_output <- paste(pathway_output_loc, '/', cell_type, condition_1, condition_2, append, sep = '')
+        }
+        # check if the file exists
+        if (file.exists(path_to_output)) {
+          # read the file
+          pathway_output <- read.table(path_to_output, header = T, sep = '\t', comment.char='')
+          # filter direction if requested
+          if (only_positive) {
+            pathway_output <- pathway_output[pathway_output[[direction_column]] > 0, ]
+          }
+          if (only_negative) {
+            pathway_output <- pathway_output[pathway_output[[direction_column]] < 0, ]
+          }
+          # add the cell type and the condition
+          pathway_output <- cbind(
+            data.frame(
+              condition1=rep(condition_1, times = nrow(pathway_output)),
+              condition2=rep(condition_2, times = nrow(pathway_output)),
+              cell_type=rep(cell_type, times = nrow(pathway_output))
+            ), 
+            pathway_output
+          )
+          # filter if possible
+          if (!is.null(pval_column) & !is.null(pval_cutoff)) {
+            pathway_output <- pathway_output[pathway_output[[pval_column]] < pval_cutoff, ]
+          }
+          # add to the list
+          output_per_ct_and_comb[[paste(condition_1, condition_2, cell_type, sep = '')]] <- pathway_output
+        }
+      }
+    }
+  }
+  # merge everything
+  output_per_ct_and_comb_df <- do.call('rbind', output_per_ct_and_comb)
+  return(output_per_ct_and_comb_df)
+}
+
+
+get_plotframe_per_celltype <- function(pathway_outputs, reference, compare_tos, reference_column='condition2', compare_column='condition1', cell_type_column='cell_type', top_so_many=5, significance_column='Adjusted.P.value', logp=T, term_column='Term', filter_vector=NULL) {
+  # we will store a df per cell type
+  plot_frame_per_celltype <- list()
+  # store significance
+  pathway_outputs[['significance']] <- pathway_outputs[[significance_column]]
+  # make zeros as close to zero as possible in R
+  pathway_outputs[pathway_outputs$significance == 0, 'significance'] <- .Machine$double.xmin
+  # filter if requested
+  if (!is.null(filter_vector)) {
+    pathway_outputs <- pathway_outputs[pathway_outputs[[term_column]] %in% filter_vector, ]
+  }
+  # check each cell type
+  for (cell_type in pathway_outputs[[cell_type_column]]) {
+    # subset to that cell type
+    pathway_output_celltype <- pathway_outputs[pathway_outputs[[cell_type_column]] == cell_type, ]
+    # now get the comparison data
+    if (!(length(compare_tos) %in% c(1,2))) {
+      stop('conditions to compare to, should be vector of one or two values')
+    }
+    # get the first comparison
+    pathway_output_celltype_vs <- pathway_output_celltype[pathway_output_celltype[[reference_column]] == reference &
+                                                              pathway_output_celltype[[compare_column]] == compare_tos[1], ]
+    # order
+    pathway_output_celltype_vs[order(pathway_output_celltype_vs[['significance']]), ]
+    # grab the first x values, if that is possible
+    if (nrow(pathway_output_celltype_vs) > top_so_many) {
+      pathway_output_celltype_vs <- pathway_output_celltype_vs[1:top_so_many, ]
+    }
+    # logging the p if requested
+    if (logp) {
+      pathway_output_celltype_vs[['significance']] <- -log10(pathway_output_celltype_vs[['significance']])
+    }
+    # add the condition
+    pathway_output_celltype_vs[['condition']] <- compare_tos[1]
+    # if we have a second comparison, add that
+    if (length(compare_tos) == 2) {
+      # get the second comparison
+      pathway_output_celltype_vs_2 <- pathway_output_celltype[pathway_output_celltype[[reference_column]] == reference &
+                                                              pathway_output_celltype[[compare_column]] == compare_tos[2], ]
+      # order
+      pathway_output_celltype_vs_2[order(pathway_output_celltype_vs_2[['significance']]), ]
+      # grab the first x values, if that is possible
+      if (nrow(pathway_output_celltype_vs_2) > top_so_many) {
+        pathway_output_celltype_vs_2 <- pathway_output_celltype_vs_2[1:top_so_many, ]
+      }
+      # logging the p if requested
+      if (logp) {
+        pathway_output_celltype_vs_2[['significance']] <- -log10(pathway_output_celltype_vs_2[['significance']])
+      }
+      # multiply by negative so it will align on the left of the plot
+      pathway_output_celltype_vs_2[['significance']] <- pathway_output_celltype_vs_2[['significance']] * -1
+      # add the condition
+      pathway_output_celltype_vs_2[['condition']] <- compare_tos[2]
+      # add together
+      pathway_output_celltype_vs <- rbind(pathway_output_celltype_vs, pathway_output_celltype_vs_2)
+    }
+    # place in list
+    plot_frame_per_celltype[[cell_type]] <- pathway_output_celltype_vs
+  }
+  return(plot_frame_per_celltype)
+}
+
+
+plot_pathways_celltype <- function(plot_frame, condition_column='condition', term_column='Term', significance_column='significance', set_size_column = 'Overlap', use_color_coding_dict=T, use_label_dict=T,pointless=F, legendless=F, ylim=NULL, paper_style=T, set_size_outside=F, term_text_remove=' R-HSA-\\d+') {
+  # use prettier labels if requested
+  if(use_label_dict){
+    plot_frame[[condition_column]] <- as.vector(unlist(label_dict()[plot_frame[[condition_column]]]))
+  }
+  # clean terms
+  if (!is.null(term_text_remove)) {
+    # remove some text
+    plot_frame[[term_column]] <- gsub(term_text_remove, '', as.character(plot_frame[[term_column]]))
+  }
+  # order by the significance
+  plot_frame[[term_column]] <- factor(plot_frame[[term_column]], levels = unique(plot_frame[order(plot_frame[[significance_column]]), term_column]))
+  
+  # add the hjust based on if the value is negative or positive
+  plot_frame[['hjust']] <- .5
+  plot_frame[plot_frame[[significance_column]] > 0, 'hjust'] <- 0
+  plot_frame[plot_frame[[significance_column]] < 0, 'hjust'] <- 1
+  
+  # create the base plot
+  p <- ggplot(data = NULL, mapping = aes(x = plot_frame[[term_column]], y = plot_frame[[significance_column]], fill = plot_frame[[condition_column]], label = plot_frame[[set_size_column]])) + 
+    geom_bar(stat = 'identity')
+    
+  if (set_size_outside) {
+    p <- p + geom_text(mapping = aes(x = plot_frame[[term_column]], y = plot_frame[[significance_column]]), hjust=plot_frame[['hjust']])
+  }
+  else {
+    p <- p + geom_text(mapping = aes(x = plot_frame[[term_column]], y = 0), hjust=plot_frame[['hjust']])
+  }
+  # flip it
+  p <- p + coord_flip() +
+    xlab(term_column) +
+    ylab(significance_column)
+  
+  # use the colours provided
+  if (use_color_coding_dict) {
+    # fetch colors
+    cc <- get_color_coding_dict()
+    # set colors based on condition
+    colScale <- scale_fill_manual(name = "condition",values = unlist(cc[plot_frame[[condition_column]]]))
+    # add color
+    p <- p + colScale
+  }
+  # add xlimit if requested
+  if(!is.null(ylim)){
+    p <- p + ylim(ylim)
+  }
+  # automatically determine if not supplied
+  else {
+    max_abs_y <- max(abs(plot_frame[[significance_column]]))
+    if (min(plot_frame[[significance_column]]) < 0) {
+      p <- p + ylim(c(-1.25 * max_abs_y, 1.25 * max_abs_y))
+    }
+    else {
+      p <- p + ylim(c(0, 1.25 * max_abs_y))
+    }
+  }
+  if(pointless){
+    p <- p + theme(axis.text.x=element_blank(), 
+                   axis.ticks = element_blank())
+  }
+  if(legendless){
+    p <- p + theme(legend.position = 'none')
+  }
+  if (paper_style) {
+    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  return(p)
+}
+
+
+filter_pathway_on_category <- function(pathway_table, filtered_names){
+  pathway_table_filtered <- pathway_table[pathway_table$Name %in% filtered_names, ]
+  return(pathway_table_filtered)
+}
+
+filter_pathways_on_category <- function(pathway_list, filtered_names){
+  # new list for filtered pathway
+  filtered_pathway_list <- list()
+  # check each pathway df in the result list
+  for(key in names(pathway_list)){
+    pathway_df <- pathway_list[[key]]
+    filtered_pathway_df <- filter_pathway_on_category(pathway_df, filtered_names)
+    # put in the filtered list
+    filtered_pathway_list[[key]] <- filtered_pathway_df
+  }
+  return(filtered_pathway_list)
+}
+
+get_children <- function(relation_table, starting_id){
+  # get all of the children of the starting ID
+  children <- as.character(relation_table[relation_table$V1 == starting_id, 'V2'])
+  # these children are all family
+  family <- children
+  # see if there were any children
+  if(length(children) > 0){
+    # if there were children, we need to get their children as well
+    for(child in children){
+      # get the grandchildren and add these to the family
+      grand_children <- get_children(relation_table, child)
+      family <- c(family, grand_children)
+    }
+  }
+  return(family)
+}
+
+
+get_filtered_pathway_names <- function(pathway_table, relation_table, starting_id, add_id=F, only_id=F){
+  # get all of the children of the starting ID
+  all_children <- get_children(relation_table, starting_id)
+  # get the names of the pathways that are children
+  pathways_to_include_names <- pathway_table[pathway_table$V1 %in% all_children, ]
+  pathway_names <- NULL
+  # add the id if requested
+  if (only_id) {
+    pathway_names <-pathways_to_include_names[['V1']]
+  }
+  else if (add_id) {
+    pathway_names <- paste(pathways_to_include_names[['V2']], pathways_to_include_names[['V1']])
+  }
+  else {
+    pathway_names <-pathways_to_include_names[['V2']]
+  }
+  return(pathway_names)
+}
+
+
+pathway_names_to_top_level <- function(pathway_mappings, pathway_names) {
+  # subset to just human to speed up the search
+  pathway_names <- pathway_names[pathway_names$V3 == 'Homo sapiens', ]
+  # get the top level human pathways
+  top_level_pathways <- unique(pathway_mappings[pathway_mappings$V2 %in% pathways$V1 & # is human
+                                        !(pathway_mappings$V1 %in% pathway_mappings$V2) , 'V1']) # doesn't have a parent
+  # first store in list
+  pathway_name_to_top_level <- list()
+  # check each top level pathway
+  for (top_level in top_level_pathways) {
+    # get the filtered names for that one
+    filtered_names <- get_filtered_pathway_names(pathways, pathway_mappings, top_level, add_id = T)
+    # and filtered IDs
+    filtered_ids <- get_filtered_pathway_names(pathways, pathway_mappings, top_level, only_id = T)
+    # get the name of this parent
+    parent_name <- pathway_names[match(top_level, pathway_names[['V1']]), 'V2']
+    # make dataframe
+    pathway_mapping_category <- data.frame(pathway = filtered_names, id = filtered_ids, top_parent = rep(parent_name, times = length(parent_name)), top_id = rep(top_level, length(parent_name)))
+    # add the category itself as well
+    pathway_mapping_category <- rbind(pathway_mapping_category, data.frame(pathway = c(paste(parent_name, top_level)), id = c(top_level), top_parent = c(parent_name), top_id=c(top_level)))
+    # add to list
+    pathway_name_to_top_level[[top_level]] <- pathway_mapping_category
+  }
+  # merge lists
+  pathways_to_top_parent <- do.call('rbind', pathway_name_to_top_level)
+  return(pathways_to_top_parent)
+}
+
+
+add_reactome_id <- function(pathway_table, term_column_pathways_table='Term') {
+  # add the ID to the pathway table
+  pathway_table[['id']] <- apply(pathway_table, 1, function(x) {
+    term <- x[term_column_pathways_table]
+    # seach for the R-HSA tag
+    search_result <- gregexpr('R-HSA-\\d+', term)
+    # get the subsetring
+    id <- substr(x[term_column_pathways_table], search_result[[1]][[1]], search_result[[1]][[1]] + attributes(search_result[[1]])$match.length)
+    return(id[[term_column_pathways_table]])
+  })
+  return(pathway_table)
+}
+
+
+add_reactome_category <- function(pathway_table, category_mapping, term_column_pathways_table='Term', parent_column_mapping_table='top_parent') {
+  # set the NA to be 'unannotated' for the category mapping
+  if (nrow(category_mapping[is.na(category_mapping[[parent_column_mapping_table]]), ]) > 0) {
+    category_mapping[is.na(category_mapping[[parent_column_mapping_table]]), parent_column_mapping_table] <- 'unannotated'
+  }
+  pathway_table <- add_reactome_id(pathway_table, term_column_pathways_table)
+  # now add the category to the pathway output
+  pathway_table[['category']] <- category_mapping[match(pathway_table[['id']], category_mapping[['id']]), parent_column_mapping_table]
+  # the ones that don't have a category
+  pathway_table[!(pathway_table[['id']] %in% category_mapping[['id']]), 'category'] <- 'unannotated'
+  return(pathway_table)
+}
+
+
+split_string_with_max_length <- function(string, max_length=15) {
+  # split the string on the space first
+  words <- strsplit(string, ' ')[[1]]
+  # and initial pasted string
+  final_string <- ''
+  # and the temporary string
+  tmp_string <- ''
+  # check each word
+  for (word in words) {
+    # get the lenght of the temporary string
+    tmp_len <- nchar(tmp_string)
+    # get the length of the word
+    word_len <- nchar(word)
+    # length of the final string
+    final_len <- nchar(final_string)
+    # check if adding the next word would make us go over the limit
+    if ((tmp_len + word_len) > max_length) {
+      if (final_len > 0) {
+        # add the temporary word to the final string if it was not empty
+        final_string <- paste(final_string, '\n', tmp_string, sep = '')
+      }
+      else{
+        # if there was not final string yet, it will just become that temporary string
+        final_string <- tmp_string
+      }
+      # reset the temporary string
+      tmp_string <- word
+    }
+    else{
+      # otherwise add it to the temporary string
+      if (tmp_len > 0) {
+        tmp_string <- paste(tmp_string, word)
+      }
+      # or set if the temporary string was empty
+      else{
+        tmp_string <- word
+      }
+    }
+  }
+  # add last word
+  if (nchar(paste(final_string, tmp_string)) > max_length) {
+    if (nchar(final_string) == 0) {
+      final_string <- tmp_string
+    }
+    else if (nchar(tmp_string > 0)) {
+      final_string <- paste(final_string, '\n', tmp_string, sep = '')
+    }
+    else{
+      # nothing the final string is as it is
+    }
+  }
+  else {
+    if (nchar(final_string) == 0) {
+      final_string <- tmp_string
+    }
+    else if(nchar(tmp_string) == 0){
+      # nothing, the final string is as is
+    }
+    else{
+      final_string <- paste(final_string, ' ', tmp_string, sep = '')
+    }
+  }
+  # add the last word
+  return(final_string)
+}
+
+
+plot_pathway_categories_celltype <- function(pathway_table, category_mapping, significance_column='Old.Adjusted.P.value', pval_cutoff=0.05, term_column_pathways_table='Term', term_column_mapping_table='pathway', parent_column_mapping_table='top_parent', legendless=F, paper_style=T, to_fractions=F, use_distinct_colours=T, use_sampling=F, color_indices=NULL, drop_categories=NULL, text_loc='topleft') {
+  # filter the table
+  pathway_table_significant <- pathway_table[pathway_table[[significance_column]] < pval_cutoff, ]
+  # set the NA to be 'unannotated' for the category mapping
+  category_mapping[is.na(category_mapping[[parent_column_mapping_table]]), parent_column_mapping_table] <- 'unannotated'
+  # add the ID to the pathway table
+  pathway_table_significant[['id']] <- apply(pathway_table_significant, 1, function(x) {
+    term <- x[term_column_pathways_table]
+    # seach for the R-HSA tag
+    search_result <- gregexpr('R-HSA-\\d+', term)
+    # get the subsetring
+    id <- substr(x[term_column_pathways_table], search_result[[1]][[1]], search_result[[1]][[1]] + attributes(search_result[[1]])$match.length)
+    return(id[[term_column_pathways_table]])
+  })
+  # now add the category to the pathway output
+  pathway_table_significant[['category']] <- category_mapping[match(pathway_table_significant[['id']], category_mapping[['id']]), parent_column_mapping_table]
+  # the ones that don't have a category
+  pathway_table_significant[!(pathway_table_significant[['id']] %in% category_mapping[['id']]), 'category'] <- 'unannotated'
+  # drop categories if we want
+  if (!is.null(drop_categories)) {
+    for (to_drop in drop_categories) {
+      # check what is dropped
+      dropped <- pathway_table_significant[pathway_table_significant[['category']] == to_drop, term_column_pathways_table]
+      print(paste('dropping category ', to_drop, ', containing ', paste(dropped, collapse = ','), sep = ''))
+      # and drop it
+      pathway_table_significant <- pathway_table_significant[pathway_table_significant[['category']] != to_drop, ]
+    }
+  }
+  # now turn this into a table
+  number_per_category <- data.frame(table(pathway_table_significant[['category']]))
+  # set better column names
+  colnames(number_per_category) <- c('category', 'number')
+  # turn into plot
+  p <- ggplot(number_per_category, aes(area = number, fill = category, label = category)) +
+    geom_treemap() +
+    geom_treemap_text(place = text_loc)
+  # use distinct colours if requested
+  if (use_distinct_colours) {
+    # get the unique possible assigments
+    possible_assignments <- unique(pathway_table_significant[['category']])
+    # get an equal amount of colours
+    possible_colours <- NULL
+    if(length(possible_assignments) > 74) {
+      possible_colours <- sample_tons_of_colors(length(possible_assignments), use_sampling = use_sampling, color_indices = color_indices)
+    }
+    else {
+      possible_colours <- sample_many_colours(length(possible_assignments), use_sampling = use_sampling, color_indices = color_indices)
+    }
+    # put into a list
+    colour_mapping <- as.list(possible_colours)
+    names(colour_mapping) <- possible_assignments
+    # add to plot
+    p <- p + scale_fill_manual(values = colour_mapping)
+  }
+  if(legendless){
+    p <- p + theme(legend.position = 'none')
+  }
+  if (paper_style) {
+    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  return(p)
+}
+
+
+plot_pathways_celltype_dots <- function(plot_frame, condition_column='condition', term_column='Term', significance_column='significance', set_size_column='Overlap', direction_column=NULL, set_size_limits=NULL, use_label_dict=T, pointless=F, legendless=F, paper_style=T, term_text_remove=' R-HSA-\\d+', convert_set_size=T, condition_order=NULL, low_color='darkblue', mid_color='white', high_color='darkred', split_up_down=F) {
+  # use prettier labels if requested
+  if(use_label_dict){
+    plot_frame[[condition_column]] <- as.vector(unlist(label_dict()[plot_frame[[condition_column]]]))
+  }
+  # order by condition column
+  if (!is.null(condition_order)) {
+    plot_frame[[condition_column]] <- factor(plot_frame[[condition_column]], levels = condition_order)
+  }
+  # clean terms
+  if (!is.null(term_text_remove)) {
+    # remove some text
+    plot_frame[[term_column]] <- gsub(term_text_remove, '', as.character(plot_frame[[term_column]]))
+  }
+  # make the set size numeric from the characters, if they are not already
+  if (convert_set_size) {
+    # convert the set size
+    plot_frame[[set_size_column]] <- apply(plot_frame, 1, function(x){
+      # take the value
+      set_size_text <- x[[set_size_column]]
+      # split by the divider
+      numbers <- strsplit(set_size_text, split = '/')[[1]]
+      # calculate fraction
+      fraction <- as.numeric(numbers[1]) / as.numeric(numbers[2])
+      return(fraction)
+    }) 
+  }
+  # make up and down in different directions
+  if (!is.null(direction_column)) {
+    plot_frame[plot_frame[[direction_column]] == 'down', set_size_column] <- -1 * plot_frame[plot_frame[[direction_column]] == 'down', set_size_column]
+  }
+  # order by the significance
+  plot_frame[[term_column]] <- factor(plot_frame[[term_column]], levels = rev(unique(plot_frame[order(plot_frame[[condition_column]], plot_frame[[set_size_column]]), term_column])))
+  # split up and down first
+  if (split_up_down) {
+    # we'll save the terms
+    terms_present_up <- c()
+    terms_present_down <- c()
+    # get per condition
+    for (condition in plot_frame[[condition_column]]) {
+      terms_up <- as.character(plot_frame[plot_frame[[condition_column]] == condition & plot_frame[[direction_column]] == 'up', term_column])
+      terms_down <- as.character(plot_frame[plot_frame[[condition_column]] == condition & plot_frame[[direction_column]] == 'down', term_column])
+      terms_present_up <- c(terms_present_up, terms_up)
+      terms_present_down <- c(terms_present_down, terms_down)
+    }
+    # now deduplicate them
+    terms_present_up <- terms_present_up[!duplicated(terms_present_up)]
+    terms_present_down <- terms_present_down[!duplicated(terms_present_down)]
+    # merge them
+    terms_all <- c(terms_present_up, terms_present_down)
+    # and remove duplicates again
+    terms_all <- terms_all[!duplicated(terms_all)]
+    # set the levels now
+    plot_frame[[term_column]] <- factor(plot_frame[[term_column]], levels = rev(terms_all))
+  }
+  # make plot
+  p <- ggplot(data = NULL, mapping = aes(x = plot_frame[[condition_column]], y = plot_frame[[term_column]], color = plot_frame[[set_size_column]], size = plot_frame[[significance_column]])) +
+    geom_point()
+  
+  # add labels
+  p <- p + xlab(condition_column)
+  p <- p + ylab(term_column)
+  p <- p + labs(color = set_size_column, size = significance_column)
+  
+  # get the limits if they don't exist
+  if (is.null(set_size_limits)) {
+    abs_max <- max(abs(plot_frame[[set_size_column]]))
+    set_size_limits <- c((-1*abs_max), abs_max)
+  }
+  
+  # add colour
+  p  <- p + scale_colour_gradient2(
+    low = low_color,
+    mid = mid_color,
+    high = high_color,
+    midpoint = 0,
+    space = "Lab",
+    na.value = "grey50",
+    guide = "colourbar",
+    aesthetics = "colour",
+    limits = set_size_limits
+  )
+  
+  if(pointless){
+    p <- p + theme(axis.text.x = element_blank(), 
+                   axis.ticks = element_blank())
+  }
+  if(legendless){
+    p <- p + theme(legend.position = 'none')
+  }
+  if (paper_style) {
+    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  return(p)
+}
+
+
+get_parents <- function(relation_table, starting_id){
+  # get all of the children of the starting ID
+  parents <- as.character(relation_table[relation_table$V2 == starting_id, 'V1'])
+  # these children are all family
+  family <- parents
+  # see if there were any parents
+  if(length(parents) > 0){
+    # if there were parent, we need to get their parents as well
+    for(parent in parents){
+      # get the grandparents and add these to the family
+      grand_parents <- get_parents(relation_table, parent)
+      family <- c(family, grand_parents)
+    }
+  }
+  return(family)
+}
+
+
+
+remove_all_parents <- function(pathway_table, pathway_mappings, term_column='Term') {
+  # add the ID as an explicit column
+  pathway_table <- add_reactome_id(pathway_table, term_column = term_column)
+  # get all complete ancestries for each pathway
+  pathway_table[['parents']] <- apply(pathway_table, 1, function(x){
+    full_ancestry <- get_parents(pathway_mappings, x[['id']])
+    return(paste(full_ancestry, collapse = ','))
+  })
+  # get all the ancestries
+  all_ids_string <- paste(pathway_table[['parents']], collapse = ',')
+  # now split all of them
+  all_ids <- strsplit(all_ids_string, split = ',')[[1]]
+  # filter the pathway table on that
+  pathway_table <- pathway_table[!(pathway_table[['id']] %in% all_ids),  ]
+  return(pathway_table)
+}
+
+
+remove_parent_per_celltype_conditions <- function(pathway_table, pathway_mappings, cell_type_column = 'cell_type', condition_1_column='condition1', condition_2_column='condition2', term_column='Term') {
+  # we'll store per combination
+  table_per_combination <- list()
+  # we'll check each cell type
+  for (cell_type in unique(pathway_table[[cell_type_column]])) {
+    # subset to that cell type
+    pathway_table_ct <- pathway_table[!is.na(pathway_table[[cell_type_column]]) & pathway_table[[cell_type_column]] == cell_type, ]
+    # check condition 1
+    for (condition_1 in unique(pathway_table_ct[[condition_1_column]])) {
+      # subset to condition
+      pathway_table_ct_c1 <- pathway_table_ct[!is.na(pathway_table_ct[[condition_1_column]]) & pathway_table_ct[[condition_1_column]] == condition_1, ]
+      # and check condition 2
+      for (condition_2 in unique(pathway_table_ct_c1[[condition_2_column]])) {
+        # subset to that condition
+        pathway_table_ct_c1_c2 <- pathway_table_ct_c1[!is.na(pathway_table_ct_c1[[condition_2_column]]) & pathway_table_ct_c1[[condition_2_column]] == condition_2, ]
+        # remove all parents
+        pathway_table_ct_c1_c2 <- remove_all_parents(pathway_table_ct_c1_c2, pathway_mappings, term_column = term_column)
+        # add to list
+        table_per_combination[[paste(cell_type, condition_1, condition_2, sep = '_')]] <- pathway_table_ct_c1_c2
+      }
+    }
+  }
+  # merge all together again
+  table_filtered <- do.call('rbind', table_per_combination)
+  return(table_filtered)
+}
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+####################
+# Main Code        #
+####################
+
+# get the location of the pathway output
+pathway_output_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr_reactome_2023_lfc01/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+enrichr_kegg_output_loc <-'/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr_kegg/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+clusterprofiler_kegg_output_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/kegg/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/table/'
+
+```
+
+```{r pathway_filter, include=FALSE}
+
+# this is the reactome ID for the immune system
+immune_system_reactome_id <- 'R-HSA-168256'
+# load the pathways
+pathways <- read.table('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment//ReactomePathways.tsv', sep='\t', quote = '')
+# subset to just human to speed up the search
+pathways <- pathways[pathways$V3 == 'Homo sapiens', ]
+# load the pathway mapping
+pathway_mappings <- read.table('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment//ReactomePathwaysRelation.tsv', sep = '\t')
+# get the filtered names
+filtered_names <- c(get_filtered_pathway_names(pathways, pathway_mappings, 'R-HSA-168256', add_id = T), get_filtered_pathway_names(pathways, pathway_mappings, 'R-HSA-162582', add_id = T))
+filtered_ids <- c(get_filtered_pathway_names(pathways, pathway_mappings, 'R-HSA-168256', only_id = T), get_filtered_pathway_names(pathways, pathway_mappings, 'R-HSA-162582', only_id = T))
+# get the top level human pathways
+pathways_to_top_level <- pathway_names_to_top_level(pathway_mappings = pathway_mappings, pathway_names = pathways)
+pathways_to_top_level[is.na(pathways_to_top_level[['top_parent']]), 'top_parent'] <- 'unannotated'
+# make a copy with more readable names
+pathways_to_top_level[['top_parent_readable']] <- apply(pathways_to_top_level, 1, function(x){split_string_with_max_length(x[['top_parent']])})
+```
+
+```{r limma_enrichr, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get all output
+limma_both_enrichr <- get_pathways_per_celltype_condition(pathway_output_loc, pval_cutoff = 0.05, pval_column = 'Old.Adjusted.P.value', append = '_positive.tsv', cell_types = c('monocyte'))
+
+```
+
+```{r limma_enrichr_plots, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+
+# filter parents out
+limma_both_enrichr_positive_filtered <- remove_parent_per_celltype_conditions(limma_both_enrichr, pathway_mappings)
+
+# filter on IDs
+limma_both_enrichr_positive_filtered <- limma_both_enrichr_positive_filtered[limma_both_enrichr_positive_filtered$id %in% filtered_ids, ]
+
+# get all output
+limma_both_enrichr_baseline_vs_t24ht8w <- get_plotframe_per_celltype(limma_both_enrichr_positive_filtered, reference = 'Baseline', compare_tos = c('t24h', 't8w'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+# make plots
+plot_pathways_celltype(limma_both_enrichr_baseline_vs_t24ht8w[['monocyte']], legendless = T, set_size_outside = T, significance_column = 'significance') + 
+  labs(
+    title = 'Monocyte enriched pathways compared to t0',
+    subtitle = '\tt8w\t\t\t\t\t\t\t\t\t\tt24h',
+    y = 'corrected -log10 p value',
+    x = 'REACTOME pathway'
+  )
+
+```
+
+```{r limma_enrichr_plots, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get all output
+limma_both_enrichr_negative <- get_pathways_per_celltype_condition(pathway_output_loc, pval_cutoff = 0.05, pval_column = 'Adjusted.P.value', append = '_negative.tsv', cell_types = c('monocyte'))
+
+# filter parents out
+limma_both_enrichr_negative_filtered <- remove_parent_per_celltype_conditions(limma_both_enrichr_negative, pathway_mappings)
+limma_both_enrichr_positive_filtered <- remove_parent_per_celltype_conditions(limma_both_enrichr, pathway_mappings)
+
+# filter on IDs
+limma_both_enrichr_negative_filtered <- limma_both_enrichr_negative_filtered[limma_both_enrichr_negative_filtered$id %in% filtered_ids, ]
+limma_both_enrichr_positive_filtered <- limma_both_enrichr_positive_filtered[limma_both_enrichr_positive_filtered$id %in% filtered_ids, ]
+
+# get all output
+limma_both_enrichr_ut_vs_baseline_down <- get_plotframe_per_celltype(limma_both_enrichr_negative_filtered, reference = 'Baseline', compare_tos = c('UT'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+limma_both_enrichr_ut_vs_baseline_up <- get_plotframe_per_celltype(limma_both_enrichr_positive_filtered, reference = 'Baseline', compare_tos = c('UT'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+limma_both_enrichr_ut_vs_baseline_down[['monocyte']][['condition']] <- 'down'
+limma_both_enrichr_ut_vs_baseline_up[['monocyte']][['condition']] <- 'up'
+limma_both_enrichr_ut_vs_baseline_down[['monocyte']][['significance']] <- -1 * limma_both_enrichr_ut_vs_baseline_down[['monocyte']][['significance']]
+# make plots
+plot_pathways_celltype(rbind(limma_both_enrichr_ut_vs_baseline_down[['monocyte']], limma_both_enrichr_ut_vs_baseline_up[['monocyte']]), legendless = T, set_size_outside = T, significance_column = 'significance', use_label_dict = F) + 
+  labs(
+    title = 'Monocyte enriched pathways C-t0',
+    subtitle = '\t\tdown\t\t\t\t\t\t\tup',
+    y = 'corrected -log10 p value',
+    x = 'REACTOME pathway'
+  ) + scale_fill_manual(values = list('up' = 'darkred', 'down' = 'lightblue'))
+
+```
+```{r limma_enrichr_plots, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get all output
+limma_both_enrichr_baseline_vs_t24ht8w_unfiltered <- get_plotframe_per_celltype(limma_both_enrichr, reference = 'Baseline', compare_tos = c('t24h', 't8w'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+# add category (optional)
+limma_both_enrichr_baseline_vs_t24ht8w_unfiltered[['monocyte']] <- add_reactome_category(limma_both_enrichr_baseline_vs_t24ht8w_unfiltered[['monocyte']], pathways_to_top_level)
+# merge category and term
+limma_both_enrichr_baseline_vs_t24ht8w_unfiltered[['monocyte']][['category_term']] <- paste(limma_both_enrichr_baseline_vs_t24ht8w_unfiltered[['monocyte']][['category']], ':\n', limma_both_enrichr_baseline_vs_t24ht8w_unfiltered[['monocyte']][['Term']], sep = '')
+# make plots
+plot_pathways_celltype(limma_both_enrichr_baseline_vs_t24ht8w_unfiltered[['monocyte']], legendless = T, set_size_outside = T, significance_column = 'significance', term_column = 'category_term') + 
+  labs(
+    title = 'Monocyte enriched pathways compared to t0',
+    subtitle = '\tt8w\t\t\t\t\t\t\t\t\t\tt24h',
+    y = 'corrected -log10 p value',
+    x = 'REACTOME pathway'
+  )
+
+
+```
+
+```{r limma_dot_plots, include=TRUE, fig.width=10, fig.height=10}
+
+# filter parents out
+limma_both_enrichr_positive_filtered <- remove_parent_per_celltype_conditions(limma_both_enrichr, pathway_mappings)
+
+# filter on IDs
+limma_both_enrichr_positive_filtered <- limma_both_enrichr_positive_filtered[limma_both_enrichr_positive_filtered$id %in% filtered_ids, ]
+
+# get all output
+limma_both_enrichr_baseline_vs_t24ht8w <- get_plotframe_per_celltype(limma_both_enrichr_positive_filtered, reference = 'Baseline', compare_tos = c('t24h', 't8w'), term_column = 'Term', significance_column = 'Adjusted.P.value')
+
+# modify significance column
+limma_both_enrichr_baseline_vs_t24ht8w[['monocyte']][['significance']] <- abs(limma_both_enrichr_baseline_vs_t24ht8w[['monocyte']][['significance']])
+
+plot_pathways_celltype_dots(limma_both_enrichr_baseline_vs_t24ht8w[['monocyte']]) + ggtitle('top enriched pathways monocytes compared to t0')
+
+```
+
+
+```{r limma_enrichr_plots, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get all output
+limma_both_enrichr_negative <- get_pathways_per_celltype_condition(pathway_output_loc, pval_cutoff = 0.05, pval_column = 'Adjusted.P.value', append = '_negative.tsv', cell_types = c('monocyte'))
+
+# filter parents out
+limma_both_enrichr_negative_filtered <- remove_parent_per_celltype_conditions(limma_both_enrichr_negative, pathway_mappings)
+limma_both_enrichr_positive_filtered <- remove_parent_per_celltype_conditions(limma_both_enrichr, pathway_mappings)
+
+# filter on IDs
+limma_both_enrichr_negative_filtered <- limma_both_enrichr_negative_filtered[limma_both_enrichr_negative_filtered$id %in% filtered_ids, ]
+limma_both_enrichr_positive_filtered <- limma_both_enrichr_positive_filtered[limma_both_enrichr_positive_filtered$id %in% filtered_ids, ]
+
+# get all output
+limma_both_enrichr_ut_vs_baseline_down <- get_plotframe_per_celltype(limma_both_enrichr_negative_filtered, reference = 'Baseline', compare_tos = c('UT'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+limma_both_enrichr_ut_vs_baseline_up <- get_plotframe_per_celltype(limma_both_enrichr_positive_filtered, reference = 'Baseline', compare_tos = c('UT'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+limma_both_enrichr_ut_vs_baseline_down[['monocyte']][['condition']] <- 'down'
+limma_both_enrichr_ut_vs_baseline_up[['monocyte']][['condition']] <- 'up'
+
+plot_pathways_celltype_dots(rbind(limma_both_enrichr_ut_vs_baseline_up[['monocyte']], limma_both_enrichr_ut_vs_baseline_down[['monocyte']]), use_label_dict = F) + ggtitle('top enriched pathways monocytes compared C-t0')
+
+
+```
+
+```{r limma_dot_plots_all, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get pathways
+limma_both_enrichr <- get_pathways_per_celltype_condition(pathway_output_loc, pval_cutoff = 0.05, pval_column = 'Old.Adjusted.P.value', append = '_positive.tsv', cell_types = c('monocyte'))
+limma_both_enrichr_down <- get_pathways_per_celltype_condition(pathway_output_loc, pval_cutoff = 0.05, pval_column = 'Old.Adjusted.P.value', append = '_negative.tsv', cell_types = c('monocyte'))
+
+# filter parents out
+limma_both_enrichr_positive_filtered <- remove_parent_per_celltype_conditions(limma_both_enrichr, pathway_mappings)
+limma_both_enrichr_negative_filtered <- remove_parent_per_celltype_conditions(limma_both_enrichr_down, pathway_mappings)
+
+# filter on IDs
+limma_both_enrichr_positive_filtered <- limma_both_enrichr_positive_filtered[limma_both_enrichr_positive_filtered$id %in% filtered_ids, ]
+limma_both_enrichr_negative_filtered <- limma_both_enrichr_negative_filtered[limma_both_enrichr_negative_filtered$id %in% filtered_ids, ]
+
+
+# get positive ones
+limma_both_enrichr_ut_vs_baseline_up <- get_plotframe_per_celltype(limma_both_enrichr_positive_filtered, reference = 'Baseline', compare_tos = c('UT'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+limma_both_enrichr_baseline_vs_t24h_up <- get_plotframe_per_celltype(limma_both_enrichr_positive_filtered, reference = 'Baseline', compare_tos = c('t24h'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+limma_both_enrichr_baseline_vs_t8w_up <- get_plotframe_per_celltype(limma_both_enrichr_positive_filtered, reference = 'Baseline', compare_tos = c('t8w'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+limma_both_enrichr_t24h_vs_t8w_up <- get_plotframe_per_celltype(limma_both_enrichr_positive_filtered, reference = 't24h', compare_tos = c('t8w'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+# get the positive ones
+limma_both_enrichr_ut_vs_baseline_down <- get_plotframe_per_celltype(limma_both_enrichr_negative_filtered, reference = 'Baseline', compare_tos = c('UT'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+limma_both_enrichr_baseline_vs_t24h_down <- get_plotframe_per_celltype(limma_both_enrichr_negative_filtered, reference = 'Baseline', compare_tos = c('t24h'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+limma_both_enrichr_baseline_vs_t8w_down <- get_plotframe_per_celltype(limma_both_enrichr_negative_filtered, reference = 'Baseline', compare_tos = c('t8w'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+limma_both_enrichr_t24h_vs_t8w_down <- get_plotframe_per_celltype(limma_both_enrichr_negative_filtered, reference = 't24h', compare_tos = c('t8w'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+
+
+# get the IDs to include
+ids_all_comparisons <- unique(
+  c(
+    limma_both_enrichr_ut_vs_baseline_up[['monocyte']][['id']], 
+    limma_both_enrichr_baseline_vs_t24h_up[['monocyte']][['id']], 
+    limma_both_enrichr_baseline_vs_t8w_up[['monocyte']][['id']], 
+    limma_both_enrichr_t24h_vs_t8w_up[['monocyte']][['id']],
+    limma_both_enrichr_ut_vs_baseline_down[['monocyte']][['id']], 
+    limma_both_enrichr_baseline_vs_t24h_down[['monocyte']][['id']], 
+    limma_both_enrichr_baseline_vs_t8w_down[['monocyte']][['id']], 
+    limma_both_enrichr_t24h_vs_t8w_down[['monocyte']][['id']]
+    )
+  )
+
+# subset the pathways to ones we want
+limma_both_enrichr_mono_filtered <- limma_both_enrichr_positive_filtered[limma_both_enrichr_positive_filtered[['cell_type']] == 'monocyte' & limma_both_enrichr_positive_filtered[['id']] %in% ids_all_comparisons, ]
+# add log transformed p values
+limma_both_enrichr_mono_filtered[['significance']] <- limma_both_enrichr_mono_filtered[['Adjusted.P.value']]
+# make it so that the zero ones are the minimal possible value
+limma_both_enrichr_mono_filtered[limma_both_enrichr_mono_filtered[['significance']] == 0, 'significance'] <- .Machine$double.xmin
+# and log transform
+limma_both_enrichr_mono_filtered[['significance']] <- -log10(limma_both_enrichr_mono_filtered[['significance']])
+# add comparison
+limma_both_enrichr_mono_filtered[['comparison']] <- paste(limma_both_enrichr_mono_filtered[['condition1']], limma_both_enrichr_mono_filtered[['condition2']], sep = '')
+# make plot
+plot_pathways_celltype_dots(limma_both_enrichr_mono_filtered[limma_both_enrichr_mono_filtered$Adjusted.P.value < 0.05, ], condition_column = 'comparison', use_label_dict = T) + ggtitle('top enriched pathways monocytes')
+
+
+# subset the pathways to ones we want
+limma_both_enrichr_mono_filtered_down <- limma_both_enrichr_negative_filtered[limma_both_enrichr_negative_filtered[['cell_type']] == 'monocyte' & limma_both_enrichr_negative_filtered[['id']] %in% ids_all_comparisons, ]
+# add log transformed p values
+limma_both_enrichr_mono_filtered_down[['significance']] <- limma_both_enrichr_mono_filtered_down[['Adjusted.P.value']]
+# make it so that the zero ones are the minimal possible value
+limma_both_enrichr_mono_filtered_down[limma_both_enrichr_mono_filtered_down[['significance']] == 0, 'significance'] <- .Machine$double.xmin
+# and log transform
+limma_both_enrichr_mono_filtered_down[['significance']] <- -log10(limma_both_enrichr_mono_filtered_down[['significance']])
+# add comparison
+limma_both_enrichr_mono_filtered_down[['comparison']] <- paste(limma_both_enrichr_mono_filtered_down[['condition1']], limma_both_enrichr_mono_filtered_down[['condition2']], sep = '')
+
+# add direction
+limma_both_enrichr_mono_filtered_down[['direction']] <- 'down'
+limma_both_enrichr_mono_filtered_down[limma_both_enrichr_mono_filtered_down[['condition2']] != 'Baseline', 'direction'] <- 'up'
+limma_both_enrichr_mono_filtered[['direction']] <- 'up'
+limma_both_enrichr_mono_filtered[limma_both_enrichr_mono_filtered[['condition2']] != 'Baseline', 'direction'] <- 'down'
+
+# merge all
+limma_both_enrichr_mono_filtered_bidirectional <- rbind(limma_both_enrichr_mono_filtered_down, limma_both_enrichr_mono_filtered)
+
+# plot pathways
+plot_pathways_celltype_dots(limma_both_enrichr_mono_filtered_bidirectional[limma_both_enrichr_mono_filtered_bidirectional$Adjusted.P.value < 0.05, ], condition_column = 'comparison', use_label_dict = T, significance_column = 'significance', direction_column = 'direction') + ggtitle('top enriched pathways monocytes')
+```
+
+```{r limma_dot_plots_all, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get pathways
+mast_both_enrichr_positive <- get_pathways_per_celltype_condition('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr_reactome_2023_lfc01/MAST/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/rna/', pval_cutoff = 0.05, pval_column = 'Old.Adjusted.P.value', append = '_negative.tsv', cell_types = c('monocyte'), de_method = 'mast_seurat')
+# filter parents out
+mast_both_enrichr_positive_filtered <- remove_parent_per_celltype_conditions(mast_both_enrichr_positive, pathway_mappings)
+# filter on IDs
+mast_both_enrichr_positive_filtered <- mast_both_enrichr_positive_filtered[mast_both_enrichr_positive_filtered$id %in% filtered_ids, ]
+
+# get UT-Baseline
+mast_both_enrichr_ut_vs_baseline_up <- get_plotframe_per_celltype(mast_both_enrichr_positive_filtered, reference = 'Baseline', compare_tos = c('UT'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+mast_both_enrichr_baseline_vs_t24h_up <- get_plotframe_per_celltype(mast_both_enrichr_positive_filtered, reference = 't24h', compare_tos = c('Baseline'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+mast_both_enrichr_baseline_vs_t8w_up <- get_plotframe_per_celltype(mast_both_enrichr_positive_filtered, reference = 't8w', compare_tos = c('Baseline'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+mast_both_enrichr_t24h_vs_t8w_up <- get_plotframe_per_celltype(mast_both_enrichr_positive_filtered, reference = 't8w', compare_tos = c('t24h'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+
+# get pathways
+mast_both_enrichr_negative <- get_pathways_per_celltype_condition('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr_reactome_2023_lfc01/MAST/stemi_meta_paired_lores_lfc01minpct01ncountrna_20210301/rna/', pval_cutoff = 0.05, pval_column = 'Old.Adjusted.P.value', append = '_positive.tsv', cell_types = c('monocyte'), de_method = 'mast_seurat')
+# filter parents out
+mast_both_enrichr_negative_filtered <- remove_parent_per_celltype_conditions(mast_both_enrichr_negative, pathway_mappings)
+# filter on IDs
+mast_both_enrichr_negative_filtered <- mast_both_enrichr_negative_filtered[mast_both_enrichr_negative_filtered$id %in% filtered_ids, ]
+
+# get UT-Baseline
+mast_both_enrichr_ut_vs_baseline_down <- get_plotframe_per_celltype(mast_both_enrichr_negative_filtered, reference = 'Baseline', compare_tos = c('UT'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+mast_both_enrichr_baseline_vs_t24h_down <- get_plotframe_per_celltype(mast_both_enrichr_negative_filtered, reference = 't24h', compare_tos = c('Baseline'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+mast_both_enrichr_baseline_vs_t8w_down <- get_plotframe_per_celltype(mast_both_enrichr_negative_filtered, reference = 't8w', compare_tos = c('Baseline'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+mast_both_enrichr_t24h_vs_t8w_down <- get_plotframe_per_celltype(mast_both_enrichr_negative_filtered, reference = 't8w', compare_tos = c('t24h'), term_column = 'Term', significance_column = 'Old.Adjusted.P.value')
+
+
+# get the IDs to include
+ids_all_comparisons <- unique(c(mast_both_enrichr_ut_vs_baseline_up[['monocyte']][['id']], mast_both_enrichr_baseline_vs_t24h_up[['monocyte']][['id']], mast_both_enrichr_baseline_vs_t8w_up[['monocyte']][['id']], mast_both_enrichr_t24h_vs_t8w_up[['monocyte']][['id']],
+                                mast_both_enrichr_ut_vs_baseline_down[['monocyte']][['id']], mast_both_enrichr_baseline_vs_t24h_down[['monocyte']][['id']], mast_both_enrichr_baseline_vs_t8w_down[['monocyte']][['id']], mast_both_enrichr_t24h_vs_t8w_down[['monocyte']][['id']]))
+
+# subset the pathways to ones we want
+mast_both_enrichr_positive_mono_filtered <- mast_both_enrichr_positive_filtered[mast_both_enrichr_positive_filtered[['cell_type']] == 'monocyte' & mast_both_enrichr_positive_filtered[['id']] %in% ids_all_comparisons, ]
+# add log transformed p values
+mast_both_enrichr_positive_mono_filtered[['significance']] <- mast_both_enrichr_positive_mono_filtered[['Adjusted.P.value']]
+# make it so that the zero ones are the minimal possible value
+mast_both_enrichr_positive_mono_filtered[mast_both_enrichr_positive_mono_filtered[['significance']] == 0, 'significance'] <- .Machine$double.xmin
+# and log transform
+mast_both_enrichr_positive_mono_filtered[['significance']] <- -log10(mast_both_enrichr_positive_mono_filtered[['significance']])
+# add comparison
+mast_both_enrichr_positive_mono_filtered[['comparison']] <- paste(mast_both_enrichr_positive_mono_filtered[['condition1']], mast_both_enrichr_positive_mono_filtered[['condition2']], sep = '')
+
+# negative as well
+mast_both_enrichr_negative_mono_filtered <- mast_both_enrichr_negative_filtered[mast_both_enrichr_negative_filtered[['cell_type']] == 'monocyte' & mast_both_enrichr_negative_filtered[['id']] %in% ids_all_comparisons, ]
+mast_both_enrichr_negative_mono_filtered[['significance']] <- mast_both_enrichr_negative_mono_filtered[['Adjusted.P.value']]
+mast_both_enrichr_negative_mono_filtered[mast_both_enrichr_negative_mono_filtered[['significance']] == 0, 'significance'] <- .Machine$double.xmin
+mast_both_enrichr_negative_mono_filtered[['significance']] <- -log10(mast_both_enrichr_negative_mono_filtered[['significance']])
+mast_both_enrichr_negative_mono_filtered[['comparison']] <- paste(mast_both_enrichr_negative_mono_filtered[['condition1']], mast_both_enrichr_negative_mono_filtered[['condition2']], sep = '')
+
+# add the direction
+mast_both_enrichr_negative_mono_filtered[['direction']] <- 'down'
+mast_both_enrichr_negative_mono_filtered[mast_both_enrichr_negative_mono_filtered[['comparison']] == 'UTBaseline', 'direction'] <- 'up'
+mast_both_enrichr_positive_mono_filtered[['direction']] <- 'up'
+mast_both_enrichr_positive_mono_filtered[mast_both_enrichr_positive_mono_filtered[['comparison']] == 'UTBaseline', 'direction'] <- 'down'
+mast_both_enrichr_mono_filtered <- rbind(mast_both_enrichr_negative_mono_filtered, mast_both_enrichr_positive_mono_filtered)
+
+# make plot
+plot_pathways_celltype_dots(mast_both_enrichr_mono_filtered[mast_both_enrichr_mono_filtered$Adjusted.P.value < 0.05 & mast_both_enrichr_mono_filtered$comparison %in% c('UTBaseline', 'Baselinet24h', 'Baselinet8w', 't24ht8w'), ], condition_column = 'comparison', use_label_dict = T, direction_column = 'direction', condition_order = c('C-t0', 't0-t24h', 't0-t8w', 't24h-t8w'), split_up_down = T, low_color='darkgreen', mid_color='yellow', high_color='darkorange') + ggtitle('top enriched pathways monocytes')
+
+```
+
+```{r limma_category_plots, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE)
+
+# create color list for categories
+category_colors <- as.list(sample_many_colours(n = length(unique(pathways_to_top_level[['top_parent_readable']])), color_indices = c(1:7, 9, 11, 14, 17, 18, 20:26, 31, 32, 36, 42, 53)))
+category_colors <- as.list(sample_many_colours(n = length(unique(pathways_to_top_level[['top_parent_readable']])), color_indices = c(64:65, 8, 66:72, 9, 12, 46:48, 2, 13, 49:54, 5, 55:60)))
+
+names(category_colors) <- unique(pathways_to_top_level[['top_parent_readable']])
+
+plot_grid(
+  plot_pathway_categories_celltype(limma_both_enrichr[limma_both_enrichr$cell_type == 'monocyte' & limma_both_enrichr$condition2=='Baseline' & limma_both_enrichr$condition1 == 'UT', ], pathways_to_top_level, use_distinct_colours = T, legendless = T, drop_categories = c('unannotated'), parent_column_mapping_table = 'top_parent_readable', text_loc = 'center') + ggtitle('pathway categories monocytes C vs t0') + scale_fill_manual(values = category_colors),
+  plot_pathway_categories_celltype(limma_both_enrichr[limma_both_enrichr$cell_type == 'monocyte' & limma_both_enrichr$condition2=='Baseline' & limma_both_enrichr$condition1 == 't24h', ], pathways_to_top_level, use_distinct_colours = T, legendless = T, drop_categories = c('unannotated'), parent_column_mapping_table = 'top_parent_readable', text_loc = 'center') + ggtitle('pathway categories monocytes t0 vs t24h') + scale_fill_manual(values = category_colors),
+#  plot_pathway_categories_celltype(limma_both_enrichr[limma_both_enrichr$cell_type == 'monocyte' & limma_both_enrichr$condition2=='t24h' & limma_both_enrichr$condition1 == 't8w', ], pathways_to_top_level, use_distinct_colours = T, legendless = T, drop_categories = c('unannotated'), parent_column_mapping_table = 'top_parent_readable', text_loc = 'center') + ggtitle('pathway categories monocytes t24h vs t8w') + scale_fill_manual(values = category_colors),
+  plot_pathway_categories_celltype(limma_both_enrichr[limma_both_enrichr$cell_type == 'monocyte' & limma_both_enrichr$condition2=='Baseline' & limma_both_enrichr$condition1 == 't8w', ], pathways_to_top_level, use_distinct_colours = T, legendless = T, drop_categories = c('unannotated'), parent_column_mapping_table = 'top_parent_readable', text_loc = 'center') + ggtitle('pathway categories monocytes t0 vs t8w') + scale_fill_manual(values = category_colors),
+ncol = 3
+)
+
+```

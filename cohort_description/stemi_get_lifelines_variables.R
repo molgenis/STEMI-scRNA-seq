@@ -175,9 +175,9 @@ get_relevant_metadata <- function(variables_per_table, interested_pseudo_ids, se
   # check each variable
   for(table in names(variables_per_table)){
     # get the table
-    table_path <- table
+    table_path <- variables_per_table[[table]][['location']]
     # get the interesting columns
-    interested_columns <- variables_per_table[[table_path]]
+    interested_columns <- variables_per_table[[table]][['variables']]
     try({
       # read the table
       table_meta <- read.table(table_path, header = T, stringsAsFactors = F, sep = sep)
@@ -193,6 +193,33 @@ get_relevant_metadata <- function(variables_per_table, interested_pseudo_ids, se
       }
       # grab the interested columns
       table_interested <- table_meta[, columns_overlapping, drop = F]
+      # get the enumerations
+      table_enums_path <- variables_per_table[[table]][['enumerations']]
+      table_enums <- read.table(table_enums_path, sep = ',', header = T)
+      print(table)
+      # check each column
+      for (column in columns_overlapping) {
+        # only replace if there is an enumeration
+        if (column %in% table_enums[['variable_name']]) {
+          # subset to that variable
+          enums_column <- table_enums[table_enums[['variable_name']] == column, c('enumeration_code', 'enumeration_en')]
+          # check if the enumeration is in the enums
+          enums_present <- enums_column[['enumeration_code']]
+          # now replace the code with the text value
+          print(table_interested[!is.na(table_interested[[column]]) &
+                                   table_interested[[column]] %in% enums_present, 
+                                 ])
+          table_interested[!is.na(table_interested[[column]]) &
+                             table_interested[[column]] %in% enums_present, 
+                           column] <- enums_column[match(table_interested[!is.na(table_interested[[column]]) &
+                                                                            table_interested[[column]] %in% enums_present, 
+                                                                          column], enums_column[['enumeration_code']]), 'enumeration_en']
+        }
+        else{
+        }
+      }
+      # add the name of the table to the columns
+      colnames(table_interested) <- paste(table, '.', colnames(table_interested), sep = '')
       # add to result table
       if(is.null(result_table)){
         result_table <- table_interested
@@ -201,7 +228,6 @@ get_relevant_metadata <- function(variables_per_table, interested_pseudo_ids, se
         result_table <- cbind(result_table, table_interested)
       }
     })
-    
   }
   return(result_table)
 }
@@ -295,12 +321,12 @@ check_missingnes_wmatching <- function(stim_mapping_loc, ids_available, mapping_
 
 # location of the LL to pseudo
 ll_to_pseudo_loc <- '/groups/umcg-franke-scrna/tmp01/releases/wijst-2020-hg19/v1/metadata/1M_pseudo_ids.txt'
-pseudo_int_to_ext_loc <- '/groups/umcg-lifelines/tmp01/releases/pheno_lifelines_restructured/v1/phenotype_linkage_file_project_pseudo_id.txt'
-pseudo_int_to_ugli_map_loc <- '/groups/umcg-lifelines/tmp01/releases/gsa_linkage_files/v1/gsa_linkage_file.dat'
-pseudo_ext_to_cytoid_map_loc <- '/groups/umcg-lifelines/tmp01/releases/cytosnp_linkage_files/v4/cytosnp_linkage_file.dat'
+pseudo_int_to_ext_loc <- '/groups/umcg-lifelines/rsc01/releases/pheno_lifelines_restructured/v1/phenotype_linkage_file_project_pseudo_id.txt'
+pseudo_int_to_ugli_map_loc <- '/groups/umcg-lifelines/rsc01/releases/gsa_linkage_files/v1/gsa_linkage_file.dat'
+pseudo_ext_to_cytoid_map_loc <- '/groups/umcg-lifelines/rsc01/releases/cytosnp_linkage_files/v4/cytosnp_linkage_file.dat'
 
 # location of the questionaire data
-lifelines_tables_loc <- '/groups/umcg-lifelines/tmp01/releases/pheno_lifelines/v2/results/'
+lifelines_tables_loc <- '/groups/umcg-lifelines/rsc01/releases/pheno_lifelines/v2/results/'
 lifelines_tables_1a_q_1_results_loc <- paste(lifelines_tables_loc, '1a_q_1_results.csv', sep = '')
 lifelines_tables_1a_q_2_results_loc <- paste(lifelines_tables_loc, '1a_q_2_results.csv', sep = '')
 lifelines_tables_1a_q_youth_results_loc <- paste(lifelines_tables_loc, '1a_q_youth_results.csv', sep = '')
@@ -321,6 +347,29 @@ lifelines_tables_3a_q_2_results_loc <- paste(lifelines_tables_loc, '3a_q_2_resul
 lifelines_tables_3a_q_youth_results_loc <- paste(lifelines_tables_loc, '3a_q_youth_results.csv', sep = '')
 lifelines_tables_3a_v_1_results_loc <- paste(lifelines_tables_loc, '3a_v_1_results.csv', sep = '')
 lifelines_tables_3b_q_1_results_loc <- paste(lifelines_tables_loc, '3b_q_1_results.csv', sep = '')
+
+# location of the questionaire enumerations
+lifelines_tables_loc <- '/groups/umcg-lifelines/rsc01/releases/pheno_lifelines/v2/enumerations/'
+lifelines_tables_1a_q_1_enumerations_loc <- paste(lifelines_tables_loc, '1a_q_1_enumerations.csv', sep = '')
+lifelines_tables_1a_q_2_enumerations_loc <- paste(lifelines_tables_loc, '1a_q_2_enumerations.csv', sep = '')
+lifelines_tables_1a_q_youth_enumerations_loc <- paste(lifelines_tables_loc, '1a_q_youth_enumerations.csv', sep = '')
+lifelines_tables_1a_v_1_enumerations_loc <- paste(lifelines_tables_loc, '1a_v_1_enumerations.csv', sep = '')
+lifelines_tables_1a_v_2_enumerations_loc <- paste(lifelines_tables_loc, '1a_v_2_enumerations.csv', sep = '')
+lifelines_tables_1b_q_1_enumerations_loc <- paste(lifelines_tables_loc, '1b_q_1_enumerations.csv', sep = '')
+lifelines_tables_1c_q_1_enumerations_loc <- paste(lifelines_tables_loc, '1c_q_1_enumerations.csv', sep = '')
+
+lifelines_tables_2a_q_1_enumerations_loc <- paste(lifelines_tables_loc, '2a_q_1_enumerations.csv', sep = '')
+lifelines_tables_2a_q_2_enumerations_loc <- paste(lifelines_tables_loc, '2a_q_2_enumerations.csv', sep = '')
+lifelines_tables_2a_q_youth_enumerations_loc <- paste(lifelines_tables_loc, '2a_q_youth_enumerations.csv', sep = '')
+lifelines_tables_2a_v_1_enumerations_loc <- paste(lifelines_tables_loc, '2a_v_1_enumerations.csv', sep = '')
+lifelines_tables_2a_v_2_enumerations_loc <- paste(lifelines_tables_loc, '2a_v_2_enumerations.csv', sep = '')
+lifelines_tables_2b_q_1_enumerations_loc <- paste(lifelines_tables_loc, '2b_q_1_enumerations.csv', sep = '')
+
+lifelines_tables_3a_q_1_enumerations_loc <- paste(lifelines_tables_loc, '3a_q_1_enumerations.csv', sep = '')
+lifelines_tables_3a_q_2_enumerations_loc <- paste(lifelines_tables_loc, '3a_q_2_enumerations.csv', sep = '')
+lifelines_tables_3a_q_youth_enumerations_loc <- paste(lifelines_tables_loc, '3a_q_youth_enumerations.csv', sep = '')
+lifelines_tables_3a_v_1_enumerations_loc <- paste(lifelines_tables_loc, '3a_v_1_enumerations.csv', sep = '')
+lifelines_tables_3b_q_1_enumerations_loc <- paste(lifelines_tables_loc, '3b_q_1_enumerations.csv', sep = '')
 
 
 # read the tables
@@ -358,7 +407,7 @@ full_id_table_X1 <- cbind(full_id_table_X1, age_metadata[match(full_id_table_X1$
 
 # check where we have lanes that are complete
 stim_mapping_loc <- "/groups/umcg-franke-scrna/tmp01/releases/wijst-2020-hg19/v1/metadata/1M_lane_to_tp.tsv"
-check_missingnes(stim_mapping_loc, full_id_table_X1[!is.na(full_id_table_X1$ugli), ]$exp)
+# check_missingnes(stim_mapping_loc, full_id_table_X1[!is.na(full_id_table_X1$ugli), ]$exp)
 
 
 ####################
@@ -393,28 +442,115 @@ variables_3bq1 <- variable_mapping[variable_mapping[['V4']] == '3bq1', 'V3']
 
 # have the variables per result file from lifelines
 table_and_columns <- list()
-table_and_columns[[lifelines_tables_1a_q_1_results_loc]] <- variables_1aq1
-table_and_columns[[lifelines_tables_1a_q_2_results_loc]] <- variables_1aq2
-table_and_columns[[lifelines_tables_1a_q_youth_results_loc]] <- variables_1aqyouth
-table_and_columns[[lifelines_tables_1a_v_1_results_loc]] <- variables_1av1
-table_and_columns[[lifelines_tables_1a_v_2_results_loc]] <- variables_1av2
-table_and_columns[[lifelines_tables_1b_q_1_results_loc]] <- variables_1bq1
-table_and_columns[[lifelines_tables_1c_q_1_results_loc]] <- variables_1cq1
+table_and_columns[['1aq1']] <- list('location' = lifelines_tables_1a_q_1_results_loc,  'variables' =  variables_1aq1, 'enumerations' = lifelines_tables_1a_q_1_enumerations_loc)
+table_and_columns[['1aq2']] <- list('location' = lifelines_tables_1a_q_2_results_loc,  'variables' =  variables_1aq2, 'enumerations' = lifelines_tables_1a_q_2_enumerations_loc)
+table_and_columns[['1aqyouth']] <- list('location' = lifelines_tables_1a_q_youth_results_loc,  'variables' =  variables_1aqyouth, 'enumerations' = lifelines_tables_1a_q_youth_enumerations_loc)
+table_and_columns[['1av1']] <- list('location' = lifelines_tables_1a_v_1_results_loc,  'variables' =  variables_1av1, 'enumerations' = lifelines_tables_1a_v_1_enumerations_loc)
+table_and_columns[['1av2']] <- list('location' = lifelines_tables_1a_v_2_results_loc,  'variables' =  variables_1av2, 'enumerations' = lifelines_tables_1a_v_1_enumerations_loc)
+table_and_columns[['1bq1']] <- list('location' = lifelines_tables_1b_q_1_results_loc,  'variables' =  variables_1bq1, 'enumerations' = lifelines_tables_1b_q_1_enumerations_loc)
+table_and_columns[['1cq1']] <- list('location' = lifelines_tables_1b_q_1_results_loc,  'variables' =  variables_1cq1, 'enumerations' = lifelines_tables_1c_q_1_enumerations_loc)
 
-table_and_columns[[lifelines_tables_2a_q_1_results_loc]] <- variables_2aq1
-table_and_columns[[lifelines_tables_2a_q_2_results_loc]] <- variables_2aq2
-table_and_columns[[lifelines_tables_2a_q_youth_results_loc]] <- variables_2aqyouth
-table_and_columns[[lifelines_tables_2a_v_1_results_loc]] <- variables_2av1
-table_and_columns[[lifelines_tables_2a_v_2_results_loc]] <- variables_2av2
-table_and_columns[[lifelines_tables_2b_q_1_results_loc]] <- variables_2bq1
+table_and_columns[['2aq1']] <- list('location' = lifelines_tables_2a_q_1_results_loc,  'variables' =  variables_2aq1, 'enumerations' = lifelines_tables_2a_q_1_enumerations_loc)
+table_and_columns[['2aq2']] <- list('location' = lifelines_tables_2a_q_2_results_loc,  'variables' =  variables_2aq2, 'enumerations' = lifelines_tables_2a_q_2_enumerations_loc)
+table_and_columns[['2aqyouth']] <- list('location' = lifelines_tables_2a_q_youth_results_loc,  'variables' =  variables_2aqyouth, 'enumerations' = lifelines_tables_1a_q_youth_enumerations_loc)
+table_and_columns[['2av1']] <- list('location' = lifelines_tables_2a_v_1_results_loc,  'variables' =  variables_2av1, 'enumerations' = lifelines_tables_2a_v_1_enumerations_loc)
+table_and_columns[['2av2']] <- list('location' = lifelines_tables_2a_v_2_results_loc,  'variables' =  variables_2av2, 'enumerations' = lifelines_tables_2a_v_2_enumerations_loc)
+table_and_columns[['2bq1']] <- list('location' = lifelines_tables_2b_q_1_results_loc,  'variables' =  variables_2bq1, 'enumerations' = lifelines_tables_2b_q_1_enumerations_loc)
 
-table_and_columns[[lifelines_tables_3a_q_1_results_loc]] <- variables_3aq1
-table_and_columns[[lifelines_tables_3a_q_2_results_loc]] <- variables_3aq2
-table_and_columns[[lifelines_tables_3a_q_youth_results_loc]] <- variables_3aqyouth
-table_and_columns[[lifelines_tables_3a_v_1_results_loc]] <- variables_3av1
-table_and_columns[[lifelines_tables_3b_q_1_results_loc]] <- variables_3bq1
-
+table_and_columns[['3aq1']] <- list('location' = lifelines_tables_3a_q_1_results_loc,  'variables' =  variables_3aq1, 'enumerations' = lifelines_tables_3a_q_1_enumerations_loc)
+table_and_columns[['3aq2']] <- list('location' = lifelines_tables_3a_q_2_results_loc,  'variables' =  variables_3aq2, 'enumerations' = lifelines_tables_3a_q_2_enumerations_loc)
+table_and_columns[['3aqyouth']] <- list('location' = lifelines_tables_3a_q_youth_results_loc,  'variables' =  variables_3aqyouth, 'enumerations' = lifelines_tables_3a_q_youth_enumerations_loc)
+# table_and_columns[['3av1']] <- list('location' = lifelines_tables_3a_v_1_results_loc,  'variables' =  variables_3av1, 'enumerations' = lifelines_tables_3a_v_1_enumerations_loc)
+table_and_columns[['3bq1']] <- list('location' = lifelines_tables_3b_q_1_results_loc,  'variables' =  variables_3bq1, 'enumerations' = lifelines_tables_3b_q_1_enumerations_loc)
 
 # get the metadata
 metadata_lifelines <- get_relevant_metadata(table_and_columns, full_id_table_X1$psext)
+# add the LL ID
+metadata_lifelines <- cbind(data.frame(full_id_table_X1$ll), metadata_lifelines)
+
+# get the table of STEMI mapping patients to controls
+stemi_to_control_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata/stemi_age_gender_match_wtestid.tsv'
+stemi_to_control <- read.table(stemi_to_control_loc, header = T, sep = '\t')
+
+# subset to only the healthy controls
+metadata_lifelines_controls <- metadata_lifelines[metadata_lifelines[['full_id_table_X1.ll']] %in% paste('X1_', stemi_to_control[['ll_match_id']], sep = ''), ]
+# calculate BMI
+metadata_lifelines_controls[['BMI']] <- as.numeric(metadata_lifelines_controls[['2av1.bodyweight_kg_all_m_1']]) / ((as.numeric(metadata_lifelines_controls[['2av1.bodylength_cm_all_m_1']])/100)^2)
+mean(metadata_lifelines_controls[['BMI']][!is.na(metadata_lifelines_controls[['BMI']])])
+sd(metadata_lifelines_controls[['BMI']][!is.na(metadata_lifelines_controls[['BMI']])])
+# write the full table
+write.table(metadata_lifelines_controls, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata/stemi_control_lifeline_variables.tsv', sep = '\t', row.names = F, col.names = T)
+
+# calculate hypertension
+sum(!is.na(metadata_lifelines_controls[['3aq1.hypertension_presence_adu_q_1']]) & metadata_lifelines_controls[['3aq1.hypertension_presence_adu_q_1']] == 'yes')
+sum(!is.na(metadata_lifelines_controls[['3aq1.hypertension_presence_adu_q_1']]) & metadata_lifelines_controls[['3aq1.hypertension_presence_adu_q_1']] == 'yes') / sum(!is.na(metadata_lifelines_controls[['3aq1.hypertension_presence_adu_q_1']]) & (metadata_lifelines_controls[['3aq1.hypertension_presence_adu_q_1']] == 'yes' | metadata_lifelines_controls[['3aq1.hypertension_presence_adu_q_1']] == 'no'))
+
+# calculate Hypercholesterolemia
+sum(!is.na(metadata_lifelines_controls[['1aq1.highcholesterol_presence_adu_q_1']]) & metadata_lifelines_controls[['1aq1.highcholesterol_presence_adu_q_1']] == 'yes')
+sum(!is.na(metadata_lifelines_controls[['1aq1.highcholesterol_presence_adu_q_1']]) & metadata_lifelines_controls[['1aq1.highcholesterol_presence_adu_q_1']] == 'yes') / sum(!is.na(metadata_lifelines_controls[['1aq1.highcholesterol_presence_adu_q_1']]) & (metadata_lifelines_controls[['1aq1.highcholesterol_presence_adu_q_1']] == 'yes' | metadata_lifelines_controls[['1aq1.highcholesterol_presence_adu_q_1']] == 'no'))
+
+# check how many are smoking
+sum(!is.na(metadata_lifelines_controls[['1aq2.smoking_endage_adu_qc_1_01']]) & metadata_lifelines_controls[['1aq2.smoking_endage_adu_qc_1_01']] != '$6' &
+      !is.na(metadata_lifelines_controls[['1aq2.age']]) &
+      as.numeric(metadata_lifelines_controls[['1aq2.smoking_endage_adu_qc_1_01']]) >= as.numeric(metadata_lifelines_controls[['1aq2.age']]))
+# check how many stopped smoking
+sum(!is.na(metadata_lifelines_controls[['1aq2.smoking_endage_adu_qc_1_01']]) & metadata_lifelines_controls[['1aq2.smoking_endage_adu_qc_1_01']] != '$6' &
+      !is.na(metadata_lifelines_controls[['1aq2.age']]) &
+      as.numeric(metadata_lifelines_controls[['1aq2.smoking_endage_adu_qc_1_01']]) < as.numeric(metadata_lifelines_controls[['1aq2.age']]))
+# check how many never smoked
+sum(!is.na(metadata_lifelines_controls[['1aq2.smoking_startage_adu_q_1_01']]) & metadata_lifelines_controls[['1aq2.smoking_startage_adu_q_1_01']] == '$6')
+
+# check how many stopped smoking
+sum(!is.na(metadata_lifelines_controls[['1aq2.smoking_startage_adu_q_1_01']]) & metadata_lifelines_controls[['1aq2.smoking_startage_adu_q_1_01']] != '$6' &
+      !is.na(metadata_lifelines_controls[['1aq2.smoking_endage_adu_qc_1_01']]) & metadata_lifelines_controls[['1aq2.smoking_endage_adu_qc_1_01']] != '$6' &
+      !is.na(metadata_lifelines_controls[['1aq2.age']]) &
+      as.numeric(metadata_lifelines_controls[['1aq2.smoking_endage_adu_qc_1_01']]) < as.numeric(metadata_lifelines_controls[['1aq2.age']]))
+sum(!is.na(metadata_lifelines_controls[['1aq2.smoking_startage_adu_q_1_01']]) & metadata_lifelines_controls[['1aq2.smoking_startage_adu_q_1_01']] != '$6' &
+      !is.na(metadata_lifelines_controls[['1aq2.smoking_endage_adu_qc_1_01']]) & metadata_lifelines_controls[['1aq2.smoking_endage_adu_qc_1_01']] != '$6' &
+      !is.na(metadata_lifelines_controls[['1aq2.age']]) &
+      as.numeric(metadata_lifelines_controls[['1aq2.smoking_endage_adu_qc_1_01']]) < as.numeric(metadata_lifelines_controls[['1aq2.age']])) /
+  sum(!is.na(metadata_lifelines_controls[['1aq2.smoking_startage_adu_q_1_01']]) & metadata_lifelines_controls[['1aq2.smoking_startage_adu_q_1_01']] != '$6' &
+        !is.na(metadata_lifelines_controls[['1aq2.smoking_endage_adu_qc_1_01']]) & metadata_lifelines_controls[['1aq2.smoking_endage_adu_qc_1_01']] != '$6' &
+        !is.na(metadata_lifelines_controls[['1aq2.age']]))
+
+# get the metadata
+cardio_integrated_metadata_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata/cardio.integrated.20210301.metadata.tsv'
+cardio_integrated_metadata <- read.table(cardio_integrated_metadata_loc, header = T, sep = '\t', stringsAsFactors = F)
+# get the chemistry per participant
+part_chem <- unique(cardio_integrated_metadata[, c('assignment.final', 'chem')])
+# clean the table up
+rownames(part_chem) <- NULL
+colnames(part_chem) <- c('participant', 'chemistry')
+# get the number of females in the V2 controls
+full_id_table_X1_v2 <- full_id_table_X1[full_id_table_X1$ll %in% paste('X1_', part_chem[part_chem[['chemistry']] == 'V2', 'participant'], sep = ''), ]
+# get number of females
+nrow(full_id_table_X1_v2[full_id_table_X1_v2[['Gender']] == 'F', ])
+nrow(full_id_table_X1_v2[full_id_table_X1_v2[['Gender']] == 'F', ]) / nrow(full_id_table_X1_v2)
+# and age
+exp_to_ll_v2 <- exp_to_ll[exp_to_ll$LLD.ID %in% part_chem[part_chem[['chemistry']] == 'V2', 'participant'], ]
+mean(exp_to_ll_v2[['Age']])
+sd(exp_to_ll_v2[['Age']])
+
+# subset to v2
+metadata_lifelines_controls_v2 <- metadata_lifelines_controls[metadata_lifelines_controls$full_id_table_X1.ll %in% paste('X1_', part_chem[part_chem[['chemistry']] == 'V2', 'participant'], sep = ''), ]
+# calculate BMI
+metadata_lifelines_controls_v2[['BMI']] <- as.numeric(metadata_lifelines_controls_v2[['2av1.bodyweight_kg_all_m_1']]) / ((as.numeric(metadata_lifelines_controls_v2[['2av1.bodylength_cm_all_m_1']])/100)^2)
+mean(metadata_lifelines_controls_v2[['BMI']][!is.na(metadata_lifelines_controls_v2[['BMI']])])
+sd(metadata_lifelines_controls_v2[['BMI']][!is.na(metadata_lifelines_controls_v2[['BMI']])])
+# calculate hypertension
+sum(!is.na(metadata_lifelines_controls_v2[['3aq1.hypertension_presence_adu_q_1']]) & metadata_lifelines_controls_v2[['3aq1.hypertension_presence_adu_q_1']] == 'yes')
+sum(!is.na(metadata_lifelines_controls_v2[['3aq1.hypertension_presence_adu_q_1']]) & metadata_lifelines_controls_v2[['3aq1.hypertension_presence_adu_q_1']] == 'yes') / sum(!is.na(metadata_lifelines_controls_v2[['3aq1.hypertension_presence_adu_q_1']]) & (metadata_lifelines_controls_v2[['3aq1.hypertension_presence_adu_q_1']] == 'yes' | metadata_lifelines_controls_v2[['3aq1.hypertension_presence_adu_q_1']] == 'no'))
+# calculate Hypercholesterolemia
+sum(!is.na(metadata_lifelines_controls_v2[['1aq1.highcholesterol_presence_adu_q_1']]) & metadata_lifelines_controls_v2[['1aq1.highcholesterol_presence_adu_q_1']] == 'yes')
+sum(!is.na(metadata_lifelines_controls_v2[['1aq1.highcholesterol_presence_adu_q_1']]) & metadata_lifelines_controls_v2[['1aq1.highcholesterol_presence_adu_q_1']] == 'yes') / sum(!is.na(metadata_lifelines_controls_v2[['1aq1.highcholesterol_presence_adu_q_1']]) & (metadata_lifelines_controls_v2[['1aq1.highcholesterol_presence_adu_q_1']] == 'yes' | metadata_lifelines_controls_v2[['1aq1.highcholesterol_presence_adu_q_1']] == 'no'))
+# current smoker (smoking startage is not missing and the end age is not smaller than metadata_lifelines_controls_v2 current age)
+sum(!is.na(metadata_lifelines_controls_v2[['1aq2.smoking_endage_adu_qc_1_01']]) & metadata_lifelines_controls_v2[['1aq2.smoking_endage_adu_qc_1_01']] != '$6' &
+      !is.na(metadata_lifelines_controls_v2[['1aq2.age']]) &
+      as.numeric(metadata_lifelines_controls_v2[['1aq2.smoking_endage_adu_qc_1_01']]) >= as.numeric(metadata_lifelines_controls_v2[['1aq2.age']]))
+# check how many stopped smoking
+sum(!is.na(metadata_lifelines_controls_v2[['1aq2.smoking_endage_adu_qc_1_01']]) & metadata_lifelines_controls_v2[['1aq2.smoking_endage_adu_qc_1_01']] != '$6' &
+      !is.na(metadata_lifelines_controls_v2[['1aq2.age']]) &
+      as.numeric(metadata_lifelines_controls_v2[['1aq2.smoking_endage_adu_qc_1_01']]) < as.numeric(metadata_lifelines_controls_v2[['1aq2.age']]))
+# check how many never smoked
+sum(!is.na(metadata_lifelines_controls_v2[['1aq2.smoking_startage_adu_q_1_01']]) & metadata_lifelines_controls_v2[['1aq2.smoking_startage_adu_q_1_01']] == '$6')
 

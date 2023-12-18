@@ -1,0 +1,182 @@
+---
+title: "stemi_compare_pathways"
+output: html_document
+date: "2023-10-31"
+---
+
+```{r header, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Roy Oelen
+# Name: stemi_compare_pathways.Rmd
+# Function: compare the pathways
+############################################################################################################################
+
+```
+
+```{r libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# libraries        #
+####################
+
+library(ggplot2)
+library(cowplot)
+library(ggVennDiagram)
+
+```
+
+```{r functions, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# Functions        #
+####################
+
+get_pathways_per_celltype_condition <- function(pathway_output_loc, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), conditions=c('UT', 'Baseline', 't24h', 't8w'), de_method='limma', append='.tsv', pval_column='Old.Adjusted.P.value', pval_cutoff=0.05, direction_column='enrichmentScore', only_positive=F, only_negative=F) {
+  # we will save everything in a list first
+  output_per_ct_and_comb <- list()
+  # we will check each cell type
+  for (cell_type in cell_types) {
+    # and each condition
+    for (condition_1 in conditions) {
+      # against each other condition
+      for (condition_2 in conditions) {
+        # we'll paste the full path together
+        path_to_output <- NULL
+        if ('limma' == de_method) {
+          path_to_output <- paste(pathway_output_loc, '/', cell_type, '_timepoint.final.', condition_1, '_', condition_2, append, sep = '')
+        }
+        else{
+          path_to_output <- paste(pathway_output_loc, '/', cell_type, condition_1, condition_2, append, sep = '')
+        }
+        # check if the file exists
+        if (file.exists(path_to_output)) {
+          # read the file
+          pathway_output <- read.table(path_to_output, header = T, sep = '\t', comment.char='')
+          # filter direction if requested
+          if (only_positive) {
+            pathway_output <- pathway_output[pathway_output[[direction_column]] > 0, ]
+          }
+          if (only_negative) {
+            pathway_output <- pathway_output[pathway_output[[direction_column]] < 0, ]
+          }
+          # add the cell type and the condition
+          pathway_output <- cbind(
+            data.frame(
+              condition1=rep(condition_1, times = nrow(pathway_output)),
+              condition2=rep(condition_2, times = nrow(pathway_output)),
+              cell_type=rep(cell_type, times = nrow(pathway_output))
+            ), 
+            pathway_output
+          )
+          # filter if possible
+          if (!is.null(pval_column) & !is.null(pval_cutoff)) {
+            pathway_output <- pathway_output[pathway_output[[pval_column]] < pval_cutoff, ]
+          }
+          # add to the list
+          output_per_ct_and_comb[[paste(condition_1, condition_2, cell_type, sep = '')]] <- pathway_output
+        }
+      }
+    }
+  }
+  # merge everything
+  output_per_ct_and_comb_df <- do.call('rbind', output_per_ct_and_comb)
+  return(output_per_ct_and_comb_df)
+}
+
+
+create_lists_from_pathway_tables <- function(pathway_table_1, pathway_table_2, name_table_1='set_1', name_table_2='set_2', condition_1_table_1='condition1', condition_2_table_1='condition2', cell_type_table_1='cell_type', term_column_table_1='Term', significance_table_1='Old.Adjusted.P.value', significance_cutoff_table_1=1, condition_1_table_2='condition1', condition_2_table_2='condition2', cell_type_table_2='cell_type', term_column_table_2='Term', significance_table_2='Old.Adjusted.P.value', significance_cutoff_table_2=1) {
+  # store per cell type
+  terms_per_celltype <- list()
+  # get the cell types present
+  cell_types <- intersect(unique(pathway_table_1[[cell_type_table_1]]), unique(pathway_table_2[[cell_type_table_2]]))
+  # check each cell type
+  for (cell_type in cell_types) {
+    # subset pathway tables
+    pathway_table_1_ct <- pathway_table_1[pathway_table_1[[cell_type_table_1]] == cell_type, ]
+    pathway_table_2_ct <- pathway_table_2[pathway_table_2[[cell_type_table_2]] == cell_type, ]
+    # create a column that has the condition combination
+    pathway_table_1_ct[['comparison']] <- paste(pathway_table_1_ct[[condition_1_table_1]], pathway_table_1_ct[[condition_2_table_1]], sep = '-')
+    pathway_table_2_ct[['comparison']] <- paste(pathway_table_2_ct[[condition_1_table_2]], pathway_table_2_ct[[condition_2_table_2]], sep = '-')
+    # we'll store the result per comparison
+    result_per_comparison <- list()
+    # get the comparisons present
+    comparisons <- intersect(unique(pathway_table_1_ct[['comparison']]), unique(pathway_table_2_ct[['comparison']]))
+    # check each comparison
+    for (comparison in comparisons) {
+      print(paste(cell_type, comparison))
+      # subset pathway tables
+      pathway_table_1_ct_com <- pathway_table_1_ct[pathway_table_1_ct[['comparison']] == comparison, ]
+      pathway_table_2_ct_com <- pathway_table_2_ct[pathway_table_2_ct[['comparison']] == comparison, ]
+      # get the significant results
+      sig_pathway_table_1_ct_com <- pathway_table_1_ct_com[pathway_table_1_ct_com[[significance_table_1]] < significance_cutoff_table_1, ]
+      sig_pathway_table_2_ct_com <- pathway_table_2_ct_com[pathway_table_2_ct_com[[significance_table_2]] < significance_cutoff_table_2, ]
+      # make into list
+      pathways_either <- list('set_1' = sig_pathway_table_1_ct_com[[term_column_table_1]], 'set_2' = sig_pathway_table_2_ct_com[[term_column_table_2]])
+      # set supplied names
+      names(pathways_either) <- c(name_table_1, name_table_2)
+      # add for this comparison
+      result_per_comparison[[comparison]] <- pathways_either
+    }
+    # add for this cell type
+    terms_per_celltype[[cell_type]] <- result_per_comparison
+  }
+  return(terms_per_celltype)
+}
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+####################
+# Main Code        #
+####################
+
+# location of limma gse output
+gse.output.limma.lfc01.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr_reactome_2023_lfc01/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+# location of limma gse output
+gse.output.limma.lfc05.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr_reactome_2023_lfc05/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+# location of limma gse output
+gse.output.limma.nolfc.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/pathway_enrichment/enrichr_reactome_2023/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/sct/chem_assignment_age_gender/'
+
+
+```
+
+
+
+```{r create_comparisons, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# get both of the outputs
+gse_limma_lfc05 <- get_pathways_per_celltype_condition(pathway_output_loc = gse.output.limma.lfc05.loc, pval_cutoff = 0.05)
+gse_limma_lfc01 <- get_pathways_per_celltype_condition(pathway_output_loc = gse.output.limma.lfc01.loc, pval_cutoff = 0.05)
+gse_limma_nolfc <- get_pathways_per_celltype_condition(pathway_output_loc = gse.output.limma.nolfc.loc, pval_cutoff = 0.05)
+# get lists
+pathways_celltype_comparisons_lfc05 <- create_lists_from_pathway_tables(gse_limma_nolfc, gse_limma_lfc05, name_table_1 = 'no LFC cutoff', name_table_2 = 'LFC 0.5', significance_cutoff_table_1 = 0.05, significance_cutoff_table_2 = 0.05)
+pathways_celltype_comparisons_lfc01 <- create_lists_from_pathway_tables(gse_limma_nolfc, gse_limma_lfc01, name_table_1 = 'no LFC cutoff', name_table_2 = 'LFC 0.1', significance_cutoff_table_1 = 0.05, significance_cutoff_table_2 = 0.05)
+```
+
+```{r plots_comparisons, include=TRUE, fig.width=10, fig.height=10}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+plot_grid(
+  ggVennDiagram(pathways_celltype_comparisons_lfc01[['monocyte']][['UT-Baseline']]),
+  ggVennDiagram(pathways_celltype_comparisons_lfc01[['monocyte']][['t24h-Baseline']]),
+  ggVennDiagram(pathways_celltype_comparisons_lfc01[['monocyte']][['t8w-Baseline']]),
+  ggVennDiagram(pathways_celltype_comparisons_lfc01[['monocyte']][['t8w-t24h']]),
+  nrow = 2,
+  ncol = 2
+)
+plot_grid(
+  ggVennDiagram(pathways_celltype_comparisons_lfc05[['monocyte']][['UT-Baseline']]),
+  ggVennDiagram(pathways_celltype_comparisons_lfc05[['monocyte']][['t24h-Baseline']]),
+  ggVennDiagram(pathways_celltype_comparisons_lfc05[['monocyte']][['t8w-Baseline']]),
+  ggVennDiagram(pathways_celltype_comparisons_lfc05[['monocyte']][['t8w-t24h']]),
+  nrow = 2,
+  ncol = 2
+)
+
+```
+
+```

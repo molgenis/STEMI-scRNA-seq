@@ -1,3 +1,11 @@
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Roy Oelen
+# Name: stemi_preprocess_stemi.R
+# Function: preprocess STEMI samples into Seurat
+############################################################################################################################
+
+
 ####################
 # libraries        #
 ####################
@@ -202,6 +210,32 @@ add_stim_tags <- function(seurat_object, stim_mapping_loc, assignment_key='assig
 }
 
 
+qc_table_to_pcts <- function(qc_numbers, lane_column='lane', reference='total') {
+  with_pct <- apply(qc_numbers, 1, function(x) {
+    # save the result as a list
+    summaries <- list()
+    # first the lane
+    summaries[['lane']] <- x[[lane_column]]
+    # get the total
+    total <- as.numeric(x[[reference]])
+    # get all the other columns
+    others <- setdiff(names(x), c(lane_column))
+    # check each column
+    for (column in others) {
+      # get the value
+      value <- as.numeric(x[[column]])
+      # calculate the percentage
+      pct <- round(value / total, digits = 3) * 100
+      # make into a string
+      value_and_pct <- paste(value, ' ', '(', pct, '%)', sep = '')
+      # put into result
+      summaries[[column]] <- value_and_pct
+    }
+    return(data.frame(summaries))
+  })
+  return(do.call('rbind',with_pct))
+}
+
 
 ####################
 # main code        #
@@ -235,40 +269,67 @@ saveRDS(stemi_v3, stemi_v3_raw_loc)
 
 # these are the soup pre- and appends
 #soup_prepend <- "/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/souporcell/correlate_clusters/correlated_output/"
-soup_prepend <- "/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/souporcell/correlate_clusters/correlated_output/"
+soup_prepend <- "/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/demultiplexing/souporcell_output/"
 soup_append <- "_correlated.tsv"
 
 # these are the demux pre- and appends
 #demux_prepend <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/demuxlet/demuxlet_output/'
-demux_prepend <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/demuxlet/demuxlet_output/'
-demux_append <- '_mmaf002.best'
+# demux_prepend <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/demuxlet/demuxlet_output/'
+# demux_append <- '_mmaf002.best'
 # scrublet loc
 #scrublet_v2_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/scrublet/scrublet_assignment_v2.tsv'
 #scrublet_v3_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/scrublet/scrublet_assignment_v3.tsv'
-scrublet_v2_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/scrublet/scrublet_assignment_v2.tsv'
-scrublet_v3_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/scrublet/scrublet_assignment_v3.tsv'
+# scrublet_v2_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/scrublet/scrublet_assignment_v2.tsv'
+# scrublet_v3_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/scrublet/scrublet_assignment_v3.tsv'
 # location of the simulation mapping
 #stim_mapping_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/stemi-sampleIDs.txt'
-stim_mapping_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/stemi-sampleIDs.txt'
+stim_mapping_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata/stemi-sampleIDs.txt'
 
 # add souporcell assignments
 stemi_v2 <- add_soup_assignments(stemi_v2, soup_prepend, soup_append)
 # add demuxlet
-stemi_v2 <- add_demux_assignments(stemi_v2, demux_prepend, demux_append)
+# stemi_v2 <- add_demux_assignments(stemi_v2, demux_prepend, demux_append)
 # add scrublet
-stemi_v2 <- add_scrublet_assignments(stemi_v2, scrublet_v2_loc)
+# stemi_v2 <- add_scrublet_assignments(stemi_v2, scrublet_v2_loc)
 # add stim tags
 stemi_v2 <- add_stim_tags(stemi_v2, stim_mapping_loc = stim_mapping_loc, assignment_key = 'assignment_ll', tp_key = 'timepoint_ll')
-stemi_v2 <- add_stim_tags(stemi_v2, stim_mapping_loc = stim_mapping_loc, assignment_key = 'SNG.1ST', tp_key = 'timepoint.demux')
+# stemi_v2 <- add_stim_tags(stemi_v2, stim_mapping_loc = stim_mapping_loc, assignment_key = 'SNG.1ST', tp_key = 'timepoint.demux')
 
 # save this raw file
 saveRDS(stemi_v2, stemi_v2_raw_loc)
 
-# remove samples called as doublets by souporcell
-stemi_v2 <- remove_doublets(stemi_v2, detection_method="souporcell")
-
 # calculate mt fraction
 stemi_v2[["percent.mt"]] <- PercentageFeatureSet(stemi_v2, pattern = "^MT-")
+
+# make some numbers for the QC
+nrow(stemi_v2@meta.data)
+# 66209
+nrow(stemi_v2@meta.data[stemi_v2@meta.data$status == 'singlet', ]) # if it was a singlet
+# 61435
+nrow(stemi_v2@meta.data[
+  stemi_v2@meta.data$status == 'singlet' & 
+    stemi_v2@meta.data$nFeature_RNA > 200 &
+    stemi_v2@meta.data$percent.mt < 8 &
+    as.vector(stemi_v2@assays$RNA@counts['HBB', ]) < 10, ]
+     )
+# 58418
+
+# per lane as well
+v2_unfiltered_per_lane <- data.frame(table(stemi_v2@meta.data[, 'lane']))
+v2_singletfiltered_per_lane <- data.frame(table(stemi_v2@meta.data[stemi_v2@meta.data$status == 'singlet', 'lane']))
+v2_singlet_and_qc_filtered_per_lane <- data.frame(table(stemi_v2@meta.data[stemi_v2@meta.data$status == 'singlet' & 
+                                                                             stemi_v2@meta.data$nFeature_RNA > 200 &
+                                                                             stemi_v2@meta.data$percent.mt < 8 &
+                                                                             as.vector(stemi_v2@assays$RNA@counts['HBB', ]) < 10, 'lane']))
+v2_lane_qc <- merge(
+  merge(
+    merge(v2_unfiltered_per_lane, v2_singletfiltered_per_lane, by = 'Var1'
+    ), v2_singletfiltered_per_lane, by = 'Var1'
+  ), v2_singlet_and_qc_filtered_per_lane, by = 'Var1')
+colnames(v2_lane_qc) <- c('lane', 'cellranger', 'singlet filter', 'donor filter', 'rna filter')
+
+# remove samples called as doublets by souporcell
+stemi_v2 <- remove_doublets(stemi_v2, detection_method="souporcell")
 # remove objects cells with too high MT percentage, HBB expression and too few genes expressed
 stemi_v2 <- subset(stemi_v2, subset = nFeature_RNA > 200 & percent.mt < 8 & HBB < 10)
 # we're going to keep to the souporcell assignments for now
@@ -284,12 +345,12 @@ stemi_v3 <- add_soup_assignments(stemi_v3, soup_prepend, soup_append)
 levels(stemi_v3@meta.data$assignment_ll) <- c(levels(stemi_v3@meta.data$assignment_ll), 'TEST_88')
 stemi_v3@meta.data[!is.na(stemi_v3@meta.data$correlation_ll) & stemi_v3@meta.data$correlation_ll < 0.4, ]$assignment_ll <- 'TEST_88'
 # add demuxlet
-stemi_v3 <- add_demux_assignments(stemi_v3, demux_prepend, demux_append)
+# stemi_v3 <- add_demux_assignments(stemi_v3, demux_prepend, demux_append)
 # add scrublet
-stemi_v3 <- add_scrublet_assignments(stemi_v3, scrublet_v3_loc)
+# stemi_v3 <- add_scrublet_assignments(stemi_v3, scrublet_v3_loc)
 # add stim tags
 stemi_v3 <- add_stim_tags(stemi_v3, stim_mapping_loc = stim_mapping_loc, assignment_key = 'assignment_ll', tp_key = 'timepoint_ll')
-stemi_v3 <- add_stim_tags(stemi_v3, stim_mapping_loc = stim_mapping_loc, assignment_key = 'SNG.1ST', tp_key = 'timepoint.demux')
+# stemi_v3 <- add_stim_tags(stemi_v3, stim_mapping_loc = stim_mapping_loc, assignment_key = 'SNG.1ST', tp_key = 'timepoint.demux')
 # we're going to keep to the souporcell assignments for now
 stemi_v3@meta.data$assignment.final <- stemi_v3@meta.data$assignment_ll
 stemi_v3@meta.data$timepoint.final <- stemi_v3@meta.data$timepoint_ll
@@ -297,11 +358,60 @@ stemi_v3@meta.data$timepoint.final <- stemi_v3@meta.data$timepoint_ll
 # save this raw file
 saveRDS(stemi_v3, stemi_v3_raw_loc)
 
+# calculate mt fraction
+stemi_v3[["percent.mt"]] <- PercentageFeatureSet(stemi_v3, pattern = "^MT-")
+
+# make some numbers for the QC
+nrow(stemi_v3@meta.data)
+# 71881
+nrow(stemi_v3@meta.data[stemi_v3@meta.data$status == 'singlet', ]) # if it was a singlet
+# 62931
+nrow(stemi_v3@meta.data[
+  stemi_v3@meta.data$status == 'singlet' &
+    stemi_v3@meta.data$assignment.final != 'TEST_60' & 
+    stemi_v3@meta.data$assignment.final != 'TEST_62' & 
+    !(stemi_v3@meta.data$assignment.final == 'TEST_68' & stemi_v3@meta.data$timepoint.final == 't24h'), ]
+)
+# 55343
+nrow(stemi_v3@meta.data[
+  stemi_v3@meta.data$status == 'singlet' &
+    stemi_v3@meta.data$assignment.final != 'TEST_60' & 
+    stemi_v3@meta.data$assignment.final != 'TEST_62' & 
+    !(stemi_v3@meta.data$assignment.final == 'TEST_68' & stemi_v3@meta.data$timepoint.final == 't24h') & 
+    stemi_v3@meta.data$nFeature_RNA > 200 &
+    stemi_v3@meta.data$percent.mt < 15 &
+    as.vector(stemi_v3@assays$RNA@counts['HBB', ]) < 10, ]
+)
+# 37577
+
+# per lane as well
+v3_unfiltered_per_lane <- data.frame(table(stemi_v3@meta.data[, 'lane']))
+v3_singletfiltered_per_lane <- data.frame(table(stemi_v3@meta.data[stemi_v3@meta.data$status == 'singlet', 'lane']))
+v3_singlet_and_included_per_lane <- data.frame(table(stemi_v3@meta.data[
+  stemi_v3@meta.data$status == 'singlet' &
+    stemi_v3@meta.data$assignment.final != 'TEST_60' & 
+    stemi_v3@meta.data$assignment.final != 'TEST_62' & 
+    !(stemi_v3@meta.data$assignment.final == 'TEST_68' & stemi_v3@meta.data$timepoint.final == 't24h'), 'lane']))
+v3_singlet_included_and_qc_filtered_per_lane <- data.frame(table(stemi_v3@meta.data[
+  stemi_v3@meta.data$status == 'singlet' &
+    stemi_v3@meta.data$assignment.final != 'TEST_60' & 
+    stemi_v3@meta.data$assignment.final != 'TEST_62' & 
+    !(stemi_v3@meta.data$assignment.final == 'TEST_68' & stemi_v3@meta.data$timepoint.final == 't24h') & 
+    stemi_v3@meta.data$nFeature_RNA > 200 &
+    stemi_v3@meta.data$percent.mt < 15 &
+    as.vector(stemi_v3@assays$RNA@counts['HBB', ]) < 10, 'lane']))
+v3_lane_qc <- merge(
+  merge(
+    merge(
+      v3_unfiltered_per_lane, v3_singletfiltered_per_lane, by = 'Var1'
+    ), v3_singlet_and_included_per_lane, by = 'Var1'
+  ), v3_singlet_included_and_qc_filtered_per_lane, by = 'Var1'
+)
+colnames(v3_lane_qc) <- c('lane', 'cellranger', 'singlet filter', 'donor filter', 'rna filter')
+
 # remove samples called as doublets by souporcell
 stemi_v3 <- remove_doublets(stemi_v3, detection_method="souporcell")
 
-# calculate mt fraction
-stemi_v3[["percent.mt"]] <- PercentageFeatureSet(stemi_v3, pattern = "^MT-")
 # remove objects cells with too high MT percentage, HBB expression and too few genes expressed
 stemi_v3 <- subset(stemi_v3, subset = nFeature_RNA > 200 & percent.mt < 15 & HBB < 10)
 # save the preprocessed file
@@ -311,6 +421,9 @@ saveRDS(stemi_v3, stemi_v3_filtered_loc)
 stemi_v3 <- subset(stemi_v3, subset = assignment.final != 'TEST_60' & assignment.final != 'TEST_62')
 stemi_v3 <- stemi_v3[, !(stemi_v3@meta.data$assignment.final == 'TEST_68' & stemi_v3@meta.data$timepoint.final == 't24h')]
 
+# save the QC
+stemi_qc_table_lanes <- qc_table_to_pcts(rbind(v2_lane_qc, v3_lane_qc), reference = 'cellranger')
+
 # do normalization
 stemi_v2 <- NormalizeData(stemi_v2)
 stemi_v2 <- SCTransform(stemi_v2, vars.to.regress = c('percent.mt'))
@@ -318,4 +431,3 @@ stemi_v3 <- NormalizeData(stemi_v3)
 stemi_v3 <- SCTransform(stemi_v3, vars.to.regress = c('percent.mt'))
 saveRDS(stemi_v2, stemi_v2_normalized_loc)
 saveRDS(stemi_v3, stemi_v3_normalized_loc)
-

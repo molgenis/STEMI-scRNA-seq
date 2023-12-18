@@ -1,0 +1,12 @@
+{
+    "__default__" :
+    {
+        "queue"     : "medium_priority",
+        "n"         : "1",
+        "memory"    : 64000,
+        "time"      : "5:59:59",
+        "name"      : "LIMIX.[[cell_type]].{rule}.{wildcards}",
+        "output"    : "[[slurm_out_dir]]/{rule}.{wildcards}.out",
+        "error"     : "[[slurm_err_dir]]/{rule}.{wildcards}.err"
+    }
+}
