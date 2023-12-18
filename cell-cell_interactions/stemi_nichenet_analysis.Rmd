@@ -39,8 +39,20 @@ knitr::opts_chunk$set(echo = FALSE)
 # Functions        #
 ####################
 
-do_nichenet_analysis <- function(seurat_object, receiver, sender_celltypes, condition.column, condition.1, condition.2, lr_network, weighted_networks, ligand_target_matrix, cell_type_column='cell_type_lowerres', pct=0.1, min_avg_log2FC=0.25, top_n=20, max_active_ligand_target_links=200, active_ligand_target_links_cutoff=0.33, only_documented_lr=F, test.use='MAST'){
-  # we'll do a couple of analyses, so we'll store the results in a list
+get_limma_output <- function(limma_output_loc, cell_type, condition_1, condition_2, midpend='_timepoint.final.', append='.tsv') {
+  # paste path together
+  full_limma_path <- paste(limma_output_loc, '/', cell_type, midpend, condition_1, '_', condition_2, append, sep = '')
+  # read the file
+  full_limma <- read.table(full_limma_path, sep = '\t', header = T, row.names = 1)
+  # convert to format expected
+  niche_format <- data.frame(p_val = full_limma[['P.Value']], avg_log2FC = full_limma[['logFC']], pct.1 = 0, pct.2 = 0, p_val_adj = full_limma[['adj.P.Val']])
+  rownames(niche_format) <- rownames(full_limma)
+  return(niche_format)
+}
+
+do_nichenet_analysis <- function(seurat_object, receiver, sender_celltypes, condition.column, condition.1, condition.2, lr_network, weighted_networks, ligand_target_matrix, cell_type_column='cell_type_lowerres', pct=0.1, min_avg_log2FC=0.25, top_n=20, max_active_ligand_target_links=200, active_ligand_target_links_cutoff=0.33, only_documented_lr=F, test.use='MAST', limma_output_loc=NULL){
+  Idents(seurat_object) <- cell_type_column
+# we'll do a couple of analyses, so we'll store the results in a list
   analysis_list <- list()
   # weigh network
   weighted_networks_lr = weighted_networks$lr_sig %>% inner_join(lr_network %>% distinct(from,to), by = c("from","to"))
@@ -49,19 +61,30 @@ do_nichenet_analysis <- function(seurat_object, receiver, sender_celltypes, cond
     lr_network = lr_network %>% filter(database != "ppi_prediction_go" & database != "ppi_prediction")
   }
   # init receiver data
+  print('getting expressed genes')
   expressed_genes_receiver = get_expressed_genes(receiver, seurat_object, pct = pct, assay_oi='SCT')
+  print('getting background expressed genes')
   background_expressed_genes = expressed_genes_receiver %>% .[. %in% rownames(ligand_target_matrix)]
   # init sender data
   list_expressed_genes_sender = sender_celltypes %>% unique() %>% lapply(get_expressed_genes, seurat_object, pct, assay_oi='SCT') # lapply to get the expressed genes of every sender cell type separately here
+  print('succesfully fetched expressed genes')
   expressed_genes_sender = list_expressed_genes_sender %>% unlist() %>% unique()
   # subset to receiver
-  seurat_obj_receiver= seurat_object[, seurat_object@meta.data[[cell_type_column]] == receiver]
+  seurat_obj_receiver = seurat_object[, seurat_object@meta.data[[cell_type_column]] == receiver]
   # set condition column as ident for findmarkers
-  seurat_obj_receiver = SetIdent(seurat_obj_receiver, value = seurat_obj_receiver[[condition.column]])
+  Idents(seurat_obj_receiver) <- condition.column
   condition_oi = condition.1
   condition_reference = condition.2
   tryCatch({
-    DE_table_receiver = FindMarkers(object = seurat_obj_receiver, ident.1 = condition_oi, ident.2 = condition_reference, min.pct = pct, test.use = test.use) %>% tibble::rownames_to_column("gene")
+    DE_table_receiver <- NULL
+    # getting DE
+    if (test.use =='limma') {
+      DE_table_receiver <- get_limma_output(limma_output_loc, receiver, condition_1 = condition_oi, condition_2 = condition_reference)
+    }
+    else {
+      DE_table_receiver = FindMarkers(object = seurat_obj_receiver, ident.1 = condition_oi, ident.2 = condition_reference, min.pct = pct, test.use = test.use)
+    }
+    DE_table_receiver = DE_table_receiver %>% tibble::rownames_to_column("gene")
     # subset to significant DE genes
     geneset_oi = DE_table_receiver %>% filter(p_val_adj <= 0.05 & abs(avg_log2FC) >= min_avg_log2FC) %>% pull(gene)
     geneset_oi = geneset_oi %>% .[. %in% rownames(ligand_target_matrix)]
@@ -123,7 +146,7 @@ do_nichenet_analysis <- function(seurat_object, receiver, sender_celltypes, cond
     # add to list
     analysis_list[['ligand_receptor_network']] <- vis_ligand_receptor_network
     # add full DE data
-    DE_table_all <- c(sender_celltypes)  %>% lapply(get_lfc_celltype, seurat_obj = seurat_object, condition_colname = condition.column, condition_oi = condition.2, condition_reference = condition.1, expression_pct = pct,test.use = test.use) %>% reduce(full_join)
+    DE_table_all <- c(sender_celltypes)  %>% lapply(get_lfc_celltype, seurat_obj = seurat_object, condition_colname = condition.column, condition_oi = condition.1, condition_reference = condition.2, expression_pct = pct,test.use = test.use, celltype_col = "cell_type_lowerres", limma_output_loc = limma_output_loc) %>% reduce(full_join)
     DE_table_all[is.na(DE_table_all)] = 0
     # Combine ligand activities with DE information
     ligand_activities_de = ligand_activities %>% select(test_ligand, pearson) %>% rename(ligand = test_ligand) %>% left_join(DE_table_all %>% rename(ligand = gene))
@@ -133,7 +156,7 @@ do_nichenet_analysis <- function(seurat_object, receiver, sender_celltypes, cond
     rownames(lfc_matrix) = rownames(lfc_matrix) %>% make.names()
     # order by the LFC
     order_ligands = order_ligands[order_ligands %in% rownames(lfc_matrix)]
-    vis_ligand_lfc = lfc_matrix[order_ligands,]
+    vis_ligand_lfc = lfc_matrix[order_ligands, , drop = F]
     colnames(vis_ligand_lfc) = vis_ligand_lfc %>% colnames() %>% make.names()
     # add to list
     analysis_list[['ligand_lfc']] <- vis_ligand_lfc
@@ -147,7 +170,7 @@ do_nichenet_analysis <- function(seurat_object, receiver, sender_celltypes, cond
 }
 
 
-do_nichenet_analysis_per_celltype <- function(seurat_object, condition.column, condition.1, condition.2, lr_network, weighted_networks, ligand_target_matrix, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), cell_type_column='cell_type_lowerres', pct=0.1, min_avg_log2FC=0.25, top_n=20, max_active_ligand_target_links=200, active_ligand_target_links_cutoff=0.33, only_documented_lr=F){
+do_nichenet_analysis_per_celltype <- function(seurat_object, condition.column, condition.1, condition.2, lr_network, weighted_networks, ligand_target_matrix, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), cell_type_column='cell_type_lowerres', pct=0.1, min_avg_log2FC=0.25, top_n=20, max_active_ligand_target_links=200, active_ligand_target_links_cutoff=0.33, only_documented_lr=F, test.use='MAST', limma_output_loc=NULL){
   # confine to cell types that we have in our dataset
   cell_types_to_use <- intersect(cell_types, unique(seurat_object@meta.data[[cell_type_column]]))
   # set cell type as the ident
@@ -161,7 +184,7 @@ do_nichenet_analysis_per_celltype <- function(seurat_object, condition.column, c
     # get the other cell types
     cell_types_other <- setdiff(cell_types_to_use, cell_type)
     # do the analysis
-    results <- do_nichenet_analysis(seurat_object, cell_type, cell_types_other, condition.column, condition.1, condition.2, lr_network, weighted_networks, ligand_target_matrix, cell_type_column=cell_type_column, pct=pct, min_avg_log2FC=min_avg_log2FC, top_n=top_n, max_active_ligand_target_links=max_active_ligand_target_links, active_ligand_target_links_cutoff=active_ligand_target_links_cutoff, only_documented_lr=only_documented_lr)
+    results <- do_nichenet_analysis(seurat_object, cell_type, cell_types_other, condition.column, condition.1, condition.2, lr_network, weighted_networks, ligand_target_matrix, cell_type_column=cell_type_column, pct=pct, min_avg_log2FC=min_avg_log2FC, top_n=top_n, max_active_ligand_target_links=max_active_ligand_target_links, active_ligand_target_links_cutoff=active_ligand_target_links_cutoff, only_documented_lr=only_documented_lr, test.use=test.use, limma_output_loc=limma_output_loc)
     # add result to list
     analysis_per_cell_type[[cell_type]] <- results
   }
@@ -169,7 +192,7 @@ do_nichenet_analysis_per_celltype <- function(seurat_object, condition.column, c
 }
 
 
-do_nichenet_analysis_versus_each_celltype <- function(seurat_object, condition.column, condition.1, condition.2, lr_network, weighted_networks, ligand_target_matrix, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), cell_type_column='cell_type_lowerres', pct=0.1, min_avg_log2FC=0.25, top_n=20, max_active_ligand_target_links=200, active_ligand_target_links_cutoff=0.33, only_documented_lr=F){
+do_nichenet_analysis_versus_each_celltype <- function(seurat_object, condition.column, condition.1, condition.2, lr_network, weighted_networks, ligand_target_matrix, cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), cell_type_column='cell_type_lowerres', pct=0.1, min_avg_log2FC=0.25, top_n=20, max_active_ligand_target_links=200, active_ligand_target_links_cutoff=0.33, only_documented_lr=F, test.use='MAST', limma_output_loc=NULL){
   # confine to cell types that we have in our dataset
   cell_types_to_use <- intersect(cell_types, unique(seurat_object@meta.data[[cell_type_column]]))
   # subset object to what we have
@@ -189,7 +212,7 @@ do_nichenet_analysis_versus_each_celltype <- function(seurat_object, condition.c
       # subset to those cell types
       seurat_object_cell_types <- seurat_object[, seurat_object@meta.data$celltype %in% c(cell_type1, cell_type2)]
       # do the analysis for these two
-      results <- do_nichenet_analysis(seurat_object=seurat_object_cell_types, receiver=cell_type1, sender_celltypes=c(cell_type2), condition.column=condition.column, condition.1=condition.1, condition.2=condition.2, lr_network=lr_network, weighted_networks=weighted_networks, ligand_target_matrix=ligand_target_matrix, cell_type_column=cell_type_column, pct=pct, min_avg_log2FC=min_avg_log2FC, top_n=top_n, max_active_ligand_target_links=max_active_ligand_target_links, active_ligand_target_links_cutoff=active_ligand_target_links_cutoff, only_documented_lr=only_documented_lr)
+      results <- do_nichenet_analysis(seurat_object=seurat_object_cell_types, receiver=cell_type1, sender_celltypes=c(cell_type2), condition.column=condition.column, condition.1=condition.1, condition.2=condition.2, lr_network=lr_network, weighted_networks=weighted_networks, ligand_target_matrix=ligand_target_matrix, cell_type_column=cell_type_column, pct=pct, min_avg_log2FC=min_avg_log2FC, top_n=top_n, max_active_ligand_target_links=max_active_ligand_target_links, active_ligand_target_links_cutoff=active_ligand_target_links_cutoff, only_documented_lr=only_documented_lr, test.use=test.use, limma_output_loc=limma_output_loc)
       # store the result
       result_against_cell_type[[cell_type2]] <- results
     }
@@ -254,7 +277,7 @@ perct_output_to_plot <- function(output_list){
       output_list_celltype2 <- output_list_celltype1[[cell_type2]]
       # create a list to store ggplot2 objects
       plots <- list()
-
+      
       if((length(output_list_celltype2) > 0) & ('ligand_target' %in% names(output_list_celltype2))){
         # fetch data from list
         vis_ligand_target <- output_list_celltype2[['ligand_target']]
@@ -282,36 +305,38 @@ perct_output_to_plot <- function(output_list){
       }
     }
     # add for cell type1
-    combined_plots_ct1[[cell_type1]] <- combined_plots_ct2
+    combined_plots_ct1[[cell_type1]] <- combined_plots_ct2 
   }
   return(combined_plots_ct1)
 }
 
 
-get_lfc_celltype <- function (celltype_oi, seurat_obj, condition_colname, condition_oi,
-          condition_reference, celltype_col = "celltype", expression_pct = 0.1, logfc.threshold=0.05, test.use='wilcox')
+get_lfc_celltype <- function (celltype_oi, seurat_obj, condition_colname, condition_oi, 
+          condition_reference, celltype_col = "celltype", expression_pct = 0.1, logfc.threshold=0.05, test.use='wilcox', limma_output_loc=NULL) 
 {
   requireNamespace("Seurat")
   requireNamespace("dplyr")
-  if (!is.null(celltype_col)) {
-    seurat_obj_celltype = SetIdent(seurat_obj, value = seurat_obj[[celltype_col]])
-    seuratObj_sender = subset(seurat_obj_celltype, idents = celltype_oi)
+  Idents(seurat_obj) <- condition_colname
+  seuratObj_sender = seurat_obj[, seurat_obj@meta.data[[celltype_col]] == celltype_oi]
+  DE_table_sender <- NULL
+  if (test.use == 'limma') {
+    DE_table_sender <- get_limma_output(limma_output_loc, celltype_oi, condition_oi, condition_reference) %>% 
+    rownames_to_column("gene")
   }
   else {
-    seuratObj_sender = subset(seurat_obj, idents = celltype_oi)
-  }
-  seuratObj_sender = SetIdent(seuratObj_sender, value = seuratObj_sender[[condition_colname]])
-  DE_table_sender = FindMarkers(object = seuratObj_sender,
-                                ident.1 = condition_oi, ident.2 = condition_reference,
-                                min.pct = expression_pct, logfc.threshold = logfc.threshold, test.use = test.use) %>%
+    DE_table_sender = FindMarkers(object = seuratObj_sender, 
+                                ident.1 = condition_oi, ident.2 = condition_reference, 
+                                min.pct = expression_pct, logfc.threshold = logfc.threshold, test.use = test.use) %>% 
     rownames_to_column("gene")
+  }
+  
   SeuratV4 = c("avg_log2FC") %in% colnames(DE_table_sender)
   if (SeuratV4 == TRUE) {
-    DE_table_sender = DE_table_sender %>% as_tibble() %>%
+    DE_table_sender = DE_table_sender %>% as_tibble() %>% 
       select(-p_val) %>% select(gene, avg_log2FC)
   }
   else {
-    DE_table_sender = DE_table_sender %>% as_tibble() %>%
+    DE_table_sender = DE_table_sender %>% as_tibble() %>% 
       select(-p_val) %>% select(gene, avg_logFC)
   }
   colnames(DE_table_sender) = c("gene", celltype_oi)
@@ -346,27 +371,27 @@ create_dotplot_per_ct_and_tp <- function(seurat_object, features_per_ct, conditi
 
 # adapted from https://workflows.omnipathdb.org/nichenet1.html
 interactionFormatTransf <- function(InputDf, InteractionType){
-
-  OutputInt <- tibble(from = character(), to = character(),
-                      source = character(), database = character())
-
+  
+  OutputInt <- tibble(from = character(), to = character(), 
+                      source = character(), database = character())  
+  
   n <- nrow(InputDf)
   sources <- dplyr::pull(InputDf, sources)
   sourceNodes <- dplyr::pull(InputDf, from)
   targetNodes <- dplyr::pull(InputDf, to)
-
+  
   for (i in seq(n)){
     currentSources <- unlist(strsplit(sources[i],";"))
     for (j in seq(length(currentSources))){
-      OutputInt <- add_row(OutputInt,
-                           from = sourceNodes[i] ,
-                           to = targetNodes[i],
+      OutputInt <- add_row(OutputInt, 
+                           from = sourceNodes[i] , 
+                           to = targetNodes[i],  
                            # source = paste(currentSources[j], InteractionType, sep="_"),
                            source = currentSources[j],
-                           database = currentSources[j])
+                           database = currentSources[j]) 
     }
   }
-
+  
   return(OutputInt)
 }
 
@@ -374,29 +399,29 @@ remove_duplicates_and_selfreferences <- function(omnipath_interactions){
   # remove duplicates and self-references
   omnipath_interactions_clean <- omnipath_interactions %>%
     dplyr::select(source_genesymbol,target_genesymbol,sources) %>%
-    dplyr::rename(from=source_genesymbol, to=target_genesymbol) %>%
-    dplyr::filter(from != to) %>%
+    dplyr::rename(from=source_genesymbol, to=target_genesymbol) %>% 
+    dplyr::filter(from != to) %>% 
     dplyr::distinct()
   return(omnipath_interactions_clean)
 }
 
 
-do_nichenet_analysis_versus_each_celltype_confined <- function(seurat_object,
-                                                               condition.column,
-                                                               condition.1,
+do_nichenet_analysis_versus_each_celltype_confined <- function(seurat_object, 
+                                                               condition.column, 
+                                                               condition.1, 
                                                                condition.2,
                                                                gene_list_loc,
                                                                gene_lists,
-                                                               lr_network,
-                                                               networks,
-                                                               ligand_target_matrix,
-                                                               cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'),
-                                                               cell_type_column='cell_type_lowerres',
-                                                               pct=0.1,
-                                                               min_avg_log2FC=0.25,
-                                                               top_n=20,
-                                                               max_active_ligand_target_links=200,
-                                                               active_ligand_target_links_cutoff=0.33,
+                                                               lr_network, 
+                                                               networks, 
+                                                               ligand_target_matrix, 
+                                                               cell_types=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), 
+                                                               cell_type_column='cell_type_lowerres', 
+                                                               pct=0.1, 
+                                                               min_avg_log2FC=0.25, 
+                                                               top_n=20, 
+                                                               max_active_ligand_target_links=200, 
+                                                               active_ligand_target_links_cutoff=0.33, 
                                                                only_documented_lr=F){
   # init list
   analysis_per_pathway <- list()
@@ -409,7 +434,7 @@ do_nichenet_analysis_versus_each_celltype_confined <- function(seurat_object,
     # subset the lr_network to entries of pathway
     lnp_pathways <- lr_network[lr_network[['from']] %in% entries_pathways |
                          lr_network[['to']] %in% entries_pathways, ]
-
+    
     # check each gene
     col_genes <- colnames(ligand_target_matrix)
     row_names <- rownames(ligand_target_matrix)
@@ -421,20 +446,20 @@ do_nichenet_analysis_versus_each_celltype_confined <- function(seurat_object,
     #n_pathways <- networks[networks[['from']] %in% entries_pathways | networks[['to']] %in% entries_pathways, ]
     n_pathways <- networks
     # do analysis for this set
-    nichenet_pathway <- do_nichenet_analysis_versus_each_celltype(seurat_object=seurat_object,
-                                              condition.column=condition.column,
-                                              condition.1 = condition.1,
+    nichenet_pathway <- do_nichenet_analysis_versus_each_celltype(seurat_object=seurat_object, 
+                                              condition.column=condition.column, 
+                                              condition.1 = condition.1, 
                                               condition.2 = condition.2,
-                                              lr_network = lnp_pathways,
-                                              weighted_networks=n_pathways,
-                                              ligand_target_matrix=ltm,
-                                              cell_types=cell_types,
-                                              cell_type_column=cell_type_column,
-                                              pct=pct,
-                                              min_avg_log2FC=min_avg_log2FC,
-                                              top_n=top_n,
-                                              max_active_ligand_target_links=max_active_ligand_target_links,
-                                              active_ligand_target_links_cutoff=active_ligand_target_links_cutoff,
+                                              lr_network = lnp_pathways, 
+                                              weighted_networks=n_pathways, 
+                                              ligand_target_matrix=ltm, 
+                                              cell_types=cell_types, 
+                                              cell_type_column=cell_type_column, 
+                                              pct=pct, 
+                                              min_avg_log2FC=min_avg_log2FC, 
+                                              top_n=top_n, 
+                                              max_active_ligand_target_links=max_active_ligand_target_links, 
+                                              active_ligand_target_links_cutoff=active_ligand_target_links_cutoff, 
                                               only_documented_lr=only_documented_lr)
     analysis_per_pathway[[pathway]] <- nichenet_pathway
   }
@@ -513,154 +538,12 @@ knitr::opts_chunk$set(echo = FALSE)
 read_partition <- 'tmp01'
 write_partition <- 'tmp01'
 
-# locations of files
-ligand_target_matrix_loc <- url('https://zenodo.org/record/3260758/files/ligand_target_matrix.rds')
-ligand_target_matrix_loc <-paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/references/', 'ligand_target_matrix.rds', sep = '')
-lr_network_loc <- url('https://zenodo.org/record/3260758/files/lr_network.rds')
-lr_network_loc <- paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/references/','lr_network.rds', sep = '')
-weighted_networks_loc <- url("https://zenodo.org/record/3260758/files/weighted_networks.rds")
-weighted_networks_loc <- paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/references/','weighted_networks.rds', sep = '')
-objects_loc <- paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/', sep = '')
-combined_v2_loc <- paste(objects_loc, 'combined.v2.20210629.ct.rds', sep = '')
-combined_v3_loc <- paste(objects_loc, 'combined.v3.20210629.ct.rds', sep = '')
-
-# read network data
-ligand_target_matrix = readRDS(ligand_target_matrix_loc)
-lr_network = readRDS(lr_network_loc)
-weighted_networks = readRDS(weighted_networks_loc)
-
-# read the object
-combined_v2 <- readRDS(combined_v2_loc)
-combined_v2 <- combined_v2[, combined_v2@meta.data$cell_type_lowerres %in% c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')]
-DefaultAssay(combined_v2) <- 'SCT'
-# read the object
-combined_v3 <- readRDS(combined_v3_loc)
-combined_v3 <- combined_v3[, combined_v3@meta.data$cell_type_lowerres %in% c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK')]
-DefaultAssay(combined_v3) <- 'SCT'
-combined_v2@assays$integrated <- NULL
-combined_v3@assays$integrated <- NULL
-
-```
-
-```{r nichenet_default, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
-
-# compare Baseline to t24h
-v2_Baseline_vs_t24h <- do_nichenet_analysis_per_celltype(combined_v2, 'timepoint.final', 't24h', 'Baseline', lr_network, weighted_networks, ligand_target_matrix)
-saveRDS(v2_Baseline_vs_t24h, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_Baseline_vs_t24h_nichenet_onlymajors.rds')
-# compare Baseline to t8w
-v2_Baseline_vs_t8w <- do_nichenet_analysis_per_celltype(combined_v2, 'timepoint.final', 't8w', 'Baseline', lr_network, weighted_networks, ligand_target_matrix)
-saveRDS(v2_Baseline_vs_t8w, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_Baseline_vs_t8w_nichenet_onlymajor.rds')
-# compare HC to Baseline
-v2_UT_vs_Baseline <- do_nichenet_analysis_per_celltype(combined_v2, 'timepoint.final', 'Baseline', 'UT', lr_network, weighted_networks, ligand_target_matrix)
-saveRDS(v2_UT_vs_Baseline, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_UT_vs_Baseline_nichenet_onlymajor.rds')
-
-# trying to create the plots
-v2_Baseline_vs_t24h_plots <- nichenet_output_to_plot(v2_Baseline_vs_t24h)
-v2_Baseline_vs_t8w_plots <- nichenet_output_to_plot(v2_Baseline_vs_t8w)
-v2_UT_vs_Baseline_plots <- nichenet_output_to_plot(v2_UT_vs_Baseline)
-
-# save plots
-for(plot_name in names(v2_Baseline_vs_t24h_plots)){
-  ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_combined_onlymajor/', 'nichenet_', 'Baseline_vs_t24h_', plot_name, '_onlymajor.pdf', sep = ''), width = 20, height  = 20, plot=v2_Baseline_vs_t8w_plots[[plot_name]])
-}
-for(plot_name in names(v2_Baseline_vs_t8w_plots)){
-  ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_combined_onlymajor/', 'nichenet_', 'Baseline_vs_t8w_', plot_name, '_onlymajor.pdf', sep = ''), width = 20, height  = 20, plot=v2_Baseline_vs_t8w_plots[[plot_name]])
-}
-for(plot_name in names(v2_UT_vs_Baseline_plots)){
-  ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_combined_onlymajor/', 'nichenet_', 'UT_vs_Baseline_', plot_name, '_onlymajor.pdf', sep = ''), width = 20, height  = 20, plot=v2_UT_vs_Baseline_plots[[plot_name]])
-}
-
-# compare Baseline to t24h
-v3_Baseline_vs_t24h <- do_nichenet_analysis_per_celltype(combined_v3, 'timepoint.final', 't24h', 'Baseline', lr_network, weighted_networks, ligand_target_matrix)
-saveRDS(v3_Baseline_vs_t24h, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_Baseline_vs_t24h_nichenet_onlymajor.rds')
-# compare Baseline to t8w
-v3_Baseline_vs_t8w <- do_nichenet_analysis_per_celltype(combined_v3, 'timepoint.final', 't8w', 'Baseline', lr_network, weighted_networks, ligand_target_matrix)
-saveRDS(v3_Baseline_vs_t8w, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_Baseline_vs_t8w_nichenet_onlymajor.rds')
-# compare HC to Baseline
-v3_UT_vs_Baseline <- do_nichenet_analysis_per_celltype(combined_v3, 'timepoint.final', 'Baseline', 'UT', lr_network, weighted_networks, ligand_target_matrix)
-saveRDS(v3_UT_vs_Baseline, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_UT_vs_Baseline_nichenet_onlymajor.rds')
-
-# trying to create the plots
-v3_Baseline_vs_t24h_plots <- nichenet_output_to_plot(v3_Baseline_vs_t24h)
-v3_Baseline_vs_t8w_plots <- nichenet_output_to_plot(v3_Baseline_vs_t8w)
-v3_UT_vs_Baseline_plots <- nichenet_output_to_plot(v3_UT_vs_Baseline)
-
-# save plots
-for(plot_name in names(v3_Baseline_vs_t24h_plots)){
-  ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined_onlymajor//', 'nichenet_', 'Baseline_vs_t24h_', plot_name, '_onlymajor.pdf', sep = ''), width = 20, height  = 20, plot=v3_Baseline_vs_t24h_plots[[plot_name]])
-}
-for(plot_name in names(v3_Baseline_vs_t8w_plots)){
-  ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined_onlymajor//', 'nichenet_', 'Baseline_vs_t8w_', plot_name, '_onlymajor.pdf', sep = ''), width = 20, height  = 20, plot=v3_Baseline_vs_t8w_plots[[plot_name]])
-}
-for(plot_name in names(v3_UT_vs_Baseline_plots)){
-  ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined_onlymajor//', 'nichenet_', 'UT_vs_Baseline_', plot_name, '_onlymajor.pdf', sep = ''), width = 20, height  = 20, plot=v3_UT_vs_Baseline_plots[[plot_name]])
-}
-
-```
-
-```{r nichenet_default_perct, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
-
-# do specifically for one cell type now
-v2_Baseline_vs_t24h_perct <- do_nichenet_analysis_versus_each_celltype(combined_v2, 'timepoint.final', 't24h', 'Baseline', lr_network, weighted_networks, ligand_target_matrix)
-v2_Baseline_vs_t8w_perct <- do_nichenet_analysis_versus_each_celltype(combined_v2, 'timepoint.final', 't8w', 'Baseline', lr_network, weighted_networks, ligand_target_matrix)
-v2_UT_vs_Baseline_perct <- do_nichenet_analysis_versus_each_celltype(combined_v2, 'timepoint.final', 'Baseline', 'UT', lr_network, weighted_networks, ligand_target_matrix)
-saveRDS(v2_Baseline_vs_t24h_perct, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_Baseline_vs_t24h_nichenet_onlymajors_perct.rds')
-saveRDS(v2_Baseline_vs_t8w_perct, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_Baseline_vs_t8w_nichenet_onlymajor_perct.rds')
-saveRDS(v2_UT_vs_Baseline_perct, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_UT_vs_Baseline_nichenet_onlymajor_perct.rds')
-v2_Baseline_vs_t24h_perct_plots <- perct_output_to_plot(v2_Baseline_vs_t24h_perct)
-v2_Baseline_vs_t8w_perct_plots <- perct_output_to_plot(v2_Baseline_vs_t8w_perct)
-v2_UT_vs_Baseline_perct_plots <- perct_output_to_plot(v2_UT_vs_Baseline_perct)
-
-# save the plots once again
-for(ct1 in names(v2_Baseline_vs_t24h_perct_plots)){
-  for(ct2 in names(v2_Baseline_vs_t24h_perct_plots[[ct1]])){
-    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'nichenet_', 'Baseline_vs_t24h_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, height  = 20, plot=v2_Baseline_vs_t24h_perct_plots[[ct1]][[ct2]])
-  }
-}
-# save the plots once again
-for(ct1 in names(v2_Baseline_vs_t8w_perct_plots)){
-  for(ct2 in names(v2_Baseline_vs_t8w_perct_plots[[ct1]])){
-    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'nichenet_', 'Baseline_vs_t8w_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, height  = 20, plot=v2_Baseline_vs_t8w_perct_plots[[ct1]][[ct2]])
-  }
-}
-# save the plots once again
-for(ct1 in names(v2_UT_vs_Baseline_perct_plots)){
-  for(ct2 in names(v2_UT_vs_Baseline_perct_plots[[ct1]])){
-    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'nichenet_', 'Baseline_vs_t8w_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, height  = 20, plot=v2_UT_vs_Baseline_perct_plots[[ct1]][[ct2]])
-  }
-}
-
-# do specifically for one cell type now
-v3_Baseline_vs_t24h_perct <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 't24h', 'Baseline', lr_network, weighted_networks, ligand_target_matrix)
-v3_Baseline_vs_t8w_perct <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 't8w', 'Baseline', lr_network, weighted_networks, ligand_target_matrix)
-v3_UT_vs_Baseline_perct <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 'Baseline', 'UT', lr_network, weighted_networks, ligand_target_matrix)
-saveRDS(v3_Baseline_vs_t24h_perct, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_Baseline_vs_t24h_nichenet_onlymajors_perct.rds')
-saveRDS(v3_Baseline_vs_t8w_perct, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_Baseline_vs_t8w_nichenet_onlymajor_perct.rds')
-saveRDS(v3_UT_vs_Baseline_perct, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_UT_vs_Baseline_nichenet_onlymajor_perct.rds')
-v3_Baseline_vs_t24h_perct_plots <- perct_output_to_plot(v3_Baseline_vs_t24h_perct)
-v3_Baseline_vs_t8w_perct_plots <- perct_output_to_plot(v3_Baseline_vs_t8w_perct)
-v3_UT_vs_Baseline_perct_plots <- perct_output_to_plot(v3_UT_vs_Baseline_perct)
-
-# save the plots once again
-for(ct1 in names(v3_Baseline_vs_t24h_perct_plots)){
-  for(ct2 in names(v3_Baseline_vs_t24h_perct_plots[[ct1]])){
-    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'nichenet_', 'Baseline_vs_t24h_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, height  = 20, plot=v3_Baseline_vs_t24h_perct_plots[[ct1]][[ct2]])
-  }
-}
-# save the plots once again
-for(ct1 in names(v3_Baseline_vs_t8w_perct_plots)){
-  for(ct2 in names(v3_Baseline_vs_t8w_perct_plots[[ct1]])){
-    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'nichenet_', 'Baseline_vs_t8w_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, height  = 20, plot=v3_Baseline_vs_t8w_perct_plots[[ct1]][[ct2]])
-  }
-}
-# save the plots once again
-for(ct1 in names(v3_UT_vs_Baseline_perct_plots)){
-  for(ct2 in names(v3_UT_vs_Baseline_perct_plots[[ct1]])){
-    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'nichenet_', 'UT_vs_Baseline', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, height  = 20, plot=v3_UT_vs_Baseline_perct_plots[[ct1]][[ct2]])
-  }
-}
+# object location
+cardio_integrated_loc <- paste('/groups/umcg-franke-scrna/', read_partition, '/releases/blokland-2020/v1/seurat/cardio.integrated.20210301.rds', sep = '')
+# load object
+cardio_integrated <- readRDS(cardio_integrated_loc)
+# subset to STEMI samples
+stemi <- cardio_integrated[, cardio_integrated@meta.data[['timepoint.final']] %in% c('Baseline', 't24h', 't8w')]
 
 ```
 
@@ -668,12 +551,12 @@ for(ct1 in names(v3_UT_vs_Baseline_perct_plots)){
 knitr::opts_chunk$set(echo = FALSE)
 
 # try with the omni data
-ligand_target_matrix_omni_unweighted_loc <-paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/omni/', 'ligand_target_matrixNoweights.rds', sep = '')
-lr_network_omni_loc <- paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/omni/','lr_Network_Omnipath.rds', sep = '')
-unweighted_networks_omni_loc <- paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/omni/','weighted_networksNonSourceWeights.rds', sep = '')
+ligand_target_matrix_omni_unweighted_loc <-paste('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/omni/', 'ligand_target_matrixNoweights.rds', sep = '')
+lr_network_omni_loc <- paste('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/omni/','lr_Network_Omnipath.rds', sep = '')
+unweighted_networks_omni_loc <- paste('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/omni/','weighted_networksNonSourceWeights.rds', sep = '')
 # there are weighted matrices as well
-ligand_target_matrix_omni_weighted_loc <-paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/omni/', 'ligand_target_matrixWithweights.rds', sep = '')
-weighted_networks_omni_loc <- paste('/groups/umcg-wijmenga/', read_partition, '/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/omni/','weighted_networksWithSourceWeights.rds', sep = '')
+ligand_target_matrix_omni_weighted_loc <-paste('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/omni/ligand_target_matrixWithweights.rds', sep = '')
+weighted_networks_omni_loc <- paste('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/omni/','weighted_networksWithSourceWeights.rds', sep = '')
 # read network data
 ligand_target_matrix_omni_unweighted = readRDS(ligand_target_matrix_omni_unweighted_loc)
 ligand_target_matrix_omni_weighted = readRDS(ligand_target_matrix_omni_weighted_loc)
@@ -683,215 +566,16 @@ weighted_networks_omni = readRDS(weighted_networks_omni_loc)
 
 ```
 
-```{r nichenet_omni_unweighted_perct, include=FALSE}
+```{r nichenet_omni_unweighted_limma, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 
-# do specifically for one cell type using the omni data
-v2_Baseline_vs_t24h_perct_omni_unweighted <- do_nichenet_analysis_versus_each_celltype(combined_v2, 'timepoint.final', 't24h', 'Baseline', lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-v2_Baseline_vs_t8w_perct_omni_unweighted <- do_nichenet_analysis_versus_each_celltype(combined_v2, 'timepoint.final', 't8w', 'Baseline', lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-v2_t24h_vs_t8w_perct_omni_unweighted <- do_nichenet_analysis_versus_each_celltype(combined_v2, 'timepoint.final', 't8w', 't24h', lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-v2_UT_vs_Baseline_perct_omni_unweighted <- do_nichenet_analysis_versus_each_celltype(combined_v2, 'timepoint.final', 'Baseline', 'UT', lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v2_Baseline_vs_t24h_perct_omni_unweighted, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds')
-saveRDS(v2_Baseline_vs_t8w_perct_omni_unweighted, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds')
-saveRDS(v2_t24h_vs_t8w_perct_omni_unweighted, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v2_t24h_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds')
-saveRDS(v2_UT_vs_Baseline_perct_omni_unweighted, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v2_UT_vs_Baseline_nichenet_onlymajor_perct_omni_unweighted.rds')
-v2_Baseline_vs_t24h_perc_omni_unweightedt_plots <- perct_output_to_plot(v2_Baseline_vs_t24h_perct_omni_unweighted)
-v2_Baseline_vs_t8w_perct_omni_unweighted_plots <- perct_output_to_plot(v2_Baseline_vs_t8w_perct_omni_unweighted)
-v2_t24h_vs_t8w_perct_omni_unweighted_plots <- perct_output_to_plot(v2_t24h_vs_t8w_perct_omni_unweighted)
-v2_UT_vs_Baseline_perc_omni_unweightedt_plots <- perct_output_to_plot(v2_UT_vs_Baseline_perct_omni_unweighted)
-# for both chemistries
-v3_Baseline_vs_t24h_perct_omni_unweighted <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 't24h', 'Baseline', lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-v3_Baseline_vs_t8w_perct_omni_unweighted <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 't8w', 'Baseline', lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-v3_t24h_vs_t8w_perct_omni_unweighted <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 't8w', 't24h', lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-v3_UT_vs_Baseline_perct_omni_unweighted <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 'Baseline', 'UT', lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v3_Baseline_vs_t24h_perct_omni_unweighted, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds')
-saveRDS(v3_Baseline_vs_t8w_perct_omni_unweighted, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds')
-saveRDS(v3_t24h_vs_t8w_perct_omni_unweighted, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v3_t24h_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds')
-saveRDS(v3_UT_vs_Baseline_perct_omni_unweighted, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/v3_UT_vs_Baseline_nichenet_onlymajor_perct_omni_unweighted.rds')
-v3_Baseline_vs_t24h_perc_omni_unweightedt_plots <- perct_output_to_plot(v3_Baseline_vs_t24h_perct_omni_unweighted)
-v3_Baseline_vs_t8w_perct_omni_unweighted_plots <- perct_output_to_plot(v3_Baseline_vs_t8w_perct_omni_unweighted)
-v3_t24h_vs_t8w_perct_omni_unweighted_plots <- perct_output_to_plot(v3_t24h_vs_t8w_perct_omni_unweighted)
-v3_UT_vs_Baseline_perc_omni_unweightedt_plots <- perct_output_to_plot(v3_UT_vs_Baseline_perct_omni_unweighted)
-
-
-# save the plots once again
-for(ct1 in names(v2_Baseline_vs_t24h_perc_omni_unweightedt_plots)){
-  for(ct2 in names(v2_Baseline_vs_t24h_perc_omni_unweightedt_plots[[ct1]])){
-    ggsave(paste('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/plots/nichenet/MAST/v2_per_ct/', 'v2_nichenet_omni_', 'Baseline_vs_t24h_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 10, height  = 10, plot=v2_Baseline_vs_t24h_perc_omni_unweightedt_plots[[ct1]][[ct2]])
-  }
-}
-# save the plots once again
-for(ct1 in names(v2_Baseline_vs_t8w_perct_omni_unweighted_plots)){
-  for(ct2 in names(v2_Baseline_vs_t8w_perct_omni_unweighted_plots[[ct1]])){
-    ggsave(paste('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/plots/nichenet/MAST/v2_per_ct/', 'v2_nichenet_omni_', 'Baseline_vs_t8w_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 10, height  = 10, plot=v2_Baseline_vs_t8w_perct_omni_unweighted_plots[[ct1]][[ct2]])
-  }
-}
-# save the plots once again
-for(ct1 in names(v2_t24h_vs_t8w_perct_omni_unweighted_plots)){
-  for(ct2 in names(v2_t24h_vs_t8w_perct_omni_unweighted_plots[[ct1]])){
-    ggsave(paste('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/plots/nichenet/MAST/v2_per_ct/', 'v2_nichenet_omni_', 't24h_vs_t8w_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 10, height  = 10, plot=v2_t24h_vs_t8w_perct_omni_unweighted_plots[[ct1]][[ct2]])
-  }
-}
-# save the plots once again
-for(ct1 in names(v2_UT_vs_Baseline_perc_omni_unweightedt_plots)){
-  for(ct2 in names(v2_UT_vs_Baseline_perc_omni_unweightedt_plots[[ct1]])){
-    ggsave(paste('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/plots/nichenet/MAST/v2_per_ct/', 'v2_nichenet_omni_', 'UT_vs_Baseline_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 10, height  = 10, plot=v2_UT_vs_Baseline_perc_omni_unweightedt_plots[[ct1]][[ct2]])
-  }
-}
-
-#and v3
-for(ct1 in names(v3_Baseline_vs_t24h_perc_omni_unweightedt_plots)){
-  for(ct2 in names(v3_Baseline_vs_t24h_perc_omni_unweightedt_plots[[ct1]])){
-    ggsave(paste('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'v3_nichenet_omni_', 'Baseline_vs_t24h_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 10, height  = 10, plot=v3_Baseline_vs_t24h_perc_omni_unweightedt_plots[[ct1]][[ct2]])
-  }
-}
-# save the plots once again
-for(ct1 in names(v3_Baseline_vs_t8w_perct_omni_unweighted_plots)){
-  for(ct2 in names(v3_Baseline_vs_t8w_perct_omni_unweighted_plots[[ct1]])){
-    ggsave(paste('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'v3_nichenet_omni_', 'Baseline_vs_t8w_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 10, height  = 10, plot=v3_Baseline_vs_t8w_perct_omni_unweighted_plots[[ct1]][[ct2]])
-  }
-}
-# save the plots once again
-for(ct1 in names(v3_t24h_vs_t8w_perct_omni_unweighted_plots)){
-  for(ct2 in names(v3_t24h_vs_t8w_perct_omni_unweighted_plots[[ct1]])){
-    ggsave(paste('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'v3_nichenet_omni_', 't24h_vs_t8w_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 10, height  = 10, plot=v3_t24h_vs_t8w_perct_omni_unweighted_plots[[ct1]][[ct2]])
-  }
-}
-# save the plots once again
-for(ct1 in names(v3_UT_vs_Baseline_perc_omni_unweightedt_plots)){
-  for(ct2 in names(v3_UT_vs_Baseline_perc_omni_unweightedt_plots[[ct1]])){
-    ggsave(paste('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'v3_nichenet_omni_', 'UT_vs_Baseline_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 10, height  = 10, plot=v3_UT_vs_Baseline_perc_omni_unweightedt_plots[[ct1]][[ct2]])
-  }
-}
-
-```
-
-```{r nichenet_omni_weighted_perct, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
-
-# same thing with the weighted now
-v2_Baseline_vs_t24h_perct_omni_weighted <- do_nichenet_analysis_versus_each_celltype(combined_v2, 'timepoint.final', 't24h', 'Baseline', lr_network_omni, weighted_networks_omni, ligand_target_matrix_omni_weighted)
-v2_Baseline_vs_t8w_perct_omni_weighted <- do_nichenet_analysis_versus_each_celltype(combined_v2, 'timepoint.final', 't8w', 'Baseline', lr_network_omni, weighted_networks_omni, ligand_target_matrix_omni_weighted)
-v2_t24h_vs_t8w_perct_omni_weighted <- do_nichenet_analysis_versus_each_celltype(combined_v2, 'timepoint.final', 't8w', 't24h', lr_network_omni, weighted_networks_omni, ligand_target_matrix_omni_weighted)
-v2_UT_vs_Baseline_perct_omni_weighted <- do_nichenet_analysis_versus_each_celltype(combined_v2, 'timepoint.final', 'Baseline', 'UT', lr_network_omni, weighted_networks_omni, ligand_target_matrix_omni_weighted)
-saveRDS(v2_Baseline_vs_t24h_perct_omni_weighted, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_weighted.rds')
-saveRDS(v2_Baseline_vs_t8w_perct_omni_weighted, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_weighted.rds')
-saveRDS(v2_t24h_vs_t8w_perct_omni_weighted, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_t24h_vs_t8w_nichenet_onlymajor_perct_omni_weighted.rds')
-saveRDS(v2_UT_vs_Baseline_perct_omni_weighted, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v2_UT_vs_Baseline_nichenet_onlymajor_perct_omni_weighted.rds')
-v2_Baseline_vs_t24h_perc_omni_weightedt_plots <- perct_output_to_plot(v2_Baseline_vs_t24h_perct_omni_weighted)
-v2_Baseline_vs_t8w_perct_omni_weighted_plots <- perct_output_to_plot(v2_Baseline_vs_t8w_perct_omni_weighted)
-v2_t24h_vs_t8w_perct_omni_weighted_plots <- perct_output_to_plot(v2_t24h_vs_t8w_perct_omni_weighted)
-v2_UT_vs_Baseline_perc_omni_weightedt_plots <- perct_output_to_plot(v2_UT_vs_Baseline_perct_omni_weighted)
-v3_Baseline_vs_t24h_perct_omni_weighted <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 't24h', 'Baseline', lr_network_omni, weighted_networks_omni, ligand_target_matrix_omni_weighted)
-v3_Baseline_vs_t8w_perct_omni_weighted <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 't8w', 'Baseline', lr_network_omni, weighted_networks_omni, ligand_target_matrix_omni_weighted)
-v3_t24h_vs_t8w_perct_omni_weighted <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 't8w', 't24h', lr_network_omni, weighted_networks_omni, ligand_target_matrix_omni_weighted)
-v3_UT_vs_Baseline_perct_omni_weighted <- do_nichenet_analysis_versus_each_celltype(combined_v3, 'timepoint.final', 'Baseline', 'UT', lr_network_omni, weighted_networks_omni, ligand_target_matrix_omni_weighted)
-saveRDS(v3_Baseline_vs_t24h_perct_omni_weighted, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_weighted.rds')
-saveRDS(v3_Baseline_vs_t8w_perct_omni_weighted, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_weighted.rds')
-saveRDS(v3_t24h_vs_t8w_perct_omni_weighted, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_t24h_vs_t8w_nichenet_onlymajor_perct_omni_weighted.rds')
-saveRDS(v3_UT_vs_Baseline_perct_omni_weighted, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/v3_UT_vs_Baseline_nichenet_onlymajor_perct_omni_weighted.rds')
-v3_Baseline_vs_t24h_perc_omni_weightedt_plots <- perct_output_to_plot(v3_Baseline_vs_t24h_perct_omni_weighted)
-v3_Baseline_vs_t8w_perct_omni_weighted_plots <- perct_output_to_plot(v3_Baseline_vs_t8w_perct_omni_weighted)
-v3_t24h_vs_t8w_perct_omni_weighted_plots <- perct_output_to_plot(v3_t24h_vs_t8w_perct_omni_weighted)
-v3_UT_vs_Baseline_perc_omni_weightedt_plots <- perct_output_to_plot(v3_UT_vs_Baseline_perct_omni_weighted)
-
-for(ct1 in names(v2_Baseline_vs_t24h_perc_omni_weightedt_plots)){
-  for(ct2 in names(v2_Baseline_vs_t24h_perc_omni_weightedt_plots[[ct1]])){
-    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_per_ct/', 'v2_nichenet_omni_weighted_', 'Baseline_vs_t24h_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, height  = 20, plot=v2_Baseline_vs_t24h_perc_omni_weightedt_plots[[ct1]][[ct2]])
-  }
-}
-# save the plots once again
-for(ct1 in names(v2_Baseline_vs_t8w_perct_omni_weighted_plots)){
-  for(ct2 in names(v2_Baseline_vs_t8w_perct_omni_weighted_plots[[ct1]])){
-    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_per_ct/', 'v2_nichenet_omni_weighted_', 'Baseline_vs_t8w_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, height  = 20, plot=v2_Baseline_vs_t8w_perct_omni_weighted_plots[[ct1]][[ct2]])
-  }
-}
-# save the plots once again
-for(ct1 in names(v2_UT_vs_Baseline_perc_omni_weightedt_plots)){
-  for(ct2 in names(v2_UT_vs_Baseline_perc_omni_weightedt_plots[[ct1]])){
-    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_per_ct/', 'v2_nichenet_omni_weighted_', 'UT_vs_Baseline_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, height  = 20, plot=v2_UT_vs_Baseline_perc_omni_weightedt_plots[[ct1]][[ct2]])
-  }
-}
-
-#and v3
-for(ct1 in names(v3_Baseline_vs_t24h_perc_omni_weightedt_plots)){
-  for(ct2 in names(v3_Baseline_vs_t24h_perc_omni_weightedt_plots[[ct1]])){
-    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'v3_nichenet_omni_weighted_', 'Baseline_vs_t24h_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, height  = 20, plot=v3_Baseline_vs_t24h_perc_omni_weightedt_plots[[ct1]][[ct2]])
-  }
-}
-# save the plots once again
-for(ct1 in names(v3_Baseline_vs_t8w_perct_omni_weighted_plots)){
-  for(ct2 in names(v3_Baseline_vs_t8w_perct_omni_weighted_plots[[ct1]])){
-    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'v3_nichenet_omni_weighted_', 'Baseline_vs_t8w_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, height  = 20, plot=v3_Baseline_vs_t8w_perct_omni_weighted_plots[[ct1]][[ct2]])
-  }
-}
-# save the plots once again
-for(ct1 in names(v3_UT_vs_Baseline_perc_omni_weightedt_plots)){
-  for(ct2 in names(v3_UT_vs_Baseline_perc_omni_weightedt_plots[[ct1]])){
-    ggsave(paste('/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_per_ct/', 'v3_nichenet_omni_weighted_', 'UT_vs_Baseline_', ct1, '_vs_', ct2, '.pdf', sep = ''), width = 20, height  = 20, plot=v3_UT_vs_Baseline_perc_omni_weightedt_plots[[ct1]][[ct2]])
-  }
-}
-
-```
-
-```{r nichenet_omni_unweighted_perct_perpathway, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
-
-# now do for a subselection of features
-pathway_gene_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/pathways/annotations/'
-pathway_files <- c('KEGG_IL-17_signaling_pathway.txt', 'KEGG_Th17_cell_differentiation.txt', 'MySigDBC2BIOCARTA_IL23-mediated_signaling_events.txt', 'MySigDBC2BIOCARTA_IL6-mediated_signaling_events.txt', 'REACTOME_Interleukin-10_signaling.txt', 'REACTOME_Interleukin-4_and_13_signalling.txt',
-                   'il10-pathway-reactome.txt',
-                   'il17-pathway-reactome.txt',
-                   'il1-pathway-reactome.txt',
-                   'il23-pathway-reactome.txt',
-                   'il4il13-pathway-reactome.txt',
-                   'il6-pathway-reactome.txt')
-pathway_files_named <- as.list(pathway_files)
-names(pathway_files_named) <- c('KEGG IL-17 signaling pathway',
-                                'KEGG Th17 cellf ifferentiation',
-                                'MySigDBC2BIOCARTA IL23-mediated signaling events',
-                                'MySigDBC2BIOCARTA IL6-mediated_signaling events',
-                                'REACTOME Interleukin-10 signaling',
-                                'REACTOME Interleukin-4 and 13 signalling',
-                                'il10-pathway-reactome',
-                                'il17-pathway-reactome',
-                                'il1-pathway-reactome',
-                                'il23-pathway-reactome',
-                                'il4il13-pathway-reactome',
-                                'il6-pathway-reactome')
-
-v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v2, 'timepoint.final', 't24h', 'Baseline', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v2_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
-v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v3, 'timepoint.final', 't24h', 'Baseline', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v3_Baseline_vs_t24h_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
-v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v2, 'timepoint.final', 't8w', 'Baseline', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v2_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_Baseline_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
-v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v3, 'timepoint.final', 't8w', 'Baseline', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v3_Baseline_vs_t8w_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_Baseline_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
-v2_t24h_vs_t8w_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v2, 'timepoint.final', 't8w', 't24h', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v2_t24h_vs_t8w_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_t24h_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
-v3_t24h_vs_t8w_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v3, 'timepoint.final', 't8w', 't24h', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v3_t24h_vs_t8w_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_t24h_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
-v2_UT_vs_Baseline_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v2, 'timepoint.final', 'Baseline', 'UT', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v2_UT_vs_Baseline_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_UT_vs_Baseline_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
-v3_UT_vs_Baseline_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v3, 'timepoint.final', 'Baseline', 'UT', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v3_UT_vs_Baseline_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_UT_vs_Baseline_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
-v2_UT_vs_t24h_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v2, 'timepoint.final', 't24h', 'UT', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v2_UT_vs_t24h_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_UT_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
-v3_UT_vs_t24h_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v3, 'timepoint.final', 't24h', 'UT', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v3_UT_vs_t24h_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_UT_vs_t24h_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
-v2_UT_vs_t8w_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v2, 'timepoint.final', 't8w', 'UT', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v2_UT_vs_t8w_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v2_UT_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
-v3_UT_vs_t8w_perct_omni_unweighted_pathways_perpathway <- do_nichenet_analysis_versus_each_celltype_confined(combined_v3, 'timepoint.final', 't8w', 'UT', pathway_gene_loc, pathway_files_named, lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted)
-saveRDS(v3_UT_vs_t8w_perct_omni_unweighted_pathways_perpathway, '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/nichenet/objects/v3_UT_vs_t8w_nichenet_onlymajors_perct_omni_unweighted_perpathway_20220621.rds')
-
-
-
-create_dotplot_per_ct_and_tp(combined_v3, v3_Baseline_vs_t24h, 'Baseline', 't24h', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined_onlymajor/', split_condition = T)
-create_dotplot_per_ct_and_tp(combined_v3, v3_Baseline_vs_t8w, 'Baseline', 't8w', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined_onlymajor/', split_condition = T)
-create_dotplot_per_ct_and_tp(combined_v3, v3_UT_vs_Baseline, 'UT', 'Baseline', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v3_combined_onlymajor/', split_condition = T)
-create_dotplot_per_ct_and_tp(combined_v2, v2_Baseline_vs_t24h, 'Baseline', 't24h', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_combined_onlymajor/', split_condition = T)
-create_dotplot_per_ct_and_tp(combined_v2, v2_Baseline_vs_t8w, 'Baseline', 't8w', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_combined_onlymajor/', split_condition = T)
-create_dotplot_per_ct_and_tp(combined_v2, v2_UT_vs_Baseline, 'UT', 'Baseline', '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/cell_cell_interactions/plots/nichenet/MAST/v2_combined/_onlymajor', split_condition = T)
+Baseline_vs_t24h_perct_omni_unweighted <- do_nichenet_analysis_versus_each_celltype(stemi[, stemi@meta.data[['timepoint.final']] %in% c('t24h', 'Baseline')], 'timepoint.final', 't24h', 'Baseline', lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted, test.use = 'limma', limma_output_loc = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301//sct/chem_assignment_age_gender/')
+saveRDS(Baseline_vs_t24h_perct_omni_unweighted, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/limma_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds')
+Baseline_vs_t8w_perct_omni_unweighted <- do_nichenet_analysis_versus_each_celltype(stemi[, stemi@meta.data[['timepoint.final']] %in% c('t8w', 'Baseline')], 'timepoint.final', 't8w', 'Baseline', lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted, test.use = 'limma', limma_output_loc = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301//sct/chem_assignment_age_gender/')
+saveRDS(Baseline_vs_t8w_perct_omni_unweighted, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/limma_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds')
+t24h_vs_t8w_perct_omni_unweighted <- do_nichenet_analysis_versus_each_celltype(stemi[, stemi@meta.data[['timepoint.final']] %in% c('t8w', 't24h')], 'timepoint.final', 't8w', 't24h', lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted, test.use = 'limma', limma_output_loc = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301//sct/chem_assignment_age_gender/')
+saveRDS(t24h_vs_t8w_perct_omni_unweighted, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/limma_t24h_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds')
+UT_vs_Baseline_perct_omni_unweighted <- do_nichenet_analysis_versus_each_celltype(stemi[, stemi@meta.data[['timepoint.final']] %in% c('UT', 'Baseline')], 'timepoint.final', 'Baseline', 'UT', lr_network_omni, unweighted_networks_omni, ligand_target_matrix_omni_unweighted, test.use = 'limma', limma_output_loc = '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/differential_expression/limma_dream/stemi_both_paired_lores_lfc01minpct01ncountrna_20210301/')
+saveRDS(UT_vs_Baseline_perct_omni_unweighted, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/limma_UT_vs_Baseline_nichenet_onlymajor_perct_omni_unweighted.rds')
 
 ```
