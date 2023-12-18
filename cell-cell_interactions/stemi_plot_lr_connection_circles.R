@@ -34,6 +34,27 @@ interactions_to_numbers <- function(interactions_per_ct_list, by_receptor=T, cut
   return(connections_slim)
 }
 
+links_to_numbers <- function(links, sender_column='sender', receiver_column='receiver', strength_column='strength', cutoff=0.05) {
+  # create matrix
+  interaction_numbers <- matrix(NA, nrow = length(unique(links[[sender_column]])), ncol = length(unique(links[[receiver_column]])))
+  colnames(interaction_numbers) <- unique(links[[receiver_column]])
+  rownames(interaction_numbers) <- unique(links[[sender_column]])
+  # check each sender
+  for (sender in unique(links[[sender_column]])) {
+    # subset
+    links_sender <- links[links[[sender_column]] == sender, ]
+    # check each receiver
+    for (receiver in unique(links_sender[[receiver_column]])) {
+      # count how many we have
+      nlinks <- nrow(links_number <- links_sender[links_sender[[receiver_column]] == receiver &
+                                     links_sender[[strength_column]] >= cutoff, ])
+      # add tot table
+      interaction_numbers[sender, receiver] <- nlinks
+    }
+  }
+  return(interaction_numbers)
+}
+
 
 ligand_target_or_receptor_table_to_long <- function(matrix_like, swap=F) {
   # get ligands
@@ -224,9 +245,15 @@ filter_ligand_table_on_common_ligands <- function(lrt_all) {
   return(lrt_all_filtered)
 }
 
-interactions_to_circle <- function(interactions_per_ct_list, plot_title='cell communication', by_receptor=T, cutoff=0.05, split_sender_and_receiver=F, order_alphabet=T, order_size=F, start_degree=90){
+interactions_to_circle <- function(interactions_per_ct_list=NULL, plot_title='cell communication', by_receptor=T, cutoff=0.05, split_sender_and_receiver=F, order_alphabet=T, order_size=F, start_degree=90, interaction_links=NULL){
   # get the total number of connections per cell type
-  interaction_numbers <- get_interaction_numbers(interactions_per_ct_list, by_receptor, cutoff)
+  interaction_numbers <- NULL
+  if (!is.null(interactions_per_ct_list)) {
+    interaction_numbers <- get_interaction_numbers(interactions_per_ct_list, by_receptor, cutoff)
+  }
+  else if (!is.null(interaction_links)) {
+    interaction_numbers <- links_to_numbers(interaction_links, cutoff = cutoff)
+  }
   # slim it down into a three column input
   connections_slim <- slim_df_down(interaction_numbers, new_col_names = c('sender', 'receiver', 'connections'))
   # split the sender and receiver is requested
@@ -1133,114 +1160,47 @@ text_color_dict <- function(){
 
 # locations of the files
 interactions_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/objects/'
-interactions_Baseline_t24h_v2_loc <- paste(interactions_loc, 'v2_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds', sep = '')
-interactions_t24h_t8w_v2_loc <- paste(interactions_loc, 'v2_t24h_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds', sep = '')
-interactions_Baseline_t24h_v3_loc <- paste(interactions_loc, 'v3_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds', sep = '')
-interactions_t24h_t8w_v3_loc <- paste(interactions_loc, 'v3_t24h_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds', sep = '')
+interactions_Baseline_t24h_loc <- paste(interactions_loc, 'limma_Baseline_vs_t24h_nichenet_onlymajors_perct_omni_unweighted.rds', sep = '')
+interactions_t24h_t8w_loc <- paste(interactions_loc, 'limma_Baseline_vs_t8w_nichenet_onlymajor_perct_omni_unweighted.rds', sep = '')
 
 
 # read object
-interactions_Baseline_t24h_v2 <- readRDS(interactions_Baseline_t24h_v2_loc)
-interactions_t24h_t8w_v2 <- readRDS(interactions_t24h_t8w_v2_loc)
-interactions_Baseline_t24h_v3 <- readRDS(interactions_Baseline_t24h_v3_loc)
-interactions_t24h_t8w_v3 <- readRDS(interactions_t24h_t8w_v3_loc)
+interactions_Baseline_t24h <- readRDS(interactions_Baseline_t24h_loc)
+interactions_t24h_t8w <- readRDS(interactions_t24h_t8w_loc)
 
 # setup four plot tiles
 par(mfrow=c(1,2))
-interactions_to_circle(interactions_Baseline_t24h_v3, plot_title = title('V3 Cell communication changes \nbetween t0 and t24h'), by_receptor = T, split_sender_and_receiver = T, order_size = T, start_degree = 180)
-interactions_to_circle(interactions_t24h_t8w_v3, plot_title = title('V3 Cell communication changes \nbetween t24h and t8w'), by_receptor = T, split_sender_and_receiver = T, order_size = T, start_degree = 180)
+interactions_to_circle(interactions_Baseline_t24h, plot_title = title('Cell communication changes \nbetween t0 and t24h'), by_receptor = T, split_sender_and_receiver = T, order_size = T, start_degree = 180)
+interactions_to_circle(interactions_t24h_t8w, plot_title = title('Cell communication changes \nbetween t24h and t8w'), by_receptor = T, split_sender_and_receiver = T, order_size = T, start_degree = 180)
 par(mfrow=c(1,1))
 
 # get the numbers as well
-nr_interactions_Baseline_t24h_v3 <- interactions_to_numbers(interactions_Baseline_t24h_v3)
-nr_interactions_Baseline_t24h_v2 <- interactions_to_numbers(interactions_Baseline_t24h_v2)
-nr_interactions_t24h_t8w_v3 <- interactions_to_numbers(interactions_t24h_t8w_v3)
-nr_interactions_t24h_t8w_v2 <- interactions_to_numbers(interactions_t24h_t8w_v2)
-nr_interactions_Baseline_t24h_v3[['comparison']] <- 't0_t24h'
-nr_interactions_Baseline_t24h_v2[['comparison']] <- 't0_t24h'
-nr_interactions_t24h_t8w_v3[['comparison']] <- 't0_t8w'
-nr_interactions_t24h_t8w_v2[['comparison']] <- 't0_t8w'
-nr_interactions_Baseline_t24h_v3[['chem']] <- 'V3'
-nr_interactions_Baseline_t24h_v2[['chem']] <- 'V2'
-nr_interactions_t24h_t8w_v3[['chem']] <- 'V3'
-nr_interactions_t24h_t8w_v2[['chem']] <- 'V2'
+nr_interactions_Baseline_t24h <- interactions_to_numbers(interactions_Baseline_t24h)
+nr_interactions_t24h_t8w <- interactions_to_numbers(interactions_t24h_t8w)
+nr_interactions_Baseline_t24h[['comparison']] <- 't0_t24h'
+nr_interactions_t24h_t8w[['comparison']] <- 't0_t8w'
 nr_interactions <- rbind(
-  nr_interactions_Baseline_t24h_v3,
-  nr_interactions_Baseline_t24h_v2,
-  nr_interactions_t24h_t8w_v3,
-  nr_interactions_t24h_t8w_v2
+  nr_interactions_Baseline_t24h,
+  nr_interactions_t24h_t8w,
 )
 
 
 # get the L-R and L-T links
-links_Baseline_t24h_v3 <- summarize_nichenet_results(interactions_Baseline_t24h_v3)
-links_Baseline_t24h_v2 <- summarize_nichenet_results(interactions_Baseline_t24h_v2)
-links_t24h_t8w_v3 <- summarize_nichenet_results(interactions_t24h_t8w_v3)
-links_t24h_t8w_v2 <- summarize_nichenet_results(interactions_t24h_t8w_v2)
+links_Baseline_t24h <- summarize_nichenet_results(interactions_Baseline_t24h)
+links_t24h_t8w <- summarize_nichenet_results(interactions_t24h_t8w)
 # remove empty entries
-links_Baseline_t24h_v3 <- links_Baseline_t24h_v3[links_Baseline_t24h_v3[['strength']] > 0, ]
-links_Baseline_t24h_v2 <- links_Baseline_t24h_v2[links_Baseline_t24h_v2[['strength']] > 0, ]
-links_t24h_t8w_v3 <- links_t24h_t8w_v3[links_t24h_t8w_v3[['strength']] > 0, ]
-links_t24h_t8w_v2 <- links_t24h_t8w_v2[links_t24h_t8w_v2[['strength']] > 0, ]
+links_Baseline_t24h <- links_Baseline_t24h[links_Baseline_t24h[['strength']] > 0, ]
+links_t24h_t8w <- links_t24h_t8w[links_t24h_t8w[['strength']] > 0, ]
 # filter
-links_Baseline_t24h_v3 <- filter_ligand_table_on_common_ligands(links_Baseline_t24h_v3)
-links_Baseline_t24h_v2 <- filter_ligand_table_on_common_ligands(links_Baseline_t24h_v2)
-links_t24h_t8w_v3 <- filter_ligand_table_on_common_ligands(links_t24h_t8w_v3)
-links_t24h_t8w_v2 <- filter_ligand_table_on_common_ligands(links_t24h_t8w_v2)
+links_Baseline_t24h <- filter_ligand_table_on_common_ligands(links_Baseline_t24h)
+links_t24h_t8w <- filter_ligand_table_on_common_ligands(links_t24h_t8w)
 # add combination
-links_Baseline_t24h_v3 <- cbind(data.frame(chem = rep('v3'), comparison = rep('Baseline_t24h')), links_Baseline_t24h_v3)
-links_Baseline_t24h_v2 <- cbind(data.frame(chem = rep('v2'), comparison = rep('Baseline_t24h')), links_Baseline_t24h_v2)
-links_t24h_t8w_v3 <- cbind(data.frame(chem = rep('v3'), comparison = rep('t24h_t8w')), links_t24h_t8w_v3)
-links_t24h_t8w_v2 <- cbind(data.frame(chem = rep('v2'), comparison = rep('t24h_t8w')), links_t24h_t8w_v2)
+links_Baseline_t24h <- cbind(data.frame(comparison = rep('Baseline_t24h')), links_Baseline_t24h)
+links_t24h_t8w <- cbind(data.frame(comparison = rep('t24h_t8w')), links_t24h_t8w)
 
-# merge timepoints together
-links_Baseline_t24h <- rbind(links_Baseline_t24h_v2, links_Baseline_t24h_v3)
-links_t24h_t8w <- rbind(links_t24h_t8w_v2, links_t24h_t8w_v3)
-
-# load the expression
-expression_groups <- read.table('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/stemi_cell_type_lowerres_condition_avgexp.tsv.gz', sep = '\t', header = T, row.names = 1)
-# and pcts
-pcts_groups <- read.table('/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/stemi_cell_type_lowerres_condition_pct.tsv.gz', sep = '\t', header = T)
-# get a list of all ligands and receptors/targets
-all_genes_nn <- unique(c(links_Baseline_t24h[['ligand']], links_Baseline_t24h[['link']], links_t24h_t8w[['ligand']], links_t24h_t8w[['link']]))
-# fix dash that was replaced with dot
-all_genes_nn <- gsub('\\.', '-', all_genes_nn)
-# filter the expression and pct tables
-pcts_groups <- pcts_groups[pcts_groups[['gene']] %in% all_genes_nn, ]
-# filter on what could be tested in both
-links_Baseline_t24h <- filter_ligand_table_on_pcts(links_Baseline_t24h, pcts_groups, 'ligand', 'sender')
-links_Baseline_t24h <- filter_ligand_table_on_gene_expressed(links_Baseline_t24h, pcts_groups, 'link', 'receiver')
-links_t24h_t8w <- filter_ligand_table_on_pcts(links_t24h_t8w, pcts_groups, 'ligand', 'sender')
-links_t24h_t8w <- filter_ligand_table_on_gene_expressed(links_t24h_t8w, pcts_groups, 'link', 'receiver')
-# filter again
-links_Baseline_t24h_v3 <- filter_ligand_table_on_common_ligands(links_Baseline_t24h[links_Baseline_t24h[['chem']] == 'v3', ])
-links_Baseline_t24h_v2 <- filter_ligand_table_on_common_ligands(links_Baseline_t24h[links_Baseline_t24h[['chem']] == 'v2', ])
-links_t24h_t8w_v3 <- filter_ligand_table_on_common_ligands(links_t24h_t8w[links_t24h_t8w[['chem']] == 'v3', ])
-links_t24h_t8w_v2 <- filter_ligand_table_on_common_ligands(links_t24h_t8w[links_t24h_t8w[['chem']] == 'v2', ])
-
-# merge links
-links <- rbind(
-  links_Baseline_t24h_v3,
-  links_Baseline_t24h_v2,
-  links_t24h_t8w_v3,
-  links_t24h_t8w_v2
-)
-# add combination
-links[['combination']] <- paste(
-  links[['sender']],
-  links[['receiver']],
-  links[['ligand']],
-  links[['link']]
-)
-# check overlap
-plot_grid(
-  ggVennDiagram(list('v2' = links[links[['chem']] == 'v2' & links[['comparison']] == 'Baseline_t24h' & links[['type']] == 'receptor', 'combination'], 'v3' = links[links[['chem']] == 'v3' & links[['comparison']] == 'Baseline_t24h' & links[['type']] == 'receptor', 'combination'])) + ggtitle('L-R overlap t0-t24h'),
-  ggVennDiagram(list('v2' = links[links[['chem']] == 'v2' & links[['comparison']] == 't24h_t8w' & links[['type']] == 'receptor', 'combination'], 'v3' = links[links[['chem']] == 'v3' & links[['comparison']] == 't24h_t8w' & links[['type']] == 'receptor', 'combination'])) + ggtitle('L-R overlap t24h-t8w'),
-  ggVennDiagram(list('v2' = links[links[['chem']] == 'v2' & links[['comparison']] == 'Baseline_t24h' & links[['type']] == 'target', 'combination'], 'v3' = links[links[['chem']] == 'v3' & links[['comparison']] == 'Baseline_t24h' & links[['type']] == 'target', 'combination'])) + ggtitle('L-T overlap t0-t24h'),
-  ggVennDiagram(list('v2' = links[links[['chem']] == 'v2' & links[['comparison']] == 't24h_t8w' & links[['type']] == 'target', 'combination'], 'v3' = links[links[['chem']] == 'v3' & links[['comparison']] == 't24h_t8w' & links[['type']] == 'target', 'combination'])) + ggtitle('L-T overlap t24h-t8w'),
-  ncol = 2, 
-  nrow = 2
-)
-# remove column
-links[['combination']] <- NULL
-#write.table(links, '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_cell_interactions/nichenet/stemi_nichenet_connections.csv', row.names = F, col.names = T, quote = F, sep = ';')
+# get number of links
+nlinks_Baseline_t24h <- links_to_numbers(links_Baseline_t24h)
+nlinks_t24h_t8w <- links_to_numbers(links_t24h_t8w)
+# into plot
+interactions_to_circle(NULL, plot_title = title('Cell communication changes \nbetween t0 and t24h'), by_receptor = T, split_sender_and_receiver = T, order_size = T, start_degree = 180, interaction_links = links_Baseline_t24h)
+interactions_to_circle(NULL, plot_title = title('Cell communication changes \nbetween t24 and t8w'), by_receptor = T, split_sender_and_receiver = T, order_size = T, start_degree = 180, interaction_links = links_t24h_t8w)
