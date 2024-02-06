@@ -43,6 +43,9 @@ list_of_dfs_to_excel <- function(list_of_dfs, excel_output_loc, remove_columns=N
 # settings         #
 ####################
 
+options(java.parameters = "-Xmx8000m")
+
+
 ####################
 # debug code      #
 ####################
