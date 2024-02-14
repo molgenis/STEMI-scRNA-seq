@@ -180,6 +180,81 @@ plot_ct_numbers_boxplot <- function(numbers_table, conditions_to_plot=c('UT', 'B
 }
 
 
+
+#' scale cell numbers in conditions by the numbers in another condition to show relative change
+#' 
+#' @param numbers_table cell numbers to load the cell numbers from
+#' @param conditions_to_plot which conditions to plot
+#' @param cell_types_to_plot which cell types to plot
+#' @param use_label_dict convert cell type and condition names into nicer names
+#' @param to_fraction turn absolute cell numbers into fraction of observation
+#' @param pointless remove ticks on the bottom of plot (optional, default F)
+#' @param legendless remove the legend (optional, default F)
+#' @param paper_style add extra whitespace to plot (optional, default T)
+#' @param drop_zeros remove empty observations
+#' @param angle_labels angle x labels 90 degrees for readability
+#' @returns a dataframe tabel with for each donor and each scaled timepoint, what the relative number of cells is
+#' 
+plot_ct_numbers_bars <- function(numbers_table, conditions_to_plot=c('UT', 'Baseline', 't24h', 't8w'), cell_types_to_plot=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), use_label_dict=T, to_fraction=F, pointless=F, legendless=F, to_pct=F, ylim=NULL, paper_style=T, drop_zeros=T, angle_labels=T){
+  # subset to want we want to plot
+  numbers_table <- numbers_table[numbers_table$condition %in% conditions_to_plot, ]
+  numbers_table <- numbers_table[numbers_table$cell_type %in% cell_types_to_plot, ]
+  # drop zeroes
+  if (drop_zeros) {
+    numbers_table <- numbers_table[numbers_table$fraction > 0, ]
+  }
+  # use prettier labels if requested
+  if(use_label_dict){
+    numbers_table$condition <- as.vector(unlist(label_dict()[numbers_table$condition]))
+    numbers_table$cell_type <- as.vector(unlist(label_dict()[numbers_table$cell_type]))
+  }
+  # set y label
+  ylabel <- 'number of cells'
+  # use fractions if requested
+  if(to_fraction){
+    # fraction is already in there
+    numbers_table$number <- numbers_table$fraction
+    # ovewrite label as well
+    ylabel <- 'fraction of cells'
+  }
+  if(to_pct){
+    # based on fraction
+    numbers_table$number <- numbers_table$fraction*100
+    # ovewrite label as well
+    ylabel <- 'percentage of cells'
+  }
+  # fetch colors
+  cc <- get_color_coding_dict()
+  # set colors based on condition
+  colScale <- scale_fill_manual(name = "condition",values = unlist(cc[numbers_table$cell_type]))
+  # create the plot
+  p <- ggplot(data=numbers_table, aes(x=participant, y=number, fill=cell_type))
+  p <- p +  
+    geom_bar(stat = 'identity', position = 'stack') + 
+    colScale +
+    facet_grid(. ~ condition) +
+    ylab(ylabel)
+  # add xlimit if requested
+  if(!is.null(ylim)){
+    p <- p + ylim(ylim)
+  }
+  if(pointless){
+    p <- p + theme(axis.text.x=element_blank(), 
+                   axis.ticks = element_blank())
+  }
+  if(legendless){
+    p <- p + theme(legend.position = 'none')
+  }
+  if (paper_style) {
+    p <- p + theme(panel.border = element_rect(color="black", fill=NA, size=1.1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), strip.background = element_rect(colour="white", fill="white"))
+  }
+  if (angle_labels) {
+    p <- p + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  }
+  return(p)
+}
+
+
 #' sum cell numbers of donors together for celltype and timepoint, to get totals regardless of donors
 #' 
 #' @param numbers_table cell numbers to load the cell numbers from
