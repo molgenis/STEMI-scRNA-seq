@@ -187,6 +187,139 @@ plot_ct_numbers_boxplot <- function(numbers_table, conditions_to_plot=c('UT', 'B
   return(p)
 }
 
+#' get a vector of as distinct possible colours
+#' 
+#' @param number_of_colours how many colours to return
+#' @param use_sampling whether or not to randomly extract the colours instead of grabbing the first n colours
+#' @param color_indices (optional, not used by default) if specific colours are needed, supply the indices of the colours here. Use 'get_available_colours_grid' to get the colours and their indices
+#' @returns a vector of colours
+#' 
+sample_many_colours <- function(number_of_colours, use_sampling=F, color_indices=NULL) {
+  # get all colours from the 'quality' palettes
+  quality_colour_palettes <- brewer.pal.info[brewer.pal.info[['category']] == 'qual', ]
+  # save each palette
+  colours_per_palette <- list()
+  # apply over each palette
+  for (i in 1:nrow(quality_colour_palettes)) {
+    # get the name of the palette
+    palette_name <- rownames(quality_colour_palettes)[i]
+    # get the number of colours in the palette
+    palette_max_colours <- quality_colour_palettes[i, 'maxcolors']
+    # use brewer.pal to get all colours
+    colours_palette <- brewer.pal(palette_max_colours, palette_name)
+    # put result in the list
+    colours_per_palette[[palette_name]] <- colours_palette
+  }
+  # merge all palettes
+  all_colours <- do.call('c', colours_per_palette)
+  # randomly get colours from the palette
+  max_possible_colours <- length(all_colours)
+  if (is.null(number_of_colours)) {
+    message('no number of colors supplied, assuming color indices have been')
+  }
+  else if (number_of_colours > max_possible_colours) {
+    message(paste('requesting more colours than is possible: ', as.character(number_of_colours), ' vs ', max_possible_colours, ', returning max possible', sep = ''))
+    number_of_colours <- max_possible_colours
+  }
+  colours_to_return <- NULL
+  # specific colours we like (the indices)
+  if (!is.null(color_indices)) {
+    colours_to_return <- all_colours[color_indices]
+  }
+  # or use sampling
+  else if (use_sampling) {
+    colours_to_return <- sample(all_colours, number_of_colours)
+  }
+  # or the first x colours
+  else {
+    colours_to_return <- all_colours[1 : number_of_colours]
+  }
+  return(colours_to_return)
+}
+
+#' get a vector of as distinct possible colours, but with more possibilities ()
+#' 
+#' @param number_of_colours how many colours to return
+#' @param use_sampling whether or not to randomly extract the colours instead of grabbing the first n colours
+#' @param color_indices (optional, not used by default) if specific colours are needed, supply the indices of the colours here. Use 'get_available_colours_grid' to get the colours and their indices
+#' @returns a vector of colours
+#' 
+sample_tons_of_colors <- function(number_of_colours, use_sampling=F, color_indices=NULL) {
+  # get colours available to device
+  all_colours <- grDevices::colors()
+  # remove gray
+  all_colours <- all_colours[grep('gr(a|e)y', all_colours, invert = T)]
+  # check how many are possible
+  max_possible_colours <- length(all_colours)
+  if (is.null(number_of_colours)) {
+    message('no number of colors supplied, assuming color indices have been')
+  }
+  else if (number_of_colours > max_possible_colours) {
+    message(paste('requesting more colours than is possible: ', as.character(number_of_colours), ' vs ', max_possible_colours, ', returning max possible', sep = ''))
+    number_of_colours <- max_possible_colours
+  }
+  colours_to_return <- NULL
+  # specific colours we like (the indices)
+  if (!is.null(color_indices)) {
+    colours_to_return <- all_colours[color_indices]
+  }
+  # or use sampling
+  else if (use_sampling) {
+    colours_to_return <- sample(all_colours, number_of_colours)
+  }
+  # or the first x colours
+  else {
+    colours_to_return <- all_colours[1 : number_of_colours]
+  }
+  return(colours_to_return)
+}
+
+
+#' get a grid showing the available colours and their indices
+#' 
+#' @param many use the 'many' method to get the colours
+#' @param tons use the 'tons' method to get the colours
+#' @returns a ggplot grid showing the available colours and their indices
+#' 
+get_available_colours_grid <- function(many=T, tons=F) {
+  colours_possible <- NULL
+  # get from the many method
+  if (many) {
+    # ask for unreasonable amount
+    colours_possible <- sample_many_colours(1000)
+  }
+  else if(tons) {
+    colours_possible <- sample_tons_of_colors(1000)
+  }
+  # get how many colours we actually have
+  available_colours <- length(colours_possible)
+  # we need to put that into a square grid, so we need to get the square root, to know how many rows and columns
+  nrow_and_ncol <- sqrt(available_colours)
+  # and we need to round that up of course
+  nrow_and_ncol <- ceiling(nrow_and_ncol)
+  # so we'll have a total number of blocks
+  total_cells <- nrow_and_ncol * nrow_and_ncol
+  # let's see how many colours we are off from that number of cells
+  cells_no_colour_number <- total_cells - available_colours
+  # we will just add white for those
+  cells_no_colour <- rep('white', times = cells_no_colour_number)
+  # add that to the colours we have
+  colours_possible <- c(colours_possible, cells_no_colour)
+  # create each combination of x and y
+  indices_grid <- expand.grid(as.character(1 : nrow_and_ncol), as.character(1 : nrow_and_ncol))
+  # add the index and colour name
+  indices_grid[['index_colour']] <- paste(c(1:total_cells), colours_possible, sep = '\n')
+  # make mapping of colours
+  colours_to_use <- as.list(colours_possible)
+  names(colours_to_use) <- indices_grid[['index_colour']]
+  # now plot
+  p <- ggplot(data = indices_grid, mapping = aes(x = Var1, y = Var2, fill = index_colour)) + 
+    geom_tile() + 
+    geom_text(aes(label=index_colour)) + 
+    scale_fill_manual(values = colours_to_use) + 
+    theme(legend.position = 'none')
+  return(p)
+}
 
 
 #' scale cell numbers in conditions by the numbers in another condition to show relative change
@@ -205,9 +338,11 @@ plot_ct_numbers_boxplot <- function(numbers_table, conditions_to_plot=c('UT', 'B
 #' @param drop_zeros remove empty observations
 #' @param angle_labels angle x labels 90 degrees for readability
 #' @param split_condition split the condition as separate plots
+#' @param colour_ticks give the x axis ticks colours
+#' @param colour_mapping what colour to give what colour tick
 #' @returns a dataframe tabel with for each donor and each scaled timepoint, what the relative number of cells is
 #' 
-plot_ct_numbers_bars <- function(numbers_table, cell_type_column = 'cell_type', condition_column='condition', participant_column='participant_column', conditions_to_plot=c('UT', 'Baseline', 't24h', 't8w'), cell_types_to_plot=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), use_label_dict=T, to_fraction=F, pointless=F, legendless=F, to_pct=F, ylim=NULL, paper_style=T, drop_zeros=T, angle_labels=T, split_condition=F){
+plot_ct_numbers_bars <- function(numbers_table, cell_type_column = 'cell_type', condition_column='condition', participant_column='participant_column', conditions_to_plot=c('UT', 'Baseline', 't24h', 't8w'), cell_types_to_plot=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), use_label_dict=T, to_fraction=F, pointless=F, legendless=F, to_pct=F, ylim=NULL, paper_style=T, drop_zeros=T, angle_labels=T, split_condition=F, colour_ticks=T, colour_mapping=NULL){
   # harmonize column names
   numbers_table[['cell_type']] <- numbers_table[[cell_type_column]]
   numbers_table[['condition']] <- numbers_table[[condition_column]]
@@ -252,6 +387,16 @@ plot_ct_numbers_bars <- function(numbers_table, cell_type_column = 'cell_type', 
   # split by condition
   if (split_condition) {
     p <- p + facet_grid(. ~ condition)
+  }
+  # colour the ticks if requested
+  if (colour_ticks) {
+    # get the labels
+    x_labels <- levels(numbers_table$participant)[levels(numbers_table$participant) %in% numbers_table$participant]
+    # get the appropriate colours
+    x_colours <- as.vector(unlist(colour_mapping[as.character(x_labels)]))
+    p <- p + theme(axis.ticks = element_line(),      # Change ticks line fo all axes
+                   axis.ticks.x = element_line(linewidth = 5, colour = x_colours),    # Change x axis ticks only
+    )
   }
   # add xlimit if requested
   if(!is.null(ylim)){
@@ -808,5 +953,15 @@ p_panel <- plot_grid(
 cell_numbers[['participant_condition']] <- paste(cell_numbers[['participant']], cell_numbers[['condition']], sep = ' ')
 # order by participant, then condition
 cell_numbers_only_participant_condition <- unique(cell_numbers[, c('participant', 'condition', 'participant_condition')])
-cell_numbers[['participant_condition']] <- factor(cell_numbers[['participant_condition']], levels = cell_numbers_only_participant_condition[order(cell_numbers_only_participant_condition[['participant']], cell_numbers_only_participant_condition[['condition']]), 'participant_condition'])
-plot_ct_numbers_bars(cell_numbers, participant_column = 'participant_condition', split_condition = F, to_fraction = T, cell_types_to_plot = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK', 'HSPC', 'plasmablast', 'platelet', 'T_other'), conditions_to_plot = c('Baseline', 't24h', 't8w')) + xlab('participant + timepoint')
+ordered_participant_condition <- cell_numbers_only_participant_condition[order(cell_numbers_only_participant_condition[['participant']], cell_numbers_only_participant_condition[['condition']]), 'participant_condition']
+cell_numbers[['participant_condition']] <- factor(cell_numbers[['participant_condition']], levels = ordered_participant_condition)
+# get colours for the participants
+colours_participants <- as.list(sample_tons_of_colors(length(unique(as.character(cell_numbers_only_participant_condition[['participant']])))))
+# make that into a list
+names(colours_participants) <- unique(as.character(cell_numbers_only_participant_condition[['participant']]))
+# now do that for participant + condition
+colours_participants_and_conditions <- colours_participants[as.character(cell_numbers_only_participant_condition[['participant']])]
+# and set the names again
+names(colours_participants_and_conditions) <- cell_numbers_only_participant_condition[['participant_condition']]
+# finally make the plot
+plot_ct_numbers_bars(cell_numbers, participant_column = 'participant_condition', split_condition = F, to_fraction = T, cell_types_to_plot = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK', 'HSPC', 'plasmablast', 'platelet', 'T_other'), conditions_to_plot = c('Baseline', 't24h', 't8w'), colour_ticks = T, colour_mapping = colours_participants_and_conditions) + xlab('participant + timepoint')
