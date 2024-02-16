@@ -1,3 +1,11 @@
+#!/usr/bin/env Rscript
+############################################################################################################################
+# Authors: Roy Oelen
+# Name: stemi_cell_type_plots.R
+# Function: create plots of the cell type proportions
+############################################################################################################################
+
+
 ####################
 # libraries        #
 ####################
@@ -184,6 +192,9 @@ plot_ct_numbers_boxplot <- function(numbers_table, conditions_to_plot=c('UT', 'B
 #' scale cell numbers in conditions by the numbers in another condition to show relative change
 #' 
 #' @param numbers_table cell numbers to load the cell numbers from
+#' @param cell_type_column column containing the cell type
+#' @param condition_column column containing the condition
+#' @param participant_column column containing the participant
 #' @param conditions_to_plot which conditions to plot
 #' @param cell_types_to_plot which cell types to plot
 #' @param use_label_dict convert cell type and condition names into nicer names
@@ -193,9 +204,14 @@ plot_ct_numbers_boxplot <- function(numbers_table, conditions_to_plot=c('UT', 'B
 #' @param paper_style add extra whitespace to plot (optional, default T)
 #' @param drop_zeros remove empty observations
 #' @param angle_labels angle x labels 90 degrees for readability
+#' @param split_condition split the condition as separate plots
 #' @returns a dataframe tabel with for each donor and each scaled timepoint, what the relative number of cells is
 #' 
-plot_ct_numbers_bars <- function(numbers_table, conditions_to_plot=c('UT', 'Baseline', 't24h', 't8w'), cell_types_to_plot=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), use_label_dict=T, to_fraction=F, pointless=F, legendless=F, to_pct=F, ylim=NULL, paper_style=T, drop_zeros=T, angle_labels=T){
+plot_ct_numbers_bars <- function(numbers_table, cell_type_column = 'cell_type', condition_column='condition', participant_column='participant_column', conditions_to_plot=c('UT', 'Baseline', 't24h', 't8w'), cell_types_to_plot=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), use_label_dict=T, to_fraction=F, pointless=F, legendless=F, to_pct=F, ylim=NULL, paper_style=T, drop_zeros=T, angle_labels=T, split_condition=F){
+  # harmonize column names
+  numbers_table[['cell_type']] <- numbers_table[[cell_type_column]]
+  numbers_table[['condition']] <- numbers_table[[condition_column]]
+  numbers_table[['participant']] <- numbers_table[[participant_column]]
   # subset to want we want to plot
   numbers_table <- numbers_table[numbers_table$condition %in% conditions_to_plot, ]
   numbers_table <- numbers_table[numbers_table$cell_type %in% cell_types_to_plot, ]
@@ -232,8 +248,11 @@ plot_ct_numbers_bars <- function(numbers_table, conditions_to_plot=c('UT', 'Base
   p <- p +  
     geom_bar(stat = 'identity', position = 'stack') + 
     colScale +
-    facet_grid(. ~ condition) +
     ylab(ylabel)
+  # split by condition
+  if (split_condition) {
+    p <- p + facet_grid(. ~ condition)
+  }
   # add xlimit if requested
   if(!is.null(ylim)){
     p <- p + ylim(ylim)
@@ -605,7 +624,7 @@ label_dict <- function(){
 ####################
 
 # location of the metadata
-meta.data.loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata/cardio.integrated.20210301.metadata.tsv'
+meta.data.loc <- '/groups/umcg-franke-scrna/tmp03/releases/blokland-2020/v1/metadata/cardio.integrated.20210301.metadata.tsv'
 # read into table
 meta.data <- read.table(meta.data.loc, sep = '\t', header = T, row.names = 1, stringsAsFactors = F)
 # get the cell numbers
@@ -688,10 +707,10 @@ mapping <- as.list(c(ordered_ll_numbers, stemi_samples))
 names(mapping) <- c(ordered_ll_samples, stemi_samples)
 cell_numbers_both[['participant']] <- as.vector(unlist(mapping[as.character(cell_numbers_both[['participant']])]))
 # write result
-#write.table(cell_numbers_both[, c('level', 'lane', 'condition', 'participant', 'cell_type', 'number', 'level')], '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/cell_type_composition/stemi_cell_numbers_overview.tsv', sep = '\t', row.names = F, col.names = T)
+#write.table(cell_numbers_both[, c('level', 'lane', 'condition', 'participant', 'cell_type', 'number', 'level')], '/groups/umcg-franke-scrna/tmp03/releases/blokland-2020/v1/cell_type_composition/stemi_cell_numbers_overview.tsv', sep = '\t', row.names = F, col.names = T)
 
 # finally make the final plot
-cardio_integrated_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/seurat/cardio.integrated.20210301.rds'
+cardio_integrated_loc <- '/groups/umcg-franke-scrna/tmp03/releases/blokland-2020/v1/seurat/cardio.integrated.20210301.rds'
 cardio_integrated <- readRDS(cardio_integrated_loc)
 # add a nicer label
 cardio_integrated@meta.data[['cell_type_lowerres_safe']] <- as.vector(unlist(label_dict()[as.character(cardio_integrated@meta.data[['cell_type_lowerres']])]))
@@ -782,3 +801,12 @@ p_panel <- plot_grid(
   ncol = 1,
   rel_heights = c(.5, .5)
 )
+
+
+# do cell type proportion plots as bars
+# add a new column of both the participant and the condition
+cell_numbers[['participant_condition']] <- paste(cell_numbers[['participant']], cell_numbers[['condition']], sep = ' ')
+# order by participant, then condition
+cell_numbers_only_participant_condition <- unique(cell_numbers[, c('participant', 'condition', 'participant_condition')])
+cell_numbers[['participant_condition']] <- factor(cell_numbers[['participant_condition']], levels = cell_numbers_only_participant_condition[order(cell_numbers_only_participant_condition[['participant']], cell_numbers_only_participant_condition[['condition']]), 'participant_condition'])
+plot_ct_numbers_bars(cell_numbers, participant_column = 'participant_condition', split_condition = F, to_fraction = T, cell_types_to_plot = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK', 'HSPC', 'plasmablast', 'platelet', 'T_other'), conditions_to_plot = c('Baseline', 't24h', 't8w')) + xlab('participant + timepoint')
