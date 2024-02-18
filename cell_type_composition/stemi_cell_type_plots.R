@@ -340,6 +340,7 @@ get_available_colours_grid <- function(many=T, tons=F) {
 #' @param split_condition split the condition as separate plots
 #' @param colour_ticks give the x axis ticks colours
 #' @param colour_mapping what colour to give what colour tick
+#' @param legendless do not plot the legend
 #' @returns a dataframe tabel with for each donor and each scaled timepoint, what the relative number of cells is
 #' 
 plot_ct_numbers_bars <- function(numbers_table, cell_type_column = 'cell_type', condition_column='condition', participant_column='participant_column', conditions_to_plot=c('UT', 'Baseline', 't24h', 't8w'), cell_types_to_plot=c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK'), use_label_dict=T, to_fraction=F, pointless=F, legendless=F, to_pct=F, ylim=NULL, paper_style=T, drop_zeros=T, angle_labels=T, split_condition=F, colour_ticks=T, colour_mapping=NULL){
@@ -377,7 +378,7 @@ plot_ct_numbers_bars <- function(numbers_table, cell_type_column = 'cell_type', 
   # fetch colors
   cc <- get_color_coding_dict()
   # set colors based on condition
-  colScale <- scale_fill_manual(name = "condition",values = unlist(cc[numbers_table$cell_type]))
+  colScale <- scale_fill_manual(name = "cell type",values = unlist(cc[numbers_table$cell_type]))
   # create the plot
   p <- ggplot(data=numbers_table, aes(x=participant, y=number, fill=cell_type))
   p <- p +  
@@ -414,6 +415,10 @@ plot_ct_numbers_bars <- function(numbers_table, cell_type_column = 'cell_type', 
   }
   if (angle_labels) {
     p <- p + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  }
+  # remove legend if requested
+  if(legendless){
+    p <- p + theme(legend.position = 'none')
   }
   return(p)
 }
@@ -965,3 +970,16 @@ colours_participants_and_conditions <- colours_participants[as.character(cell_nu
 names(colours_participants_and_conditions) <- cell_numbers_only_participant_condition[['participant_condition']]
 # finally make the plot
 plot_ct_numbers_bars(cell_numbers, participant_column = 'participant_condition', split_condition = F, to_fraction = T, cell_types_to_plot = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK', 'HSPC', 'plasmablast', 'platelet', 'T_other'), conditions_to_plot = c('Baseline', 't24h', 't8w'), colour_ticks = T, colour_mapping = colours_participants_and_conditions) + xlab('participant + timepoint')
+
+# save plots per donor
+p_donors <- list()
+for (i in 1:length(unique(cell_numbers[cell_numbers$condition != 'UT', 'participant']))){
+p_donor <- plot_ct_numbers_bars(cell_numbers[cell_numbers$participant == unique(cell_numbers[cell_numbers$condition != 'UT', 'participant'])[i], ], participant_column = 'participant_condition', split_condition = F, to_fraction = T, cell_types_to_plot = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK', 'HSPC', 'plasmablast', 'platelet', 'T_other'), conditions_to_plot = c('Baseline', 't24h', 't8w'), colour_ticks = T, colour_mapping = colours_participants_and_conditions, legendless = T) + xlab('') + ylab('')
+p_donor
+p_donors[[i]] <- p_donor
+}
+# get the legend as well
+p_donors[[i+1]] <- get_legend(plot_ct_numbers_bars(cell_numbers[cell_numbers$participant == unique(cell_numbers[cell_numbers$condition != 'UT', 'participant'])[i], ], participant_column = 'participant_condition', split_condition = F, to_fraction = T, cell_types_to_plot = c('B', 'CD4T', 'CD8T', 'DC', 'monocyte', 'NK', 'HSPC', 'plasmablast', 'platelet', 'T_other'), conditions_to_plot = c('Baseline', 't24h', 't8w'), colour_ticks = T, colour_mapping = colours_participants_and_conditions, legendless = F))
+# plot all of them
+plot_grid(plotlist = p_donors, ncol = 5)
+# saved as stemi_celltype_proportions_per_donor.pdf

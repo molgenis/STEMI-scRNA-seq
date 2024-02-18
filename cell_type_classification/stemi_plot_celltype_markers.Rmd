@@ -268,14 +268,14 @@ add_imputed_meta_data <- function(seurat_object, column_to_transform, column_to_
 
 ```
 
-```{r setup, include=FALSE}
+```{r setup_object, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 ####################
 # Main Code        #
 ####################
 
 # location of object
-objects_loc <- '/groups/umcg-franke-scrna/tmp02/releases/blokland-2020/v1/seurat/'
+objects_loc <- '/groups/umcg-franke-scrna/tmp03/releases/blokland-2020/v1/seurat/'
 cardio_integrated_loc <- paste(objects_loc, 'cardio.integrated.20210301.rds', sep = '')
 
 # read the object
@@ -284,7 +284,7 @@ cardio_integrated <- readRDS(cardio_integrated_loc)
 cardio_integrated <- UpdateSeuratObject(cardio_integrated)
 ```
 
-```{r setup, include=TRUE, fig.width=12, fig.heigth=12}
+```{r setup_markers, include=TRUE, fig.width=12, fig.heigth=12}
 knitr::opts_chunk$set(echo = FALSE)
 
 # the list of features to plot
@@ -310,7 +310,9 @@ cell_type_order <- c(
   'monocyte',
   'DC',
   'megakaryocyte',
-  'HPSC'
+  'HSPC',
+  'platelet',
+  'T_other'
 )
 
 
@@ -324,7 +326,7 @@ cardio_integrated_dp
 ```
 
 
-```{r setup, include=TRUE, fig.width=12, fig.heigth=12}
+```{r cluster_exp, include=TRUE, fig.width=12, fig.heigth=12}
 knitr::opts_chunk$set(echo = FALSE)
 
 # calculate the average expression
@@ -334,6 +336,8 @@ cardio_integrated_avg_exp_rna_genes <- data.frame(cardio_integrated_avgexp[['RNA
 cardio_integrated_avg_exp_sct_genes <- data.frame(cardio_integrated_avgexp[['SCT']][ng2018_marker_genes, ])
 # turn into a long table
 cardio_integrated_avg_exp_sct_genes_long <- wide_to_long_table(cardio_integrated_avg_exp_sct_genes)
+# replace the 'g' that is added to numerical columns into nothing
+cardio_integrated_avg_exp_sct_genes_long[['seurat_clusters']] <- gsub('^g', '', cardio_integrated_avg_exp_sct_genes_long[['seurat_clusters']])
 # fix the X in seurat clusters
 cardio_integrated_avg_exp_sct_genes_long[['seurat_clusters']] <- gsub('X', '', cardio_integrated_avg_exp_sct_genes_long[['seurat_clusters']])
 # extract the pct.exp from the dotplot
@@ -364,3 +368,72 @@ names(cluster_color) <- unique(clusters_celltypes[,c('seurat_clusters', 'cell_ty
 plot_expression_and_pct(cardio_integrated_avg_exp_sct_genes_long, ident_order = cluster_order, gene_order = ng2018_marker_genes, colour_ticks = T, colour_mapping = cluster_color, align_right = F) + ylab('Cluster') + labs(size = 'Percentage cells expressing', colour = 'Average expression') + xlab('Gene')
 ```
 
+```{r celltype_exp, include=TRUE, fig.width=12, fig.heigth=12}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get dotplot
+Idents(cardio_integrated) <- 'ct_clus_prop'
+cardio_integrated_cthr_dp <- DotPlot(cardio_integrated, features = ng2018_marker_genes) + theme(axis.text.x = element_text(angle = 90)) + xlab('gene') + ylab('Seurat cluster')
+
+# calculate the average expression
+cardio_integrated_cthr_avgexp <- AverageExpression(cardio_integrated, group.by = 'ct_clus_prop')
+# extract which ones we care about
+cardio_integrated_cthr_avg_exp_rna_genes <- data.frame(cardio_integrated_cthr_avgexp[['RNA']][ng2018_marker_genes, ])
+cardio_integrated_cthr_avg_exp_sct_genes <- data.frame(cardio_integrated_cthr_avgexp[['SCT']][ng2018_marker_genes, ])
+# fix changes to spaces
+colnames(cardio_integrated_cthr_avg_exp_sct_genes) <- gsub('\\.', '_', colnames(cardio_integrated_cthr_avg_exp_sct_genes))
+# turn into a long table
+cardio_integrated_cthr_avg_exp_sct_genes_long <- wide_to_long_table(cardio_integrated_cthr_avg_exp_sct_genes, column_name = 'ct_clus_prop')
+# extract the pct.exp from the dotplot
+feature_and_ident_cthr_dotplot <- paste(as.character(cardio_integrated_cthr_dp$data$id), as.character(cardio_integrated_cthr_dp$data$features.plot), sep = '_')
+feature_and_ident_cthr_avgexp <- paste(as.character(cardio_integrated_cthr_avg_exp_sct_genes_long[['ct_clus_prop']]), as.character(cardio_integrated_cthr_avg_exp_sct_genes_long[['gene']]), sep = '_')
+# now add the pct to the table
+cardio_integrated_cthr_avg_exp_sct_genes_long[['percentage_expressed']] <- cardio_integrated_cthr_dp$data[match(feature_and_ident_cthr_avgexp, feature_and_ident_cthr_dotplot), 'pct.exp']
+
+# extract the cthrs and the cell type assignments from the metadata
+cthrs_celltypes <- unique(cardio_integrated@meta.data[, c('ct_clus_prop', 'cell_type_lowerres_prop')])
+# add the order to the cthr celltypes
+cthrs_celltypes[['lowres_ct_rank']] <- celltype_order_df[match(cthrs_celltypes[['cell_type_lowerres_prop']], celltype_order_df[['ct']]), 'rank']
+# order that cell type
+cthrs_celltypes <- cthrs_celltypes[order(cthrs_celltypes[['cell_type_lowerres_prop']], cthrs_celltypes[['ct_clus_prop']]), ]
+# and extract the order we would like from the ordered celltype and cthr table we made
+cthrs_celltypes <- unique(cthrs_celltypes[, c('ct_clus_prop', 'cell_type_lowerres_prop', 'lowres_ct_rank')])
+# remove contaminated clusters
+cthrs_celltypes <- cthrs_celltypes[!(cthrs_celltypes$ct_clus_prop == 'platelet' & cthrs_celltypes$cell_type_lowerres_prop == 'CD4T'), ]
+# order by the lowerres
+cthrs_celltypes <- cthrs_celltypes[order(cthrs_celltypes[['lowres_ct_rank']]), ]
+cthr_order <- cthrs_celltypes[['ct_clus_prop']]
+# get the colors
+cthrs_celltypes[['color']] <- as.vector(unlist(get_color_coding_dict()[as.character(cthrs_celltypes[['cell_type_lowerres_prop']])]))
+# turn into a list
+cthr_color <- as.list(unique(cthrs_celltypes[,c('ct_clus_prop', 'cell_type_lowerres_prop', 'color')])[['color']])
+names(cthr_color) <- unique(cthrs_celltypes[,c('ct_clus_prop', 'cell_type_lowerres_prop', 'color')])[['ct_clus_prop']]
+
+
+plot_expression_and_pct(cardio_integrated_cthr_avg_exp_sct_genes_long, ident_column = 'ct_clus_prop', ident_order = cthr_order, gene_order = ng2018_marker_genes, colour_ticks = T, colour_mapping = cthr_color, align_right = F) + ylab('cthr') + labs(size = 'Percentage cells expressing', colour = 'Average expression') + xlab('Gene')
+```
+
+```{r celltype_low_exp, include=TRUE, fig.width=12, fig.heigth=12}
+knitr::opts_chunk$set(echo = FALSE)
+
+# get dotplot
+Idents(cardio_integrated) <- 'cell_type_lowerres'
+cardio_integrated_ctlr_dp <- DotPlot(cardio_integrated, features = ng2018_marker_genes) + theme(axis.text.x = element_text(angle = 90)) + xlab('gene') + ylab('Seurat cluster')
+
+# calculate the average expression
+cardio_integrated_ctlr_avgexp <- AverageExpression(cardio_integrated, group.by = 'cell_type_lowerres')
+# extract which ones we care about
+cardio_integrated_ctlr_avg_exp_rna_genes <- data.frame(cardio_integrated_ctlr_avgexp[['RNA']][ng2018_marker_genes, ])
+cardio_integrated_ctlr_avg_exp_sct_genes <- data.frame(cardio_integrated_ctlr_avgexp[['SCT']][ng2018_marker_genes, ])
+# fix changes to spaces
+colnames(cardio_integrated_ctlr_avg_exp_sct_genes) <- gsub('\\.', '_', colnames(cardio_integrated_ctlr_avg_exp_sct_genes))
+# turn into a long table
+cardio_integrated_ctlr_avg_exp_sct_genes_long <- wide_to_long_table(cardio_integrated_ctlr_avg_exp_sct_genes, column_name = 'cell_type_lowerres')
+# extract the pct.exp from the dotplot
+feature_and_ident_ctlr_dotplot <- paste(as.character(cardio_integrated_ctlr_dp$data$id), as.character(cardio_integrated_ctlr_dp$data$features.plot), sep = '_')
+feature_and_ident_ctlr_avgexp <- paste(as.character(cardio_integrated_ctlr_avg_exp_sct_genes_long[['cell_type_lowerres']]), as.character(cardio_integrated_ctlr_avg_exp_sct_genes_long[['gene']]), sep = '_')
+# now add the pct to the table
+cardio_integrated_ctlr_avg_exp_sct_genes_long[['percentage_expressed']] <- cardio_integrated_ctlr_dp$data[match(feature_and_ident_ctlr_avgexp, feature_and_ident_ctlr_dotplot), 'pct.exp']
+
+plot_expression_and_pct(cardio_integrated_ctlr_avg_exp_sct_genes_long, ident_column = 'cell_type_lowerres', ident_order = celltype_order_df[order(celltype_order_df$rank), 'ct'], gene_order = ng2018_marker_genes, colour_ticks = T, colour_mapping = get_color_coding_dict(), align_right = F) + ylab('cell type') + labs(size = 'Percentage cells expressing', colour = 'Average expression') + xlab('Gene')
+```
