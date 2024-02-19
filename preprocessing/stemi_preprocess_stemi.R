@@ -64,6 +64,21 @@ add_data <- function(seurat_to_add_to = NULL, lane, base_counts_dir, min.cells =
   return(merge(seurat_to_add_to, seurat_new))
 }
 
+
+# plo the number of UMIs detected vs the mitochondrial percentage
+plot_ncount_vs_mitopct <- function(seurat_object_metadata){
+  # totally stolen from Harm
+  p <- ggplot(seurat_object_metadata, aes(nCount_RNA, percent.mt)) + geom_hex(bins=100) +
+    scale_fill_distiller(palette = "Spectral", name="Cell frequencies",
+                         limits = c(0,100), oob = scales::squish) +
+    ylab("Fraction mtDNA-encoded genes") + xlab("Number of UMIs") +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+          panel.background = element_blank(), axis.line = element_line(colour = "grey"),
+          axis.text=element_text(size=12), axis.title=element_text(size=18))
+  return(p)
+}
+
+
 # get a dataframe with NA values, with the given row and column names, needed if you want to add Seurat metadata, but don't have all values
 get_na_dataframe <- function(colnames, rownames){
   # create matrix
@@ -242,7 +257,7 @@ qc_table_to_pcts <- function(qc_numbers, lane_column='lane', reference='total') 
 ####################
 
 # this is where our objects are on disk
-object_loc <- "/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/"
+object_loc <- "/groups/umcg-wijmenga/tmp02/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/"
 # this is what we will save as
 stemi_v3_raw_loc <- paste(object_loc, "stemi_v3_raw_samples.rds", sep = "/")
 stemi_v3_filtered_loc <- paste(object_loc, "stemi_v3_filtered_samples.rds", sep = "/")
@@ -256,7 +271,7 @@ stemi_v2_normalized_loc <- paste(object_loc, "stemi_v2_normalized_samples_202011
 stemi_v3_normalized_loc <- paste(object_loc, "stemi_v3_normalized_samples_20201110.rds", sep = "/")
 
 # this is where our cellranger outputs are
-cellranger_lanes_dir <- "/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/alignment/hg19/cellranger_output/"
+cellranger_lanes_dir <- "/groups/umcg-franke-scrna/tmp02/releases/blokland-2020/v1/alignment/hg19/cellranger_output/"
 
 # read all the lanes
 stemi <- read_all_lanes(cellranger_lanes_dir, exclude_lanes = c(), min.cells = 3, min.features = 200)
@@ -269,21 +284,21 @@ saveRDS(stemi_v3, stemi_v3_raw_loc)
 
 # these are the soup pre- and appends
 #soup_prepend <- "/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/souporcell/correlate_clusters/correlated_output/"
-soup_prepend <- "/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/demultiplexing/souporcell_output/"
+soup_prepend <- "/groups/umcg-franke-scrna/tmp02/releases/blokland-2020/v1/demultiplexing/souporcell_output/"
 soup_append <- "_correlated.tsv"
 
 # these are the demux pre- and appends
 #demux_prepend <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/demuxlet/demuxlet_output/'
-# demux_prepend <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/demuxlet/demuxlet_output/'
+# demux_prepend <- '/groups/umcg-wijmenga/tmp02/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/demuxlet/demuxlet_output/'
 # demux_append <- '_mmaf002.best'
 # scrublet loc
 #scrublet_v2_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/scrublet/scrublet_assignment_v2.tsv'
 #scrublet_v3_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/scrublet/scrublet_assignment_v3.tsv'
-# scrublet_v2_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/scrublet/scrublet_assignment_v2.tsv'
-# scrublet_v3_loc <- '/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/scrublet/scrublet_assignment_v3.tsv'
+# scrublet_v2_loc <- '/groups/umcg-wijmenga/tmp02/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/scrublet/scrublet_assignment_v2.tsv'
+# scrublet_v3_loc <- '/groups/umcg-wijmenga/tmp02/projects/1M_cells_scRNAseq/ongoing/Cardiology/demultiplexing/scrublet/scrublet_assignment_v3.tsv'
 # location of the simulation mapping
 #stim_mapping_loc <- '/groups/umcg-wijmenga/tmp04/projects/1M_cells_scRNAseq/ongoing/Cardiology/stemi-sampleIDs.txt'
-stim_mapping_loc <- '/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/metadata/stemi-sampleIDs.txt'
+stim_mapping_loc <- '/groups/umcg-franke-scrna/tmp02/releases/blokland-2020/v1/metadata/stemi-sampleIDs.txt'
 
 # add souporcell assignments
 stemi_v2 <- add_soup_assignments(stemi_v2, soup_prepend, soup_append)
@@ -301,6 +316,10 @@ saveRDS(stemi_v2, stemi_v2_raw_loc)
 # calculate mt fraction
 stemi_v2[["percent.mt"]] <- PercentageFeatureSet(stemi_v2, pattern = "^MT-")
 
+# plot the mt fraction vs the gene count
+mt_stemi_v2 <- plot_ncount_vs_mitopct(stemi_v2@meta.data) + ggtitle('total vs %mt gene count')
+# saved as stemi_umi_vs_mtDNA_v2
+
 # make some numbers for the QC
 nrow(stemi_v2@meta.data)
 # 66209
@@ -311,7 +330,7 @@ nrow(stemi_v2@meta.data[
     stemi_v2@meta.data$nFeature_RNA > 200 &
     stemi_v2@meta.data$percent.mt < 8 &
     as.vector(stemi_v2@assays$RNA@counts['HBB', ]) < 10, ]
-     )
+)
 # 58418
 
 # per lane as well
@@ -360,6 +379,10 @@ saveRDS(stemi_v3, stemi_v3_raw_loc)
 
 # calculate mt fraction
 stemi_v3[["percent.mt"]] <- PercentageFeatureSet(stemi_v3, pattern = "^MT-")
+
+# plot the mt fraction vs the gene count
+mt_stemi_v3 <- plot_ncount_vs_mitopct(stemi_v3@meta.data) + ggtitle('total vs %mt gene count')
+# saved as stemi_umi_vs_mtDNA_v3 (10x10)
 
 # make some numbers for the QC
 nrow(stemi_v3@meta.data)
