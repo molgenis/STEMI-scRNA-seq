@@ -12,6 +12,7 @@
 
 library(Seurat)
 library(ggplot2)
+library(cowplot)
 
 ####################
 # Functions        #
@@ -22,7 +23,7 @@ read_all_lanes <- function(cellranger_lanes_dir, exclude_lanes = c(), min.cells 
   # start at null
   seurat_object <- NULL
   # get the subdirectories
-  lanes <- list.dirs(cellranger_lanes_dir, recursive=F, full.names=F)
+  lanes <- list.dirs(cellranger_lanes_dir, recursive=F, ful l.names=F)
   # filter by exclusion lanes
   lanes <- setdiff(lanes, exclude_lanes)
   # grab all the data from each lane
@@ -62,6 +63,33 @@ add_data <- function(seurat_to_add_to = NULL, lane, base_counts_dir, min.cells =
   }
   # otherwise merge
   return(merge(seurat_to_add_to, seurat_new))
+}
+
+
+# plo the number of UMIs detected vs the mitochondrial percentage
+plot_ncount_vs_mitopct <- function(seurat_object_metadata){
+  # totally stolen from Harm
+  p <- ggplot(seurat_object_metadata, aes(nCount_RNA, percent.mt)) + geom_hex(bins=100) +
+    scale_fill_distiller(palette = "Spectral", name="Cell frequencies",
+                         limits = c(0,100), oob = scales::squish) +
+    ylab("Fraction mtDNA-encoded genes") + xlab("Number of UMIs") +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+          panel.background = element_blank(), axis.line = element_line(colour = "grey"),
+          axis.text=element_text(size=12), axis.title=element_text(size=18))
+  return(p)
+}
+
+# plo the number of UMIs detected vs the mitochondrial percentage
+plot_ncount_vs_ngene <- function(seurat_object_metadata){
+  # totally stolen from Harm
+  p <- ggplot(seurat_object_metadata, aes(nCount_RNA, nFeature_RNA)) + geom_hex(bins=100) +
+    scale_fill_distiller(palette = "Spectral", name="Cell frequencies",
+                         limits = c(0,100), oob = scales::squish) +
+    ylab("number of unique genes") + xlab("Number of UMIs") +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+          panel.background = element_blank(), axis.line = element_line(colour = "grey"),
+          axis.text=element_text(size=12), axis.title=element_text(size=18))
+  return(p)
 }
 
 # get a dataframe with NA values, with the given row and column names, needed if you want to add Seurat metadata, but don't have all values
@@ -242,7 +270,7 @@ qc_table_to_pcts <- function(qc_numbers, lane_column='lane', reference='total') 
 ####################
 
 # this is where our objects are on disk
-object_loc <- "/groups/umcg-wijmenga/tmp01/projects/1M_cells_scRNAseq/ongoing/Cardiology/objects/"
+object_loc <- "/groups/umcg-franke-scrna/tmp01/releases/blokland-2020/v1/seurat/"
 # this is what we will save as
 stemi_v3_raw_loc <- paste(object_loc, "stemi_v3_raw_samples.rds", sep = "/")
 stemi_v3_filtered_loc <- paste(object_loc, "stemi_v3_filtered_samples.rds", sep = "/")
@@ -301,6 +329,11 @@ saveRDS(stemi_v2, stemi_v2_raw_loc)
 # calculate mt fraction
 stemi_v2[["percent.mt"]] <- PercentageFeatureSet(stemi_v2, pattern = "^MT-")
 
+# plot the mt fraction vs the gene count
+mt_stemi_v2 <- plot_ncount_vs_mitopct(stemi_v2@meta.data) + ggtitle('STEMI v2\ntotal vs %mt gene count')
+# saved as stemi_umi_vs_mtDNA_v2
+ngene_stemi_v2 <- plot_ncount_vs_ngene(stemi_v2@meta.data) + ggtitle('STEMI v2\ntotal UMI vs number of unique genes')
+
 # make some numbers for the QC
 nrow(stemi_v2@meta.data)
 # 66209
@@ -311,7 +344,7 @@ nrow(stemi_v2@meta.data[
     stemi_v2@meta.data$nFeature_RNA > 200 &
     stemi_v2@meta.data$percent.mt < 8 &
     as.vector(stemi_v2@assays$RNA@counts['HBB', ]) < 10, ]
-     )
+)
 # 58418
 
 # per lane as well
@@ -360,6 +393,11 @@ saveRDS(stemi_v3, stemi_v3_raw_loc)
 
 # calculate mt fraction
 stemi_v3[["percent.mt"]] <- PercentageFeatureSet(stemi_v3, pattern = "^MT-")
+
+# plot the mt fraction vs the gene count
+mt_stemi_v3 <- plot_ncount_vs_mitopct(stemi_v3@meta.data) + ggtitle('STEMI v3\ntotal vs %mt gene count')
+# saved as stemi_umi_vs_mtDNA_v3 (10x10)
+ngene_stemi_v3 <- plot_ncount_vs_ngene(stemi_v3@meta.data) + ggtitle('STEMI v3\ntotal UMI vs number of unique genes')
 
 # make some numbers for the QC
 nrow(stemi_v3@meta.data)
