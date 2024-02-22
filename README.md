@@ -6,9 +6,14 @@ This repository contains the code that was used for the scRNA-seq study of PBMCs
 Expression data is available here:
 https://eqtlgen.org/sc/datasets/blokland2024-dataset.html
 
-### normalized and QC-ed data
+Expression data is available in three flavours:
+- QC-ed and normalised (A)
+- QC-ed without normalisation (B)
+- pre-QC, STEMI only (C)
 
-Expression data is available in three flavours. To use the normalized and QC-ed data, the following files are required:
+### A. normalized and QC-ed data
+
+To use the normalized and QC-ed data, the following files are required:
 - barcodes.tsv.gz
 - features.tsv.gz
 - matrix.mtx.gz
@@ -24,7 +29,7 @@ or in Scanpy using
 stemi_processed = scanpy.read_10x_mtx('/dir/to/three/files/')
 ```
 
-### raw QC-ed data
+### B. raw QC-ed data
 
 To use the non-normalized counts, the following files are required:
 - barcodes.tsv.gz
@@ -42,7 +47,7 @@ or in Scanpy using
 stemi_raw = scanpy.read_10x_mtx('/dir/to/three/files/')
 ```
 
-### pre-QC data
+### C. pre-QC data
 
 Data before QC is only available for the STEMI samples. The data before QC of the control samples is part of the 1m-BloodNL study: https://eqtlgen.org/sc/datasets/1m-scbloodnl.html
 
@@ -65,7 +70,7 @@ stemi_unfiltered = scanpy.read_10x_mtx('/dir/to/three/files/')
 
 ### metadata
 
-metadata is stored in the metadata.tsv.gz file. This data can be added in Seurat like this:
+metadata info on sample assignment, celltype assignment and timepoint/condition, is stored in the metadata.tsv.gz file. This data can be added in Seurat like this:
 
 ```r
 stemi_metadata <- read.table('/dir/to/metadata.tsv.gz', header = T, row.names = 1, sep = '\t')
