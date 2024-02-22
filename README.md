@@ -47,6 +47,10 @@ stemi_raw = scanpy.read_10x_mtx('/dir/to/three/files/')
 Data before QC is only available for the STEMI samples. The data before QC of the control samples is part of the 1m-BloodNL study: https://eqtlgen.org/sc/datasets/1m-scbloodnl.html
 
 To use the pre-QC STEMI non-normalized counts, the following files are required:
+- stemi_unfiltered_barcodes.tsv.gz
+- stemi_unfiltered_features_raw.tsv.gz
+- stemi_unfiltered_matrix_raw.mtx.gz
+
 Given these three files are located in a given folder, and stemi_unfiltered_matrix.mtx.gz is renamed to matrix.mtx.gz, stemi_unfiltered_features.tsv.gz is renamed to features.tsv.gz and stemi_unfiltered_barcodes.tsv.gz is renamed to barcodes.tsv.gz, they can be loaded into Seurat, using the following command:
 
 ```r
