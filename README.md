@@ -86,23 +86,19 @@ stemi_processed.obs = pandas.concat([stemi_processed.obs, stemi_metadata], axis=
 
 The metadata contains several columns that are relevant in the contex of sample/condition/celltype assignment. The most important ones will be highlighted here:
 
-'*orig.ident*' the subset of the data the cell belongs to. stemi_v2 are cells from STEMI patients, processed with 10x v2 chemistry. stemi_v3 are cells from STEMI patients, processed with 10x v3 chemistry. hc_v2 are cells from controls, processed with 10x v2 chemistry. hc_v3 are cells from controls, processed with 10x v3 chemistry.
+- '*orig.ident*' the subset of the data the cell belongs to. stemi_v2 are cells from STEMI patients, processed with 10x v2 chemistry. stemi_v3 are cells from STEMI patients, processed with 10x v3 chemistry. hc_v2 are cells from controls, processed with 10x v2 chemistry. hc_v3 are cells from controls, processed with 10x v3 chemistry.
 
+- '*chem*' the 10x version chemistry the cell was processed with
 
-'*chem*' the 10x version chemistry the cell was processed with
-'*lane*' and '*batch*' the 10x experimental batch the cells were processed in
+- '*lane*' and '*batch*' the 10x experimental batch the cells were processed in
 
+- '*timepoint.final*' the condition the cell came from. UT are cells coming from controls. Baseline are cells coming from 0-4h post-STEMI. t24h are cells coming from 24h after STEMI. t8w are cells coming from t6-8 weeks after STEMI
 
-'*timepoint.final*' the condition the cell came from. UT are cells coming from controls. Baseline are cells coming from 0-4h post-STEMI. t24h are cells coming from 24h after STEMI. t8w are cells coming from t6-8 weeks after STEMI
+- '*assignment.final*' the donors the cells came from. S1-S38 are from STEMI patients. C1-120 are from the controls. Note that the controls use the same sample numbers as in the 1m-BloodNL study (https://eqtlgen.org/sc/datasets/1m-scbloodnl.html), and as such do not run from 1-38, even though there are only 38 controls.
 
+- '*cell_type*' the cell type assignment for the cell
 
-'*assignment.final*' the donors the cells came from. S1-S38 are from STEMI patients. C1-120 are from the controls. Note that the controls use the same sample numbers as in the 1m-BloodNL study (https://eqtlgen.org/sc/datasets/1m-scbloodnl.html), and as such do not run from 1-38, even though there are only 38 controls.
-
-
-'*cell_type*' the cell type assignment for the cell
-
-
-'*cell_type_lowerres*' the reclassification of the cell type to a lower granularity
+- '*cell_type_lowerres*' the reclassification of the cell type to a lower granularity
 
 ## pipeline steps
 
