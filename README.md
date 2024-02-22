@@ -59,9 +59,26 @@ or in Scanpy using
 stemi_unfiltered = scanpy.read_10x_mtx('/dir/to/three/files/')
 ```
 
+### metadata
+
+metadata is stored in the metadata.tsv.gz file. This data can be added in Seurat like this:
+
+```r
+stemi_metadata <- read.table('/dir/to/metadata.tsv.gz', header = T, row.names = 1, sep = '\t')
+stemi_processed <- AddMetaData(stemi_processed, stemi_metadata[, setdiff(colnames(stemi_processed), 'orig.ident')])
+```
+
+or in scanpy like this:
+
+```python
+stemi_metadata = pandas.read_csv('/dir/to/metadata/tsv.gz', sep = '\t', header = 0, index_col = 0)
+stemi_processed.obs = pandas.concat([stemi_processed.obs, ], axis=1).reindex(stemi_processed.obs.index)
+```
+
+
 ## pipeline steps
 
-If want to rerun any of these analysis steps in R, consider using the Singularity image used for most of the analyses: https://github.com/royoelen/single-cell-container-server
+If want to rerun any of the analysis steps in R, consider using the Singularity image used for most of the analyses: https://github.com/royoelen/single-cell-container-server
 
 Relevant software versions:
 Seurat v4 (https://github.com/satijalab/seurat)
