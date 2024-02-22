@@ -81,7 +81,7 @@ or in scanpy like this:
 
 ```python
 stemi_metadata = pandas.read_csv('/dir/to/metadata/tsv.gz', sep = '\t', header = 0, index_col = 0)
-stemi_processed.obs = pandas.concat([stemi_processed.obs, ], axis=1).reindex(stemi_processed.obs.index)
+stemi_processed.obs = pandas.concat([stemi_processed.obs, stemi_metadata], axis=1).reindex(stemi_processed.obs.index)
 ```
 
 
