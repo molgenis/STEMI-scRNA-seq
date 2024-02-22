@@ -166,7 +166,11 @@ Below we will outline the computational steps taken
 
 '*differential_expression/stemi_mast_output_analysis*' perform meta-analysis over the DE results of 10x v2 and 10x v3
 
-'*differential_expression/*temi_plot_de_genes.Rmd' plot the top DE genes for monocytes and NKs cells, and visualize these
+'*differential_expression/stemi_limma_dream.R*' perform differential gene expression analysis limma dream
+
+'*differential_expression/stemi_plot_de.Rmd*' plot the number of DE genes and their sharedness
+
+'*differential_expression/stemi_plot_de_genes.Rmd*' plot the top DE genes for monocytes and NKs cells, and visualize these
 
 '*differential_expression/stemi_gse_enrichr.Rmd*' perform gene set enrichment analysis on the differentially expressed gene
 
@@ -175,6 +179,8 @@ Below we will outline the computational steps taken
 ### cell-cell interactions
 
 '*cell-cell_interactions/stemi_nichenet_analysis.Rmd*' perform cell-cell interaction analysis using Nichenet
+
+'*cell-cell_interactions/stemi_nichenet_limma_input.R*' perform cell-cell interaction analysis using Nichenet, with the limma output
 
 '*cell-cell_interactions/stemi_plot_nichenet_connections*' visualize and investigate the L-R and L-T interactions nominated in Nichenet
 
@@ -213,6 +219,10 @@ Below we will outline the computational steps taken
 '*ega/stemi_create_pairing_file*' create pairing file necessary for EGA upload
 
 '*ega/stemi_encrypt_ega.sh*' encrypt files for EGA upload
+
+### anonymize data
+
+'*preprocessing/stemi_anonimise_and_export_seurat.R*' anonymize sample names
 
 ### Heinig replication
 
