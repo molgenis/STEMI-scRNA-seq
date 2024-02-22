@@ -105,11 +105,11 @@ The metadata contains several columns that are relevant in the contex of sample/
 If want to rerun any of the analysis steps in R, consider using the Singularity image used for most of the analyses: https://github.com/royoelen/single-cell-container-server
 
 Relevant software versions:
-Seurat v4 (https://github.com/satijalab/seurat)
-Eagle v2.x (https://github.com/poruloh/Eagle)
-Souporcell v1.x (https://github.com/wheaton5/souporcell)
-in-house eQTL pipeline2 v1.4.0 (https://github.com/molgenis/systemsgenetics/tree/master/eqtl-mapping-pipeline)
-R v4.x (https://svn.r-project.org/R/)
+- Seurat v4 (https://github.com/satijalab/seurat)
+- Eagle v2.x (https://github.com/poruloh/Eagle)
+- Souporcell v1.x (https://github.com/wheaton5/souporcell)
+- in-house eQTL pipeline2 v1.4.0 (https://github.com/molgenis/systemsgenetics/tree/master/eqtl-mapping-pipeline)
+- R v4.x (https://svn.r-project.org/R/)
 
 Below we will outline the computational steps taken
 
