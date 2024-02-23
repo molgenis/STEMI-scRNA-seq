@@ -23,10 +23,23 @@ Given these three files are located in a given folder, with those exact filename
 stemi_processed <- Read10X('/dir/to/three/files/', gene.column = 1, cell.column = 1)
 ```
 
-or in Scanpy using
+or in Scanpy using the original filenames:
 
 ```python
-stemi_processed = scanpy.read_10x_mtx('/dir/to/three/files/')
+# lead count data
+stemi_processed = sc.read_mtx('/dir/to/three/files/matrix.mtx.gz')
+# read barcodes
+stemi_bc=pd.read_csv('/dir/to/three/files//barcodes.tsv.gz', header=None)
+# read features
+stemi_features=pd.read_csv('/dir/to/three/files/features.tsv.gz', header=None)
+# transpose to scanpy format
+stemi_processed = stemi_processed.T
+# add barcodes and genes to obs and vars
+stemi_processed.obs['cell_id']= stemi_bc[0].tolist()
+stemi_processed.var['gene_name']= stemi_features[0].tolist()
+# set indices for the obs and vars
+stemi_processed.obs.index = stemi_processed.obs['cell_id']
+stemi_processed.var.index = stemi_processed.var['gene_name']
 ```
 
 ### B. raw QC-ed data
@@ -41,10 +54,24 @@ Given these three files are located in a given folder, and matrix_raw.mtx.gz is 
 stemi_raw <- Read10X('/dir/to/three/files/', gene.column = 1, cell.column = 1)
 ```
 
-or in Scanpy using
+or in Scanpy using the original filenames:
 
 ```python
-stemi_raw = scanpy.read_10x_mtx('/dir/to/three/files/')
+# lead count data
+stemi_raw = sc.read_mtx('/dir/to/three/files/matrix_raw.mtx.gz')
+# read barcodes
+stemi_bc=pd.read_csv('/dir/to/three/files//barcodes.tsv.gz', header=None)
+# read features
+stemi_raw=pd.read_csv('/dir/to/three/files/features_raw.tsv.gz', header=None)
+# transpose to scanpy format
+stemi_raw = stemi_raw.T
+# add barcodes and genes to obs and vars
+stemi_raw.obs['cell_id']= stemi_bc[0].tolist()
+stemi_raw.var['gene_name']= stemi_features[0].tolist()
+# set indices for the obs and vars
+stemi_raw.obs.index = stemi_raw.obs['cell_id']
+stemi_raw.var.index = stemi_raw.var['gene_name']
+
 ```
 
 ### C. pre-QC data
@@ -62,10 +89,23 @@ Given these three files are located in a given folder, and stemi_unfiltered_matr
 stemi_unfiltered <- Read10X('/dir/to/three/files/', gene.column = 1, cell.column = 1)
 ```
 
-or in Scanpy using
+or in Scanpy using the original filenames:
 
 ```python
-stemi_unfiltered = scanpy.read_10x_mtx('/dir/to/three/files/')
+# lead count data
+stemi_noqc = sc.read_mtx('/dir/to/three/files/stemi_unfiltered_matrix.mtx.gz')
+# read barcodes
+stemi_bc=pd.read_csv('/dir/to/three/files//stemi_unfiltered_barcodes.tsv.gz', header=None)
+# read features
+stemi_noqc=pd.read_csv('/dir/to/three/files/stemi_unfiltered_features.tsv.gz', header=None)
+# transpose to scanpy format
+stemi_noqc = stemi_noqc.T
+# add barcodes and genes to obs and vars
+stemi_noqc.obs['cell_id']= stemi_bc[0].tolist()
+stemi_noqc.var['gene_name']= stemi_features[0].tolist()
+# set indices for the obs and vars
+stemi_noqc.obs.index = stemi_noqc.obs['cell_id']
+stemi_noqc.var.index = stemi_noqc.var['gene_name']
 ```
 
 ### metadata
@@ -80,9 +120,10 @@ stemi_processed <- AddMetaData(stemi_processed, stemi_metadata[, setdiff(colname
 or in scanpy like this:
 
 ```python
-stemi_metadata = pandas.read_csv('/dir/to/metadata/tsv.gz', sep = '\t', header = 0, index_col = 0)
+stemi_metadata = pandas.read_csv('/dir/to/metadata.tsv.gz', sep = '\t', header = 0, index_col = 0)
 stemi_processed.obs = pandas.concat([stemi_processed.obs, stemi_metadata], axis=1).reindex(stemi_processed.obs.index)
 ```
+
 
 The metadata contains several columns that are relevant in the contex of sample/condition/celltype assignment. The most important ones will be highlighted here:
 
