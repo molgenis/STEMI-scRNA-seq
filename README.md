@@ -270,3 +270,9 @@ Below we will outline the computational steps taken
 '*factors/stemi_factor_replication_preprocess.Rmd*' preprocess scRNA-seq data for Factor analysis using MOFA
 
 '*factors/stemi_factor_replication_mofa.Rmd*' perform factor analysis using MOFA
+
+
+## License
+
+The code availabe in this repository is available under GPLv2 License:
+https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
