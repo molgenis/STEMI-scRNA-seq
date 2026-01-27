@@ -2,7 +2,7 @@
 ############################################################################################################################
 # Authors: Roy Oelen
 # Name: stemi_export_clinical_params.R
-# Function: export clinical parameters of STEMI scRNA study for Heinig replication
+# Function: export clinical parameters of STEMI scRNA study for Wolf replication
 ############################################################################################################################
 
 ####################
@@ -40,31 +40,31 @@ age_diff_years <- floor(as.vector(age_diff) / 365.25)
 clinparam[['age_at_admission']] <- age_diff_years
 # now subset the clinical parameters to what we can share
 clinparam_share <- clinparam[
-  !is.na(clinparam[['sample_id']]),
+  !is.na(clinparam[['sample_id']]), 
                              c(
-                               'sample_id',
-                               'age_at_admission',
-                               'gender',
-                               'statin',
-                               'neutrophils',
-                               'lymphocytes',
-                               'non_cause',
-                               'discharge_diagnosis',
+                               'sample_id', 
+                               'age_at_admission', 
+                               'gender', 
+                               'statin', 
+                               'neutrophils', 
+                               'lymphocytes', 
+                               'non_cause', 
+                               'discharge_diagnosis', 
                                'ap',
-                               'mi',
-                               'pci',
-                               'cabg',
-                               'hf',
-                               'arterydisease',
-                               'tia',
-                               'stroke',
-                               'thromboembolism',
+                               'mi', 
+                               'pci', 
+                               'cabg', 
+                               'hf', 
+                               'arterydisease', 
+                               'tia', 
+                               'stroke', 
+                               'thromboembolism', 
                                'crp',
-                               'crp_3h',
-                               'crp_6h',
-                               'crp_9h',
-                               'crp_12h',
-                               'crp_24h',
+                               'crp_3h', 
+                               'crp_6h', 
+                               'crp_9h', 
+                               'crp_12h', 
+                               'crp_24h', 
                                'crp_48h'
                              )]
 # aspirin is just true for all of them
